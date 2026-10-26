@@ -1,0 +1,11 @@
+{
+  "name": "seki",
+  "owner": { "name": "JoanMateo77" },
+  "plugins": [
+    {
+      "name": "pw-revision",
+      "source": "./plugins/pw-revision",
+      "description": "Revisión de PRs: pendientes por ambiente, estado real frente a pruebas, explicación del cambio y tablero local"
+    }
+  ]
+}

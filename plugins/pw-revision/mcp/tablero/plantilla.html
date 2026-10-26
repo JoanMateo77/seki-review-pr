@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Revisión de PRs</title>
+<style>
+:root {
+  --fondo: #f6f7f9; --panel: #ffffff; --borde: #dfe3e8; --texto: #1c2430; --tenue: #5d6878;
+  --acento: #1f5fbf; --acento-suave: #e6eefb;
+  --ok: #1e7a46; --ok-suave: #e3f3ea; --aviso: #9a6200; --aviso-suave: #fbf0dc;
+  --mal: #b3261e; --mal-suave: #fbe6e4; --neutro-suave: #eef0f3;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --fondo: #12161c; --panel: #1a2029; --borde: #2c3440; --texto: #e4e8ee; --tenue: #9aa5b4;
+    --acento: #7aa7ff; --acento-suave: #1d2a40;
+    --ok: #5cc98a; --ok-suave: #16301f; --aviso: #e2b25a; --aviso-suave: #33280f;
+    --mal: #ff8a80; --mal-suave: #3a1a18; --neutro-suave: #232a35;
+  }
+}
+:root[data-theme="dark"] {
+  --fondo: #12161c; --panel: #1a2029; --borde: #2c3440; --texto: #e4e8ee; --tenue: #9aa5b4;
+  --acento: #7aa7ff; --acento-suave: #1d2a40;
+  --ok: #5cc98a; --ok-suave: #16301f; --aviso: #e2b25a; --aviso-suave: #33280f;
+  --mal: #ff8a80; --mal-suave: #3a1a18; --neutro-suave: #232a35;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--fondo); color: var(--texto); font: 14px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { padding: 16px 24px; border-bottom: 1px solid var(--borde); background: var(--panel); display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: baseline; }
+header h1 { margin: 0; font-size: 18px; }
+header .meta { color: var(--tenue); font-size: 13px; }
+.resumen { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 24px; }
+.ficha { border: 1px solid var(--borde); background: var(--panel); border-radius: 8px; padding: 8px 12px; cursor: pointer; text-align: left; color: inherit; font: inherit; }
+.ficha b { display: block; font-size: 20px; line-height: 1.2; }
+.ficha span { color: var(--tenue); font-size: 12px; }
+.ficha[aria-pressed="true"] { border-color: var(--acento); background: var(--acento-suave); }
+.filtros { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 0 24px 12px; align-items: center; }
+.filtros input[type=search], .filtros select { font: inherit; padding: 6px 10px; border: 1px solid var(--borde); border-radius: 6px; background: var(--panel); color: inherit; }
+.filtros input[type=search] { min-width: 240px; flex: 1 1 240px; }
+.filtros label { display: inline-flex; gap: 6px; align-items: center; color: var(--tenue); }
+main { display: grid; grid-template-columns: minmax(320px, 440px) 1fr; gap: 16px; padding: 0 24px 24px; align-items: start; }
+.lista { display: flex; flex-direction: column; gap: 6px; max-height: calc(100vh - 220px); overflow: auto; padding-right: 4px; }
+.fila { border: 1px solid var(--borde); background: var(--panel); border-radius: 8px; padding: 10px 12px; cursor: pointer; text-align: left; color: inherit; font: inherit; width: 100%; }
+.fila:hover { border-color: var(--acento); }
+.fila[aria-current="true"] { border-color: var(--acento); box-shadow: inset 3px 0 0 var(--acento); }
+.fila .linea1 { display: flex; gap: 8px; align-items: baseline; }
+.fila .num { font-family: var(--mono); color: var(--tenue); font-size: 12px; white-space: nowrap; }
+.fila .titulo { font-weight: 600; }
+.etiquetas { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.etq { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--neutro-suave); color: var(--tenue); white-space: nowrap; }
+.etq.ok { background: var(--ok-suave); color: var(--ok); }
+.etq.aviso { background: var(--aviso-suave); color: var(--aviso); }
+.etq.mal { background: var(--mal-suave); color: var(--mal); }
+.etq.acento { background: var(--acento-suave); color: var(--acento); }
+.detalle { background: var(--panel); border: 1px solid var(--borde); border-radius: 10px; padding: 20px 24px; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
+.detalle h2 { margin: 0 0 4px; font-size: 18px; }
+.detalle h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--tenue); margin: 20px 0 6px; }
+.detalle ul { margin: 0; padding-left: 20px; }
+.detalle p { margin: 0; }
+.vacio { color: var(--tenue); }
+.datos { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 12px; }
+.dato { background: var(--fondo); border-radius: 6px; padding: 8px 10px; }
+.dato span { display: block; color: var(--tenue); font-size: 12px; }
+.barra { height: 6px; border-radius: 3px; background: var(--neutro-suave); overflow: hidden; margin-top: 4px; }
+.barra i { display: block; height: 100%; background: var(--ok); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--borde); }
+th { color: var(--tenue); font-weight: 600; }
+.checklist li { list-style: none; margin-left: -20px; }
+.checklist label { display: flex; gap: 8px; align-items: flex-start; }
+.acciones { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.boton { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--borde); background: var(--fondo); color: inherit; text-decoration: none; cursor: pointer; }
+.boton.primario { background: var(--acento); border-color: var(--acento); color: #fff; }
+code { font-family: var(--mono); font-size: 12px; background: var(--fondo); padding: 1px 5px; border-radius: 4px; }
+.aviso-caja { background: var(--aviso-suave); color: var(--aviso); padding: 8px 12px; border-radius: 6px; margin-top: 12px; }
+@media (max-width: 860px) {
+  header, .resumen, .filtros, main { padding-left: 16px; padding-right: 16px; }
+  main { grid-template-columns: 1fr; }
+  .lista { max-height: none; }
+  .detalle { position: static; max-height: none; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="titulo">Revisión de PRs</h1>
+  <div class="meta" id="meta"></div>
+</header>
+<div class="resumen" id="resumen"></div>
+<div class="filtros">
+  <input type="search" id="buscar" placeholder="Buscar por número, título o rama">
+  <select id="portal"><option value="">Todos los portales</option></select>
+  <select id="riesgo"><option value="">Cualquier riesgo</option><option value="alto">Riesgo alto</option><option value="medio">Riesgo medio</option><option value="bajo">Riesgo bajo</option></select>
+  <label><input type="checkbox" id="seguridad"> Solo seguridad</label>
+  <label><input type="checkbox" id="sinExplicacion"> Sin explicación</label>
+  <label><input type="checkbox" id="inactivas"> Incluir ramas inactivas</label>
+</div>
+<main>
+  <div class="lista" id="lista" role="list"></div>
+  <section class="detalle" id="detalle"><p class="vacio">Seleccione una PR para ver su detalle.</p></section>
+</main>
+<script>
+const FOTO = /*DATOS*/null;
+const ESTADO = {
+  en_pruebas: ['Ya está en pruebas', 'ok'],
+  parcial: ['Otra versión en pruebas', 'aviso'],
+  no_en_pruebas: ['No está en pruebas', 'mal'],
+};
+const ORDEN_ACCION = ['solo_prod', 'revisar_diferencias', 'pruebas_abierta', 'sin_pruebas', 'hacia_pruebas', 'pruebas_automaticas', 'otra', 'inactiva'];
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const guardado = (k, v) => { try { if (v === undefined) return JSON.parse(localStorage.getItem(k)); localStorage.setItem(k, JSON.stringify(v)); } catch { return null; } };
+
+let accionFiltro = null;
+let seleccion = null;
+
+function filtrar() {
+  const q = $('buscar').value.trim().toLowerCase();
+  return FOTO.prs.filter((pr) => {
+    if (!$('inactivas').checked && pr.ambiente === 'inactiva' && accionFiltro !== 'inactiva') return false;
+    if (accionFiltro && pr.accion !== accionFiltro) return false;
+    if ($('portal').value && pr.portal !== $('portal').value) return false;
+    if ($('riesgo').value && pr.explicacion?.riesgo !== $('riesgo').value) return false;
+    if ($('seguridad').checked && !pr.seguridad) return false;
+    if ($('sinExplicacion').checked && pr.explicacion && !pr.explicacion.desactualizada) return false;
+    if (q && !`${pr.numero} #${pr.numero} ${pr.titulo} ${pr.rama} ${pr.repo}`.toLowerCase().includes(q)) return false;
+    return true;
+  }).sort((a, b) => ORDEN_ACCION.indexOf(a.accion) - ORDEN_ACCION.indexOf(b.accion) || a.repo.localeCompare(b.repo) || b.numero - a.numero);
+}
+
+function etiquetas(pr) {
+  const t = [`<span class="etq acento">${esc(pr.portal)}</span>`];
+  if (pr.estadoPruebas) {
+    const [txt, cls] = ESTADO[pr.estadoPruebas.estado] ?? [pr.estadoPruebas.estado, ''];
+    t.push(`<span class="etq ${cls}">${txt}</span>`);
+  }
+  if (pr.ambiente === 'pruebas') t.push('<span class="etq">Hacia pruebas</span>');
+  if (pr.gemela) t.push(`<span class="etq">Gemela #${pr.gemela.numero} ${pr.gemela.estado === 'MERGED' ? 'mergeada' : pr.gemela.estado === 'OPEN' ? 'abierta' : 'cerrada'}</span>`);
+  if (pr.seguridad) t.push('<span class="etq mal">Seguridad</span>');
+  if (pr.explicacion?.riesgo) t.push(`<span class="etq ${pr.explicacion.riesgo === 'alto' ? 'mal' : pr.explicacion.riesgo === 'medio' ? 'aviso' : 'ok'}">Riesgo ${pr.explicacion.riesgo}</span>`);
+  if (!pr.explicacion) t.push('<span class="etq">Sin explicación</span>');
+  else if (pr.explicacion.desactualizada) t.push('<span class="etq aviso">Explicación desactualizada</span>');
+  t.push(`<span class="etq">${pr.dias} días</span>`, `<span class="etq">+${pr.adiciones} / -${pr.eliminaciones}</span>`);
+  return t.join('');
+}
+
+function pintarResumen() {
+  const visibles = FOTO.prs.filter((pr) => $('inactivas').checked || pr.ambiente !== 'inactiva' || accionFiltro === 'inactiva');
+  $('resumen').innerHTML = ORDEN_ACCION.map((a) => {
+    const n = (a === 'inactiva' ? FOTO.prs : visibles).filter((pr) => pr.accion === a).length;
+    if (!n) return '';
+    return `<button class="ficha" data-accion="${a}" aria-pressed="${accionFiltro === a}"><b>${n}</b><span>${esc(FOTO.acciones[a])}</span></button>`;
+  }).join('');
+}
+
+function pintarLista() {
+  const prs = filtrar();
+  $('lista').innerHTML = prs.length
+    ? prs.map((pr) => `<button class="fila" role="listitem" data-id="${esc(pr.id)}" aria-current="${seleccion === pr.id}">
+        <div class="linea1"><span class="num">${esc(pr.repoEtiqueta)} #${pr.numero}</span><span class="titulo">${esc(pr.titulo)}</span></div>
+        <div class="etiquetas">${etiquetas(pr)}</div></button>`).join('')
+    : '<p class="vacio">No hay PRs con estos filtros.</p>';
+}
+
+const listaHtml = (items) => (items?.length ? `<ul>${items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : '<p class="vacio">Sin datos.</p>');
+
+function pintarDetalle(pr) {
+  const e = pr.explicacion;
+  const ep = pr.estadoPruebas;
+  const claveChecklist = `pw-revision:probado:${pr.id}:${pr.headSha}`;
+  const marcados = guardado(claveChecklist) ?? [];
+  const pct = ep && ep.total ? Math.round((ep.iguales / ep.total) * 100) : 0;
+  const metodo = ep?.metodo === 'parche' ? 'comprobado aplicando el cambio sobre pruebas' : 'comparando archivo por archivo';
+
+  $('detalle').innerHTML = `
+    <div class="num">${esc(pr.repo)} #${pr.numero} &middot; ${esc(pr.base)} &larr; ${esc(pr.rama)}</div>
+    <h2>${esc(pr.titulo)}</h2>
+    <div class="etiquetas">${etiquetas(pr)}</div>
+    <div class="datos">
+      <div class="dato"><span>Acción</span>${esc(FOTO.acciones[pr.accion])}</div>
+      ${ep ? `<div class="dato"><span>Frente a pruebas</span>${ep.iguales} de ${ep.total} archivos iguales${ep.conflicto ? ', con conflicto' : ''}<div class="barra"><i style="width:${pct}%"></i></div><span>${metodo}</span></div>` : ''}
+      ${pr.gemela ? `<div class="dato"><span>PR gemela</span><a href="https://github.com/${esc(FOTO.owner)}/${esc(pr.repo)}/pull/${pr.gemela.numero}" target="_blank" rel="noopener">#${pr.gemela.numero}</a> (${esc(pr.gemela.estado)})</div>` : ''}
+      <div class="dato"><span>Tamaño</span>${pr.archivos} archivos, +${pr.adiciones} / -${pr.eliminaciones}</div>
+      <div class="dato"><span>Abierta</span>${esc(pr.creada.slice(0, 10))} (${pr.dias} días)</div>
+      ${pr.motivoInactiva ? `<div class="dato"><span>Rama inactiva</span>${esc(pr.motivoInactiva)}</div>` : ''}
+    </div>
+    <div class="acciones">
+      <a class="boton primario" href="${esc(pr.url)}" target="_blank" rel="noopener">Abrir en GitHub</a>
+      <button class="boton" data-copiar="/pw-revision:revisar-prs explicar ${esc(pr.repo)}#${pr.numero}">Copiar: explicar</button>
+      <button class="boton" data-copiar="/plannotator-review ${esc(pr.url)}">Copiar: revisar línea por línea</button>
+    </div>
+    ${e?.desactualizada ? '<div class="aviso-caja">La PR recibió commits después de esta explicación. Conviene regenerarla.</div>' : ''}
+    ${e ? `
+      <h3>Resumen</h3><p>${esc(e.resumen)}</p>
+      <h3>Por qué</h3><p>${esc(e.por_que)}</p>
+      ${e.impacto_usuario ? `<h3>Qué nota quien usa el portal</h3><p>${esc(e.impacto_usuario)}</p>` : ''}
+      <h3>Qué cambia</h3>${listaHtml(e.que_cambia)}
+      ${e.tecnologias?.length ? `<h3>Tecnologías</h3><table><thead><tr><th>Tecnología</th><th>Uso en este cambio</th><th>Por qué esta</th><th>Descartadas</th></tr></thead><tbody>
+        ${e.tecnologias.map((t) => `<tr><td><b>${esc(t.nombre)}</b></td><td>${esc(t.uso)}</td><td>${esc(t.por_que)}</td><td>${esc((t.alternativas_descartadas ?? []).join('; '))}</td></tr>`).join('')}
+      </tbody></table>` : ''}
+      ${e.alternativas?.length ? `<h3>Alternativas consideradas</h3>${listaHtml(e.alternativas)}` : ''}
+      ${e.dependencias?.length ? `<h3>Debe ir antes</h3>${listaHtml(e.dependencias)}` : ''}
+      ${e.riesgos?.length ? `<h3>Riesgos</h3>${listaHtml(e.riesgos)}` : ''}
+      ${e.como_probar?.length ? `<h3>Cómo probar</h3><ul class="checklist">${e.como_probar.map((paso, i) => `<li><label><input type="checkbox" data-paso="${i}" ${marcados.includes(i) ? 'checked' : ''}> <span>${esc(paso)}</span></label></li>`).join('')}</ul>` : ''}
+      <p class="vacio" style="margin-top:16px">Explicación del ${esc(e.fecha?.slice(0, 10))} sobre el commit <code>${esc(e.headSha?.slice(0, 7))}</code>.</p>
+    ` : `<h3>Explicación</h3><p class="vacio">Esta PR aún no tiene explicación. En Claude Code: <code>/pw-revision:revisar-prs explicar ${esc(pr.repo)}#${pr.numero}</code></p>`}
+  `;
+  $('detalle').querySelectorAll('[data-paso]').forEach((c) => c.addEventListener('change', () => {
+    const actuales = [...$('detalle').querySelectorAll('[data-paso]:checked')].map((x) => +x.dataset.paso);
+    guardado(claveChecklist, actuales);
+  }));
+}
+
+function pintar() { pintarResumen(); pintarLista(); }
+
+$('titulo').textContent = `Revisión de PRs · ${FOTO.proyecto}`;
+$('meta').textContent = `${FOTO.prs.length} PRs abiertas · datos de GitHub del ${new Date(FOTO.generado).toLocaleString('es-CO')}`;
+[...new Set(FOTO.prs.map((p) => p.portal))].sort().forEach((p) => $('portal').insertAdjacentHTML('beforeend', `<option>${esc(p)}</option>`));
+['buscar', 'portal', 'riesgo', 'seguridad', 'sinExplicacion', 'inactivas'].forEach((id) => $(id).addEventListener('input', pintar));
+$('resumen').addEventListener('click', (ev) => {
+  const b = ev.target.closest('[data-accion]');
+  if (!b) return;
+  accionFiltro = accionFiltro === b.dataset.accion ? null : b.dataset.accion;
+  pintar();
+});
+$('lista').addEventListener('click', (ev) => {
+  const b = ev.target.closest('[data-id]');
+  if (!b) return;
+  seleccion = b.dataset.id;
+  pintarLista();
+  pintarDetalle(FOTO.prs.find((p) => p.id === seleccion));
+  if (location.hash !== `#${seleccion}`) history.replaceState(null, '', `#${encodeURIComponent(seleccion)}`);
+});
+$('detalle').addEventListener('click', (ev) => {
+  const b = ev.target.closest('[data-copiar]');
+  if (!b) return;
+  navigator.clipboard?.writeText(b.dataset.copiar).then(() => { b.textContent = 'Copiado'; });
+});
+pintar();
+const inicial = decodeURIComponent(location.hash.slice(1));
+const prInicial = FOTO.prs.find((p) => p.id === inicial);
+if (prInicial) { seleccion = prInicial.id; pintarLista(); pintarDetalle(prInicial); }
+</script>
+</body>
+</html>
