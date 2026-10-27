@@ -38,3 +38,13 @@ A diferencia de la lista de PRs de GitHub, comprueba con git si el código ya es
 2. Evidencia antes que opinión: cada estado dice cómo se comprobó.
 3. El revisor no necesita contexto previo para decidir una PR.
 4. Nada sale de la máquina sin que alguien lo envíe a propósito.
+
+## Mejoras futuras
+
+- **Plugin para todo el equipo (anotado 27-10-2026, sin implementar).** Que cualquier persona del
+  equipo lo instale y use en todos los proyectos, no solo uno: varias plantillas de revisión base
+  (PCI DSS, OWASP web, migración SQL/DDL, pantallas y textos, integración bancaria, liviana) cargadas para todos los
+  proyectos y compartidas desde un repositorio común en lugar de vivir solo en `~/.config/pw-revision/plantillas/`
+  de cada máquina. Implica: configuración de proyectos sin rutas propias de una máquina, instalación del marketplace
+  desde un remoto compartido, y versionado de las plantillas compartidas. Mientras tanto, las plantillas se guardan
+  locales con un formato que ya sirva para compartirlas.
