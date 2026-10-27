@@ -22,13 +22,14 @@ lo fija a mano). Sin dependencias npm.
 |---|---|
 | Servidor MCP (stdio, JSON-RPC sin SDK) | `plugins/pw-revision/mcp/server.mjs` |
 | Herramientas, una por archivo | `plugins/pw-revision/mcp/tools/*.mjs` |
-| Lógica compartida (GitHub, git, gemelas, estado frente a pruebas) | `plugins/pw-revision/mcp/lib/` |
+| Lógica compartida (GitHub, git, gemelas, estado frente a pruebas y producción) | `plugins/pw-revision/mcp/lib/` |
+| Reglas de verificación (una por incidente o regla del proyecto) | `plugins/pw-revision/mcp/lib/reglas.mjs` |
 | Plantilla del tablero | `plugins/pw-revision/mcp/tablero/plantilla.html` |
 | Proyectos, repos y ramas por ambiente | `plugins/pw-revision/config/proyectos.json` |
 | Flujo para Claude | `plugins/pw-revision/skills/revisar-prs/SKILL.md` |
 | Prueba de humo | `node plugins/pw-revision/test/humo.mjs [herramienta] ['{"arg":1}']` |
 
-Salida (por proyecto, campo `salida`): `datos/prs.json` (última foto), `datos/estados-cache.json`,
+Salida (por proyecto, campo `salida`): `datos/prs.json` (última foto), `datos/*-cache.json`, `verificaciones/`,
 `explicaciones/<repo>-<n>.json` y `tablero.html`.
 
 ### Agregar una herramienta
@@ -60,3 +61,10 @@ checkout, el estado frente a pruebas se comprueba aplicando el parche; sin él, 
 
 El servidor no depende de Claude Code. Para Claude Desktop, Cursor u otro cliente:
 `{"command": "sh", "args": ["<ruta>/plugins/pw-revision/bin/servidor.sh"]}`.
+
+### Agregar una regla de verificación
+
+Un objeto más en `REGLAS` de `mcp/lib/reglas.mjs` con `id`, `titulo`, `severidad`, `archivos` (regex de ruta),
+`patron` (regex sobre la línea agregada), `mensaje` y `origen` (el incidente o la regla que la justifica).
+Opcionales: `excluir`, `cuando(linea, archivo)`, `severidadPara(linea)`, `repos`, `porArchivo`. Para apagar una
+regla en un repo: `reglas_omitidas: ["id"]` en su entrada de `proyectos.json`.

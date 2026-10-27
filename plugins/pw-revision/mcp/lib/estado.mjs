@@ -20,8 +20,18 @@ export async function arbolRama(owner, repo, rama) {
   return arboles.get(clave);
 }
 
-export const archivosPr = (owner, repo, numero) =>
-  ghApiLista(`repos/${owner}/${repo}/pulls/${numero}/files?per_page=100`);
+const archivosMemo = new Map();
+export function archivosPr(owner, repo, numero) {
+  const clave = `${owner}/${repo}#${numero}`;
+  if (!archivosMemo.has(clave)) archivosMemo.set(clave, ghApiLista(`repos/${owner}/${repo}/pulls/${numero}/files?per_page=100`));
+  return archivosMemo.get(clave);
+}
+
+export const commitsPr = async (owner, repo, numero) =>
+  (await ghApiLista(`repos/${owner}/${repo}/pulls/${numero}/commits?per_page=100`)).map((c) => {
+    const [titulo, ...cuerpo] = c.commit.message.split('\n');
+    return { oid: c.sha, messageHeadline: titulo, messageBody: cuerpo.join('\n').trim() };
+  });
 
 // Un fetch a la vez por repo: git no tolera bien fetches concurrentes en el mismo .git.
 const colas = new Map();
@@ -34,13 +44,14 @@ const enCola = (dir, fn) => {
 
 // Las ramas base se traen a un espacio propio: refs/remotes/origin/* puede reescribirlo
 // en paralelo otro fetch del usuario (IDE, otra sesión) y dejar la referencia inválida.
-async function probarParche(dir, numero, prod, pruebas) {
+async function probarParche(dir, numero, prod, pruebas, baseSha) {
   const ns = `refs/pw-revision/${numero}`;
   const ref = `${ns}/head`;
   const tmp = mkdtempSync(join(tmpdir(), 'pw-revision-'));
   try {
     await git(dir, ['fetch', '-q', '--no-write-fetch-head', 'origin', `+pull/${numero}/head:${ref}`, `+refs/heads/${prod}:${ns}/prod`, `+refs/heads/${pruebas}:${ns}/pruebas`]);
-    const base = (await git(dir, ['merge-base', `${ns}/prod`, ref])).trim();
+    // Una PR ya mergeada es ancestro de su base: el punto de partida es el sha de base que guardó GitHub.
+    const base = (await git(dir, ['merge-base', baseSha ?? `${ns}/prod`, ref])).trim();
     const parche = join(tmp, 'pr.diff');
     writeFileSync(parche, await git(dir, ['diff', '--binary', base, ref]));
     const env = { GIT_INDEX_FILE: join(tmp, 'index') };
@@ -55,7 +66,7 @@ async function probarParche(dir, numero, prod, pruebas) {
   }
 }
 
-export async function estadoFrentePruebas({ owner, repo, cfgRepo, numero, prod, pruebas }) {
+export async function estadoFrentePruebas({ owner, repo, cfgRepo, numero, prod, pruebas, baseSha }) {
   const [arbol, archivos] = await Promise.all([arbolRama(owner, repo, pruebas), archivosPr(owner, repo, numero)]);
   const total = archivos.length;
   const iguales = archivos.filter((a) =>
@@ -67,8 +78,8 @@ export async function estadoFrentePruebas({ owner, repo, cfgRepo, numero, prod, 
 
   const dir = expandir(cfgRepo.checkout);
   if (dir && existsSync(dir)) {
-    const parche = await enCola(dir, () => probarParche(dir, numero, prod, pruebas))
-      .catch(() => enCola(dir, () => probarParche(dir, numero, prod, pruebas)))
+    const parche = await enCola(dir, () => probarParche(dir, numero, prod, pruebas, baseSha))
+      .catch(() => enCola(dir, () => probarParche(dir, numero, prod, pruebas, baseSha)))
       .catch((e) => { console.error('pw-revision: parche de la PR', numero, e.message.slice(0, 300)); return null; });
     if (parche === 'en_pruebas' || parche === 'no_en_pruebas') return { ...resultado, estado: parche, metodo: 'parche' };
     if (parche === 'conflicto') resultado.conflicto = true;

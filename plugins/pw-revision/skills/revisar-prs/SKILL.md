@@ -11,6 +11,7 @@ Herramientas del servidor MCP `pw-revision`:
 |---|---|
 | `prs_pendientes` | Foto de las PRs abiertas agrupadas por acción, con estado real frente a pruebas |
 | `pr_detalle` | Descripción, commits y diff recortado de una PR, para entenderla |
+| `pr_verificaciones` | Reglas fijas sobre las líneas agregadas de una PR, o de una rama local antes de abrirla (`dir` + `base`) |
 | `pr_guardar_explicacion` | Guarda la explicación de una PR atada a su commit actual |
 | `tablero_generar` | Escribe y abre `revision-prs/tablero.html` (archivo local) |
 
@@ -18,9 +19,15 @@ Todo queda en archivos locales. No publicar el tablero ni las explicaciones en A
 
 ## Flujo según el argumento
 
-**Sin argumento o "pendientes":** llamar `prs_pendientes` y resumir por grupo. Señalar lo que exige acción: PRs de seguridad sin pasar a producción, "otra versión en pruebas" (hay que revisar diferencias), PRs viejas con conflicto. No repetir la lista entera si la persona solo pidió un resumen.
+**Sin argumento o "pendientes":** llamar `prs_pendientes` y resumir por grupo. Señalar primero lo que exige acción:
+"En pruebas sin PR hacia producción" (código validado que nunca salió), PRs de seguridad sin
+pasar a producción, verificaciones bloqueantes o altas, "sin equivalente en <portal>" cuando el arreglo aplica a los
+dos portales, "otra versión en pruebas" y PRs viejas con conflicto. No repetir la lista entera si la persona solo pidió un resumen.
 
-**"explicar <repo>#<n>":** `pr_detalle` → leer descripción, commits y diff → si el diff viene recortado y hace falta, leer el archivo en el checkout local con lectura acotada (grep + rango) → `pr_guardar_explicacion` → `tablero_generar`.
+**"verificar <repo>#<n>"** o **"verificar <ruta> <base>"**: `pr_verificaciones`; explicar cada hallazgo bloqueante o alto
+mirando la línea en contexto y decir si es real o falso positivo. Antes de abrir una PR propia, correrlo sobre la rama local.
+
+**"explicar <repo>#<n>":** `pr_detalle` → leer descripción, commits y diff → revisar los hallazgos de `pr_verificaciones` → si el diff viene recortado y hace falta, leer el archivo en el checkout local con lectura acotada (grep + rango) → `pr_guardar_explicacion` → `tablero_generar`.
 
 **"explicar pendientes":** tomar de `prs_pendientes` las PRs sin explicación o con explicación desactualizada, sin las de ramas inactivas. Priorizar seguridad y las que van a producción. Más de 5 PRs → repartir en subagentes con `model: "sonnet"`, cada uno con 3 a 5 PRs, y pedirles que llamen ellos mismos `pr_guardar_explicacion`. Al final, `tablero_generar`.
 
@@ -39,10 +46,21 @@ Pensada para alguien que no escribió el cambio y debe aprobarlo o probarlo.
 - **como_probar:** pasos verificables en pruebas, cada uno con su resultado esperado.
 - **riesgos** y **dependencias:** SQL que debe correr antes, variables de entorno, PRs que van primero, orden de despliegue.
 - **riesgo:** bajo, medio o alto según lo que puede romper en producción.
+- **esfuerzo:** 1 a 5 para revisarla (1 = minutos; 5 = media jornada o más). Pesa más la lógica nueva que el tamaño.
+- **orden_lectura:** archivos en el orden en que conviene leerlos, empezando por donde nace el cambio (ruta, migración,
+  regla de negocio) y dejando pruebas y vistas al final. Un motivo corto por archivo. Omitir archivos triviales.
+- **diagrama:** solo si cambia un flujo entre componentes (portal, back, checkout, banco, cron). `sequenceDiagram` de
+  Mermaid con participantes en lenguaje del negocio, sin nombres de funciones, a lo sumo 12 mensajes.
 
 Reglas de texto: español formal e impersonal (nunca voseo ni tuteo), sin emojis, "cliente" y nunca "comercio" (salvo excepciones como "Cámara de Comercio"), "portal de pagos" para el portal de pagos del cliente. Sin nombres de funciones cuando no aportan a quien prueba.
 
 ## Significado de los estados
+
+- **En pruebas sin PR hacia producción:** PR abierta o mergeada en pruebas (últimos 30 días) cuyo código no aparece en
+  producción (ningún archivo coincide) y que ninguna PR abierta hacia producción trae. Se omiten las sincronizaciones
+  y lo marcado como "solo pruebas". Puede ser intencional (una funcionalidad que aún no sale); confirmarlo.
+- **Sin equivalente en <portal>:** no hay PR con título parecido hacia la rama de producción del otro portal. No todos
+  los cambios aplican a ambos portales.
 
 - **Ya está en pruebas:** el cambio aplicado al revés sobre la rama de pruebas entra limpio, o todos sus archivos son idénticos. Falta solo producción.
 - **Otra versión en pruebas:** parte de los archivos coincide. Normalmente la PR de pruebas se ajustó después. Revisar diferencias antes de mergear a producción.

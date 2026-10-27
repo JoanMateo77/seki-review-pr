@@ -5,7 +5,7 @@ const ESTADO = { en_pruebas: 'en pruebas', parcial: 'parcial', no_en_pruebas: 'n
 export default {
   name: 'prs_pendientes',
   description:
-    'Lista las PRs abiertas de un proyecto (por defecto las del usuario) agrupadas por acción: ' +
+    'Lista las PRs abiertas (y las mergeadas en pruebas cuyo código no llegó a producción) de un proyecto (por defecto las del usuario) agrupadas por acción: ' +
     'ya en pruebas y falta producción, otra versión en pruebas, sin pasar a pruebas, hacia pruebas, ramas inactivas. ' +
     'Para cada PR hacia producción comprueba si su código ya está en la rama de pruebas. Guarda la foto para el tablero.',
   inputSchema: {
@@ -29,12 +29,19 @@ export default {
       if (!grupo.length) continue;
       lineas.push('', `## ${titulo} (${grupo.length})`);
       for (const x of grupo) {
+        const v = x.verificaciones?.resumen;
+        const faltantes = (x.hermanas ?? []).filter((h) => !h.numero).map((h) => h.portal);
         const extra = [
           x.portal,
+          x.estadoPr === 'MERGED' && 'mergeada en pruebas',
           x.estadoPruebas && `${ESTADO[x.estadoPruebas.estado]} ${x.estadoPruebas.iguales}/${x.estadoPruebas.total}${x.estadoPruebas.conflicto ? ' con conflicto' : ''}`,
+          x.sinProd && 'código ausente en producción',
           x.gemela && `gemela #${x.gemela.numero} ${x.gemela.estado}`,
+          faltantes.length && `sin equivalente en ${faltantes.join(', ')}`,
+          v && (v.bloqueante || v.alto) && `verificaciones: ${v.bloqueante} bloqueantes, ${v.alto} altas`,
           `${x.dias} d`,
-          `+${x.adiciones}/-${x.eliminaciones}`,
+          x.adiciones !== undefined && `+${x.adiciones}/-${x.eliminaciones}`,
+          `esfuerzo ${x.explicacion?.esfuerzo ?? x.esfuerzoTamano ?? '?'}/5`,
           x.explicacion ? (x.explicacion.desactualizada ? 'explicación desactualizada' : 'explicada') : 'sin explicación',
         ].filter(Boolean).join(' · ');
         lineas.push(`- ${x.repo}#${x.numero} ${x.titulo} [${extra}]`);

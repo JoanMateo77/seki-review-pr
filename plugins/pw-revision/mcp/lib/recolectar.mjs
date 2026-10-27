@@ -1,13 +1,16 @@
-// Arma la foto de PRs abiertas de un proyecto: ambiente, gemela, estado frente a pruebas y acción sugerida.
+// Arma la foto de PRs de un proyecto: ambiente, gemelas, estado frente a pruebas y producción,
+// verificaciones fijas y acción sugerida.
 import { clasificarBase, proyecto as cargarProyecto } from './config.mjs';
-import { escribirJson, leerJson, rutaCacheEstados, rutaExplicacion, rutaInstantanea } from './cache.mjs';
-import { arbolRama, estadoFrentePruebas } from './estado.mjs';
+import { escribirJson, leerJson, rutaCacheEstados, rutaCacheVerificaciones, rutaExplicacion, rutaInstantanea } from './cache.mjs';
+import { archivosPr, arbolRama, commitsPr, estadoFrentePruebas } from './estado.mjs';
 import { buscarGemela } from './gemelas.mjs';
 import { enParalelo, ghJson } from './proceso.mjs';
+import { verificar } from './verificar.mjs';
 
 const CAMPOS = 'number,title,url,baseRefName,headRefName,createdAt,updatedAt,additions,deletions,changedFiles,isDraft,headRefOid,author';
 
 export const ACCIONES = {
+  pruebas_sin_prod: 'En pruebas sin PR hacia producción',
   solo_prod: 'Ya está en pruebas: falta producción',
   revisar_diferencias: 'En pruebas hay otra versión: revisar diferencias',
   pruebas_abierta: 'No está en pruebas: su PR de pruebas está abierta',
@@ -19,9 +22,16 @@ export const ACCIONES = {
 };
 
 const PAGINAS_GEMELAS = 3;
+const DIAS_HUERFANAS = 30;
+const SOLO_PRUEBAS = /solo pruebas|pruebas only|ambiente de pruebas|^test(\(|:)|sincroniz|traer lo que ya est/i;
 const diasDesde = (fecha) => Math.floor((Date.now() - new Date(fecha)) / 86400000);
 const esSoloPruebasAutomaticas = (titulo) => /^test(\(|:)/i.test(titulo);
 const esSeguridad = (titulo) => /seguridad|sqli|xss|csrf|inyecci/i.test(titulo);
+
+export function esfuerzoPorTamano(lineas, archivos) {
+  const base = lineas <= 30 ? 1 : lineas <= 150 ? 2 : lineas <= 500 ? 3 : lineas <= 1500 ? 4 : 5;
+  return Math.min(5, base + (archivos > 20 ? 1 : 0));
+}
 
 async function prsDeBase(owner, repo, base, cache) {
   const clave = `${repo}@${base}`;
@@ -31,7 +41,18 @@ async function prsDeBase(owner, repo, base, cache) {
       const todas = [];
       for (let pagina = 1; pagina <= PAGINAS_GEMELAS; pagina++) {
         const lote = await ghJson(['api', `repos/${owner}/${repo}/pulls?base=${encodeURIComponent(base)}&state=all&sort=created&direction=desc&per_page=100&page=${pagina}`]);
-        todas.push(...lote.map((x) => ({ number: x.number, title: x.title, state: x.merged_at ? 'MERGED' : x.state.toUpperCase() })));
+        todas.push(...lote.map((x) => ({
+          number: x.number,
+          title: x.title,
+          state: x.merged_at ? 'MERGED' : x.state.toUpperCase(),
+          autor: x.user?.login,
+          url: x.html_url,
+          creada: x.created_at,
+          mergeada: x.merged_at,
+          baseSha: x.base.sha,
+          headSha: x.head.sha,
+          rama: x.head.ref,
+        })));
         if (lote.length < 100) break;
       }
       return todas;
@@ -44,7 +65,7 @@ function accionSugerida(pr) {
   if (pr.ambiente === 'inactiva') return 'inactiva';
   if (pr.ambiente === 'otra') return 'otra';
   if (esSoloPruebasAutomaticas(pr.titulo)) return 'pruebas_automaticas';
-  if (pr.ambiente === 'pruebas') return 'hacia_pruebas';
+  if (pr.ambiente === 'pruebas') return pr.sinProd ? 'pruebas_sin_prod' : 'hacia_pruebas';
   const e = pr.estadoPruebas?.estado;
   if (e === 'en_pruebas') return 'solo_prod';
   if (e === 'parcial') return 'revisar_diferencias';
@@ -54,8 +75,57 @@ function accionSugerida(pr) {
 export async function recolectar({ proyecto: clave = 'demo', repos, incluirInactivas = true } = {}) {
   const p = cargarProyecto(clave);
   const cacheEstados = leerJson(rutaCacheEstados(p.salida), {});
+  const cacheVerif = leerJson(rutaCacheVerificaciones(p.salida), {});
   const listas = new Map();
   const nombres = repos?.length ? repos : Object.keys(p.repos);
+  const login = p.autor === '@me' ? (await ghJson(['api', 'user'])).login : p.autor;
+
+  // ¿El código de la PR ya está en `destino`? Cacheado por commit de la PR y commit del destino.
+  async function estadoEn({ repo, numero, headSha, origen, destino, baseSha }) {
+    const claveCache = `${repo}#${numero}->${destino}`;
+    const destinoSha = (await arbolRama(p.owner, repo, destino)).sha;
+    const previo = cacheEstados[claveCache];
+    if (previo && previo.headSha === headSha && previo.pruebasSha === destinoSha) return previo;
+    const r = { ...(await estadoFrentePruebas({ owner: p.owner, repo, cfgRepo: p.repos[repo], numero, prod: origen, pruebas: destino, baseSha })), headSha };
+    if (!r.provisional) cacheEstados[claveCache] = r;
+    return r;
+  }
+
+  async function verificaciones(repo, numero, headSha) {
+    const claveCache = `${repo}#${numero}`;
+    if (cacheVerif[claveCache]?.headSha === headSha) return cacheVerif[claveCache];
+    const [archivos, commits] = await Promise.all([archivosPr(p.owner, repo, numero), commitsPr(p.owner, repo, numero)]);
+    const r = { headSha, ...verificar({ repo, archivos, commits, omitidas: p.repos[repo]?.reglas_omitidas }) };
+    cacheVerif[claveCache] = r;
+    return r;
+  }
+
+  // Misma tarea en las otras líneas del repo (por ejemplo, el arreglo de Tienda en Admin).
+  async function hermanas(repo, linea, titulo) {
+    const otras = p.repos[repo].lineas.filter((l) => l.prod !== linea.prod);
+    return Promise.all(otras.map(async (l) => {
+      const g = buscarGemela(titulo, await prsDeBase(p.owner, repo, l.prod, listas));
+      return g ? { portal: l.portal, numero: g.numero, estado: g.estado } : { portal: l.portal, numero: null };
+    }));
+  }
+
+  // Ausente en producción solo con evidencia fuerte: ningún archivo coincide. Con coincidencias parciales
+  // lo normal es que el cambio llegó por otra PR y luego producción siguió cambiando esas líneas.
+  const ausenteEnProd = (e) => e.estado === 'no_en_pruebas' && e.iguales === 0;
+
+  // Una PR abierta hacia producción que trae al menos la mitad de los archivos de la PR de pruebas,
+  // idénticos, la cubre aunque el título sea otro (por ejemplo, #463 lleva lo de #459 y #460).
+  async function cubiertaPor(repo, linea, numero) {
+    const propios = await archivosPr(p.owner, repo, numero);
+    if (!propios.length) return null;
+    const candidatas = abiertas.filter((x) => x.repo === repo && x.pr.baseRefName === linea.prod);
+    for (const { pr } of candidatas) {
+      const blobs = new Map((await archivosPr(p.owner, repo, pr.number)).map((a) => [a.filename, a.sha]));
+      const iguales = propios.filter((a) => blobs.get(a.filename) === a.sha).length;
+      if (iguales * 2 >= propios.length) return pr.number;
+    }
+    return null;
+  }
 
   const abiertas = (await Promise.all(nombres.map(async (repo) => {
     const args = ['pr', 'list', '-R', `${p.owner}/${repo}`, '--state', 'open', '--limit', '300', '--json', CAMPOS];
@@ -78,6 +148,7 @@ export async function recolectar({ proyecto: clave = 'demo', repos, incluirInact
       portal: linea.portal,
       ambiente: linea.ambiente,
       motivoInactiva: linea.motivo,
+      estadoPr: 'OPEN',
       autor: pr.author?.login,
       borrador: pr.isDraft,
       creada: pr.createdAt,
@@ -88,23 +159,27 @@ export async function recolectar({ proyecto: clave = 'demo', repos, incluirInact
       archivos: pr.changedFiles,
       headSha: pr.headRefOid,
       seguridad: esSeguridad(pr.title),
+      esfuerzoTamano: esfuerzoPorTamano(pr.additions + pr.deletions, pr.changedFiles),
     };
 
     if (linea.ambiente === 'prod' || linea.ambiente === 'pruebas') {
       const otra = linea.ambiente === 'prod' ? linea.pruebas : linea.prod;
       const candidatas = (await prsDeBase(p.owner, repo, otra, listas)).filter((c) => c.number !== pr.number);
       item.gemela = buscarGemela(pr.title, candidatas);
+      if (cfgRepo.lineas.length > 1) item.hermanas = await hermanas(repo, linea, pr.title);
     }
 
     if (linea.ambiente === 'prod') {
-      const clave = `${repo}#${pr.number}`;
-      const previo = cacheEstados[clave];
-      const pruebasSha = (await arbolRama(p.owner, repo, linea.pruebas)).sha;
-      item.estadoPruebas = previo && previo.headSha === pr.headRefOid && previo.pruebasSha === pruebasSha
-        ? previo
-        : { ...(await estadoFrentePruebas({ owner: p.owner, repo, cfgRepo, numero: pr.number, prod: linea.prod, pruebas: linea.pruebas })), headSha: pr.headRefOid };
-      if (!item.estadoPruebas.provisional) cacheEstados[clave] = item.estadoPruebas;
+      item.estadoPruebas = await estadoEn({ repo, numero: pr.number, headSha: pr.headRefOid, origen: linea.prod, destino: linea.pruebas });
     }
+
+    if (linea.ambiente === 'pruebas' && !SOLO_PRUEBAS.test(pr.title) && (!item.gemela || item.gemela.estado === 'CLOSED')) {
+      item.estadoProd = await estadoEn({ repo, numero: pr.number, headSha: pr.headRefOid, origen: linea.pruebas, destino: linea.prod });
+      item.cubiertaPor = ausenteEnProd(item.estadoProd) ? await cubiertaPor(repo, linea, pr.number) : null;
+      item.sinProd = ausenteEnProd(item.estadoProd) && !item.cubiertaPor;
+    }
+
+    if (linea.ambiente !== 'inactiva') item.verificaciones = await verificaciones(repo, pr.number, pr.headRefOid);
 
     const explicacion = leerJson(rutaExplicacion(p.salida, repo, pr.number));
     if (explicacion) item.explicacion = { ...explicacion, desactualizada: explicacion.headSha !== pr.headRefOid };
@@ -113,10 +188,54 @@ export async function recolectar({ proyecto: clave = 'demo', repos, incluirInact
     return item;
   });
 
-  const visibles = incluirInactivas ? prs : prs.filter((x) => x.ambiente !== 'inactiva');
+  // PRs ya mergeadas en pruebas cuyo código nunca llegó a producción y que no tienen PR hacia producción.
+  const huerfanas = [];
+  for (const repo of nombres) {
+    for (const linea of p.repos[repo].lineas) {
+      const mergeadas = (await prsDeBase(p.owner, repo, linea.pruebas, listas)).filter((x) =>
+        x.state === 'MERGED' && diasDesde(x.mergeada) <= (p.dias_huerfanas ?? DIAS_HUERFANAS) &&
+        (!login || x.autor === login) && !SOLO_PRUEBAS.test(x.title));
+      const prod = await prsDeBase(p.owner, repo, linea.prod, listas);
+      const candidatas = mergeadas.filter((x) => {
+        const g = buscarGemela(x.title, prod);
+        return !g || g.estado === 'CLOSED';
+      });
+      huerfanas.push(...(await enParalelo(candidatas, 4, async (x) => {
+        const estadoProd = await estadoEn({ repo, numero: x.number, headSha: x.headSha, origen: linea.pruebas, destino: linea.prod, baseSha: x.baseSha });
+        if (!ausenteEnProd(estadoProd) || (await cubiertaPor(repo, linea, x.number))) return null;
+        const explicacion = leerJson(rutaExplicacion(p.salida, repo, x.number));
+        return {
+          id: `${repo}#${x.number}`,
+          repo,
+          repoEtiqueta: p.repos[repo].etiqueta ?? repo,
+          numero: x.number,
+          titulo: x.title,
+          url: x.url,
+          base: linea.pruebas,
+          rama: x.rama,
+          portal: linea.portal,
+          ambiente: 'pruebas',
+          estadoPr: 'MERGED',
+          autor: x.autor,
+          creada: x.creada,
+          dias: diasDesde(x.creada),
+          headSha: x.headSha,
+          seguridad: esSeguridad(x.title),
+          estadoProd,
+          sinProd: true,
+          explicacion: explicacion && { ...explicacion, desactualizada: explicacion.headSha !== x.headSha },
+          accion: 'pruebas_sin_prod',
+        };
+      })).filter(Boolean));
+    }
+  }
+
+  const todas = [...prs, ...huerfanas];
+  const visibles = incluirInactivas ? todas : todas.filter((x) => x.ambiente !== 'inactiva');
   visibles.sort((a, b) => a.repo.localeCompare(b.repo) || b.numero - a.numero);
   const instantanea = { proyecto: p.nombre ?? clave, clave, generado: new Date().toISOString(), owner: p.owner, acciones: ACCIONES, prs: visibles };
   escribirJson(rutaCacheEstados(p.salida), cacheEstados);
+  escribirJson(rutaCacheVerificaciones(p.salida), cacheVerif);
   escribirJson(rutaInstantanea(p.salida), instantanea);
   return instantanea;
 }

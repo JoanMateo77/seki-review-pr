@@ -38,6 +38,20 @@ export default {
       riesgos: lista,
       dependencias: { ...lista, description: 'PRs, SQL o variables que deben ir antes' },
       riesgo: { type: 'string', enum: ['bajo', 'medio', 'alto'] },
+      esfuerzo: { type: 'integer', minimum: 1, maximum: 5, description: 'Esfuerzo de revisión: 1 = minutos, 5 = media jornada o más' },
+      orden_lectura: {
+        type: 'array',
+        description: 'Archivos en el orden en que conviene leerlos, empezando por donde nace el cambio',
+        items: {
+          type: 'object',
+          required: ['archivo', 'motivo'],
+          properties: { archivo: { type: 'string' }, motivo: { type: 'string' } },
+        },
+      },
+      diagrama: {
+        type: 'string',
+        description: 'Solo si el cambio altera un flujo entre componentes: sequenceDiagram de Mermaid con el flujo nuevo, sin nombres de funciones',
+      },
     },
   },
   async handler({ proyecto, repo, numero, ...campos }) {

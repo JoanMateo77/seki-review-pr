@@ -75,6 +75,8 @@ th { color: var(--tenue); font-weight: 600; }
 .boton.primario { background: var(--acento); border-color: var(--acento); color: #fff; }
 a { color: var(--acento); }
 code { font-family: var(--mono); font-size: 12px; background: var(--fondo); padding: 1px 5px; border-radius: 4px; }
+pre.mermaid { background: var(--fondo); border-radius: 6px; padding: 12px; overflow: auto; font-size: 12px; }
+.detalle ol { margin: 0; padding-left: 20px; }
 .aviso-caja { background: var(--aviso-suave); color: var(--aviso); padding: 8px 12px; border-radius: 6px; margin-top: 12px; }
 @media (max-width: 860px) {
   header, .resumen, .filtros, main { padding-left: 16px; padding-right: 16px; }
@@ -95,6 +97,7 @@ code { font-family: var(--mono); font-size: 12px; background: var(--fondo); padd
   <select id="portal"><option value="">Todos los portales</option></select>
   <select id="riesgo"><option value="">Cualquier riesgo</option><option value="alto">Riesgo alto</option><option value="medio">Riesgo medio</option><option value="bajo">Riesgo bajo</option></select>
   <label><input type="checkbox" id="seguridad"> Solo seguridad</label>
+  <label><input type="checkbox" id="conHallazgos"> Con hallazgos altos</label>
   <label><input type="checkbox" id="sinExplicacion"> Sin explicación</label>
   <label><input type="checkbox" id="inactivas"> Incluir ramas inactivas</label>
 </div>
@@ -109,7 +112,7 @@ const ESTADO = {
   parcial: ['Otra versión en pruebas', 'aviso'],
   no_en_pruebas: ['No está en pruebas', 'mal'],
 };
-const ORDEN_ACCION = ['solo_prod', 'revisar_diferencias', 'pruebas_abierta', 'sin_pruebas', 'hacia_pruebas', 'pruebas_automaticas', 'otra', 'inactiva'];
+const ORDEN_ACCION = ['pruebas_sin_prod', 'solo_prod', 'revisar_diferencias', 'pruebas_abierta', 'sin_pruebas', 'hacia_pruebas', 'pruebas_automaticas', 'otra', 'inactiva'];
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const guardado = (k, v) => { try { if (v === undefined) return JSON.parse(localStorage.getItem(k)); localStorage.setItem(k, JSON.stringify(v)); } catch { return null; } };
@@ -125,6 +128,7 @@ function filtrar() {
     if ($('portal').value && pr.portal !== $('portal').value) return false;
     if ($('riesgo').value && pr.explicacion?.riesgo !== $('riesgo').value) return false;
     if ($('seguridad').checked && !pr.seguridad) return false;
+    if ($('conHallazgos').checked && !(pr.verificaciones?.resumen.bloqueante || pr.verificaciones?.resumen.alto)) return false;
     if ($('sinExplicacion').checked && pr.explicacion && !pr.explicacion.desactualizada) return false;
     if (q && !`${pr.numero} #${pr.numero} ${pr.titulo} ${pr.rama} ${pr.repo}`.toLowerCase().includes(q)) return false;
     return true;
@@ -137,14 +141,50 @@ function etiquetas(pr) {
     const [txt, cls] = ESTADO[pr.estadoPruebas.estado] ?? [pr.estadoPruebas.estado, ''];
     t.push(`<span class="etq ${cls}">${txt}</span>`);
   }
-  if (pr.ambiente === 'pruebas') t.push('<span class="etq">Hacia pruebas</span>');
+  if (pr.ambiente === 'pruebas') t.push(`<span class="etq">${pr.estadoPr === 'MERGED' ? 'Mergeada en pruebas' : 'Hacia pruebas'}</span>`);
+  if (pr.sinProd) t.push('<span class="etq mal">Código no encontrado en producción</span>');
+  if (pr.cubiertaPor) t.push(`<span class="etq">Cubierta por #${pr.cubiertaPor}</span>`);
   if (pr.gemela) t.push(`<span class="etq">Gemela #${pr.gemela.numero} ${pr.gemela.estado === 'MERGED' ? 'mergeada' : pr.gemela.estado === 'OPEN' ? 'abierta' : 'cerrada'}</span>`);
+  const faltantes = (pr.hermanas ?? []).filter((h) => !h.numero).map((h) => h.portal);
+  if (faltantes.length) t.push(`<span class="etq aviso">Sin equivalente en ${esc(faltantes.join(', '))}</span>`);
   if (pr.seguridad) t.push('<span class="etq mal">Seguridad</span>');
+  const v = pr.verificaciones?.resumen;
+  if (v?.bloqueante) t.push(`<span class="etq mal">${v.bloqueante} bloqueante${v.bloqueante > 1 ? 's' : ''}</span>`);
+  if (v?.alto) t.push(`<span class="etq aviso">${v.alto} hallazgo${v.alto > 1 ? 's' : ''} alto${v.alto > 1 ? 's' : ''}</span>`);
   if (pr.explicacion?.riesgo) t.push(`<span class="etq ${pr.explicacion.riesgo === 'alto' ? 'mal' : pr.explicacion.riesgo === 'medio' ? 'aviso' : 'ok'}">Riesgo ${pr.explicacion.riesgo}</span>`);
   if (!pr.explicacion) t.push('<span class="etq">Sin explicación</span>');
   else if (pr.explicacion.desactualizada) t.push('<span class="etq aviso">Explicación desactualizada</span>');
-  t.push(`<span class="etq">${pr.dias} días</span>`, `<span class="etq">+${pr.adiciones} / -${pr.eliminaciones}</span>`);
+  const esfuerzo = pr.explicacion?.esfuerzo ?? pr.esfuerzoTamano;
+  if (esfuerzo) t.push(`<span class="etq" title="${pr.explicacion?.esfuerzo ? 'Según la explicación' : 'Estimado por tamaño'}">Esfuerzo ${esfuerzo}/5</span>`);
+  t.push(`<span class="etq">${pr.dias} días</span>`);
+  if (pr.adiciones !== undefined) t.push(`<span class="etq">+${pr.adiciones} / -${pr.eliminaciones}</span>`);
   return t.join('');
+}
+
+const SEVERIDAD_CLASE = { bloqueante: 'mal', alto: 'aviso', medio: '', aviso: '' };
+
+function seccionVerificaciones(pr) {
+  const v = pr.verificaciones;
+  if (!v) return '';
+  if (!v.hallazgos.length) return '<h3>Verificaciones automáticas</h3><p class="vacio">Sin hallazgos en las líneas agregadas.</p>';
+  const archivoUrl = (h) => (h.linea ? `${pr.url}/files` : pr.url);
+  return `<h3>Verificaciones automáticas</h3>
+    <table><thead><tr><th>Severidad</th><th>Regla</th><th>Dónde</th><th>Qué hacer</th></tr></thead><tbody>
+    ${v.hallazgos.map((h) => `<tr>
+      <td><span class="etq ${SEVERIDAD_CLASE[h.severidad]}">${esc(h.severidad)}</span></td>
+      <td><b>${esc(h.titulo)}</b><br><span class="vacio">${esc(h.origen)}</span></td>
+      <td><a href="${esc(archivoUrl(h))}" target="_blank" rel="noopener"><code>${esc(h.archivo)}${h.linea ? ':' + h.linea : ''}</code></a>${h.texto ? `<br><code>${esc(h.texto)}</code>` : ''}</td>
+      <td>${esc(h.mensaje)}</td></tr>`).join('')}
+    </tbody></table>
+    <p class="vacio">Una línea se excluye con el comentario <code>pw-revision: ignorar &lt;regla&gt;</code>.</p>`;
+}
+
+function datoHermanas(pr) {
+  if (!pr.hermanas?.length) return '';
+  const enlace = (h) => h.numero
+    ? `<a href="https://github.com/${esc(FOTO.owner)}/${esc(pr.repo)}/pull/${h.numero}" target="_blank" rel="noopener">#${h.numero}</a> (${esc(h.estado)})`
+    : 'no encontrada';
+  return `<div class="dato"><span>Mismo cambio en otros portales</span>${pr.hermanas.map((h) => `${esc(h.portal)}: ${enlace(h)}`).join('<br>')}</div>`;
 }
 
 function pintarResumen() {
@@ -183,8 +223,11 @@ function pintarDetalle(pr) {
       <div class="dato"><span>Acción</span>${esc(FOTO.acciones[pr.accion])}</div>
       ${ep ? `<div class="dato"><span>Frente a pruebas</span>${ep.iguales} de ${ep.total} archivos iguales${ep.conflicto ? ', con conflicto' : ''}<div class="barra"><i style="width:${pct}%"></i></div><span>${metodo}</span></div>` : ''}
       ${pr.gemela ? `<div class="dato"><span>PR gemela</span><a href="https://github.com/${esc(FOTO.owner)}/${esc(pr.repo)}/pull/${pr.gemela.numero}" target="_blank" rel="noopener">#${pr.gemela.numero}</a> (${esc(pr.gemela.estado)})</div>` : ''}
-      <div class="dato"><span>Tamaño</span>${pr.archivos} archivos, +${pr.adiciones} / -${pr.eliminaciones}</div>
-      <div class="dato"><span>Abierta</span>${esc(pr.creada.slice(0, 10))} (${pr.dias} días)</div>
+      ${pr.estadoProd ? `<div class="dato"><span>Frente a producción</span>${pr.estadoProd.iguales} de ${pr.estadoProd.total} archivos iguales${pr.cubiertaPor ? `; la PR #${pr.cubiertaPor} hacia producción trae los mismos archivos` : ''}</div>` : ''}
+      ${datoHermanas(pr)}
+      ${pr.adiciones !== undefined ? `<div class="dato"><span>Tamaño</span>${pr.archivos} archivos, +${pr.adiciones} / -${pr.eliminaciones}</div>` : ''}
+      <div class="dato"><span>Esfuerzo de revisión</span>${pr.explicacion?.esfuerzo ?? pr.esfuerzoTamano ?? 'sin dato'} de 5<span>${pr.explicacion?.esfuerzo ? 'según la explicación' : 'estimado por tamaño'}</span></div>
+      <div class="dato"><span>${pr.estadoPr === 'MERGED' ? 'Creada' : 'Abierta'}</span>${esc(pr.creada.slice(0, 10))} (${pr.dias} días)</div>
       ${pr.motivoInactiva ? `<div class="dato"><span>Rama inactiva</span>${esc(pr.motivoInactiva)}</div>` : ''}
     </div>
     <div class="acciones">
@@ -193,11 +236,14 @@ function pintarDetalle(pr) {
       <button class="boton" data-copiar="/plannotator-review ${esc(pr.url)}">Copiar: revisar línea por línea</button>
     </div>
     ${e?.desactualizada ? '<div class="aviso-caja">La PR recibió commits después de esta explicación. Conviene regenerarla.</div>' : ''}
+    ${seccionVerificaciones(pr)}
     ${e ? `
       <h3>Resumen</h3><p>${esc(e.resumen)}</p>
       <h3>Por qué</h3><p>${esc(e.por_que)}</p>
       ${e.impacto_usuario ? `<h3>Qué nota quien usa el portal</h3><p>${esc(e.impacto_usuario)}</p>` : ''}
       <h3>Qué cambia</h3>${listaHtml(e.que_cambia)}
+      ${e.orden_lectura?.length ? `<h3>Orden de lectura</h3><ol>${e.orden_lectura.map((o) => `<li><code>${esc(o.archivo)}</code> &middot; ${esc(o.motivo)}</li>`).join('')}</ol>` : ''}
+      ${e.diagrama ? `<h3>Flujo</h3><pre class="mermaid">${esc(e.diagrama.replace(/#(?!\d+;)/g, '#35;'))}</pre>` : ''}
       ${e.tecnologias?.length ? `<h3>Tecnologías</h3><table><thead><tr><th>Tecnología</th><th>Uso en este cambio</th><th>Por qué esta</th><th>Descartadas</th></tr></thead><tbody>
         ${e.tecnologias.map((t) => `<tr><td><b>${esc(t.nombre)}</b></td><td>${esc(t.uso)}</td><td>${esc(t.por_que)}</td><td>${esc((t.alternativas_descartadas ?? []).join('; '))}</td></tr>`).join('')}
       </tbody></table>` : ''}
@@ -208,10 +254,30 @@ function pintarDetalle(pr) {
       <p class="vacio" style="margin-top:16px">Explicación del ${esc(e.fecha?.slice(0, 10))} sobre el commit <code>${esc(e.headSha?.slice(0, 7))}</code>.</p>
     ` : `<h3>Explicación</h3><p class="vacio">Esta PR aún no tiene explicación. En Claude Code: <code>/pw-revision:revisar-prs explicar ${esc(pr.repo)}#${pr.numero}</code></p>`}
   `;
+  pintarDiagramas();
   $('detalle').querySelectorAll('[data-paso]').forEach((c) => c.addEventListener('change', () => {
     const actuales = [...$('detalle').querySelectorAll('[data-paso]:checked')].map((x) => +x.dataset.paso);
     guardado(claveChecklist, actuales);
   }));
+}
+
+// Mermaid se carga del CDN solo si alguna PR tiene diagrama; sin red se ve el texto del diagrama.
+let mermaidListo = null;
+function pintarDiagramas() {
+  const nodos = $('detalle').querySelectorAll('pre.mermaid');
+  if (!nodos.length) return;
+  mermaidListo ??= new Promise((ok, falla) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js';
+    s.onload = () => {
+      const oscuro = matchMedia('(prefers-color-scheme: dark)').matches;
+      window.mermaid.initialize({ startOnLoad: false, theme: oscuro ? 'dark' : 'neutral', securityLevel: 'strict' });
+      ok(window.mermaid);
+    };
+    s.onerror = falla;
+    document.head.appendChild(s);
+  });
+  mermaidListo.then((m) => m.run({ nodes: nodos })).catch(() => {});
 }
 
 function pintar() { pintarResumen(); pintarLista(); }
@@ -219,7 +285,7 @@ function pintar() { pintarResumen(); pintarLista(); }
 $('titulo').textContent = `Revisión de PRs · ${FOTO.proyecto}`;
 $('meta').textContent = `${FOTO.prs.length} PRs abiertas · datos de GitHub del ${new Date(FOTO.generado).toLocaleString('es-CO')}`;
 [...new Set(FOTO.prs.map((p) => p.portal))].sort().forEach((p) => $('portal').insertAdjacentHTML('beforeend', `<option>${esc(p)}</option>`));
-['buscar', 'portal', 'riesgo', 'seguridad', 'sinExplicacion', 'inactivas'].forEach((id) => $(id).addEventListener('input', pintar));
+['buscar', 'portal', 'riesgo', 'seguridad', 'conHallazgos', 'sinExplicacion', 'inactivas'].forEach((id) => $(id).addEventListener('input', pintar));
 $('resumen').addEventListener('click', (ev) => {
   const b = ev.target.closest('[data-accion]');
   if (!b) return;
