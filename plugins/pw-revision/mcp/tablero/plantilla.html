@@ -55,7 +55,7 @@ input[type=checkbox], input[type=radio] { accent-color: var(--acento); }
 svg.i { width: 14px; height: 14px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; vertical-align: -2px; }
 
 /* Estructura: barra superior + lateral + cola + detalle */
-.app { display: grid; grid-template-columns: 232px minmax(360px, 1fr) minmax(460px, 1.35fr); grid-template-rows: 48px 1fr; height: 100vh; }
+.app { --ancho-lateral: 232px; --ancho-cola: clamp(300px, 27vw, 440px); display: grid; grid-template-columns: var(--ancho-lateral) var(--ancho-cola) minmax(0, 1fr); grid-template-rows: 48px 1fr; height: 100vh; }
 .barra { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; padding: 0 16px; border-bottom: 1px solid var(--linea); background: var(--panel); }
 .btn-lateral { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; margin-left: -6px; border: 0; border-radius: 6px; background: none; color: var(--texto-2); cursor: pointer; }
 .btn-lateral:hover { background: var(--hover); color: var(--texto); }
@@ -192,8 +192,10 @@ textarea { width: 100%; min-height: 96px; padding: 8px 10px; border: 1px solid v
 
 /* Diff */
 body[data-enfoque] .app { grid-template-columns: 1fr; }
-body[data-sin-lateral] .app { grid-template-columns: minmax(360px, 1fr) minmax(460px, 1.35fr); }
-body[data-sin-lateral] .lateral { display: none; }
+body[data-sin-lateral] .app { grid-template-columns: var(--ancho-cola) minmax(0, 1fr); }
+body[data-sin-cola] .app { grid-template-columns: var(--ancho-lateral) minmax(0, 1fr); }
+body[data-sin-lateral][data-sin-cola] .app { grid-template-columns: minmax(0, 1fr); }
+body[data-sin-lateral] .lateral, body[data-sin-cola] .cola { display: none; }
 body[data-enfoque] .btn-lateral { display: none; }
 body[data-enfoque] .lateral, body[data-enfoque] .cola { display: none; }
 .det.ancho { max-width: none; }
@@ -234,6 +236,13 @@ body[data-enfoque] .lateral, body[data-enfoque] .cola { display: none; }
 .codigo-diff { container-type: inline-size; }
 .caja-com, .hilo-com { position: sticky; left: 8px; box-sizing: border-box; width: min(720px, calc(100cqw - 110px)); margin: 6px 10px 8px 0; padding: 10px 12px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--panel); }
 .hilo-com { border-color: var(--linea); }
+.hilos-pr { display: grid; gap: 8px; margin-top: 10px; }
+.hilos-pr .hilo-com, .pregunta-pr .hilo-com { position: static; width: auto; margin: 0; }
+h3.con-accion { display: flex; align-items: center; gap: 10px; }
+h3.con-accion .btn-texto { display: inline-flex; align-items: center; gap: 4px; font-weight: 400; opacity: .55; transition: opacity .12s; }
+.seccion:hover h3.con-accion .btn-texto, h3.con-accion .btn-texto:focus-visible { opacity: 1; }
+.pregunta-pr textarea { width: 100%; box-sizing: border-box; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--panel); color: var(--texto); font: inherit; resize: vertical; }
+.pregunta-pr select { padding: 4px 8px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--panel); color: var(--texto); font: inherit; }
 .caja-cab, .hilo-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 8px; }
 .tabs-caja { display: inline-flex; border: 1px solid var(--linea-fuerte); border-radius: 6px; overflow: hidden; }
 .tabs-caja button { height: 24px; padding: 0 10px; border: 0; border-right: 1px solid var(--linea-fuerte); background: none; color: var(--texto-2); font-size: 12px; cursor: pointer; }
@@ -279,14 +288,14 @@ body[data-enfoque] .lateral, body[data-enfoque] .cola { display: none; }
 .aviso-diff { padding: 10px 14px; color: var(--texto-2); }
 
 @media (max-width: 1180px) {
-  .app { grid-template-columns: 200px minmax(320px, 1fr) minmax(400px, 1.2fr); }
-  body[data-sin-lateral] .app { grid-template-columns: minmax(320px, 1fr) minmax(400px, 1.2fr); }
+  .app { --ancho-lateral: 200px; --ancho-cola: clamp(280px, 30vw, 380px); }
   .barra .foto { display: none; }
 }
 @media (max-width: 900px) {
   .app { display: block; height: auto; }
   .btn-lateral { display: none; }
   body[data-sin-lateral] .lateral { display: flex; }
+  body[data-sin-cola] .cola { display: block; }
   .barra { position: sticky; top: 0; z-index: 3; flex-wrap: wrap; height: auto; padding: 10px 16px; }
   .buscar { order: 3; flex-basis: 100%; max-width: none; margin: 0; }
   .rol { margin-left: auto; }
@@ -344,6 +353,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   <symbol id="i-chispa" viewBox="0 0 16 16"><path d="M8 1.8v3M8 11.2v3M1.8 8h3M11.2 8h3M3.6 3.6l2 2M10.4 10.4l2 2M12.4 3.6l-2 2M5.6 10.4l-2 2"/></symbol>
   <symbol id="i-actualizar" viewBox="0 0 16 16"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></symbol>
   <symbol id="i-lateral" viewBox="0 0 16 16"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M6 2.5v11"/></symbol>
+  <symbol id="i-cola" viewBox="0 0 16 16"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M6 2.5v11M7.8 5.5h2.4M7.8 8h2.4M7.8 10.5h2.4"/></symbol>
   <symbol id="i-comentario" viewBox="0 0 16 16"><path d="M2.5 3.5h11v7.5h-6l-3 2.5V11h-2V3.5Z"/></symbol>
   <symbol id="i-subir" viewBox="0 0 16 16"><path d="M8 10.5v-8M4.8 5.7 8 2.5l3.2 3.2M3 13.5h10"/></symbol>
 </svg>
@@ -351,6 +361,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 <div class="app">
   <header class="barra">
     <button class="btn-lateral" data-accion="lateral" aria-label="Mostrar u ocultar el menú lateral" aria-pressed="true" title="Menú lateral ( [ )"><svg class="i" aria-hidden="true"><use href="#i-lateral"/></svg></button>
+    <button class="btn-lateral" data-accion="cola" aria-label="Mostrar u ocultar la cola de PRs" aria-pressed="true" title="Cola de PRs ( ] )" style="margin-left:-12px"><svg class="i" aria-hidden="true"><use href="#i-cola"/></svg></button>
     <h1 id="titulo">Revisión de PRs</h1>
     <span class="foto" id="foto"></span>
     <label class="buscar">
@@ -507,7 +518,7 @@ function pintarLateral() {
       <h2>Revisión</h2>
       <button class="nav" data-accion="exportar">${icono('descargar')} Exportar revisión</button>
       <button class="nav" data-accion="importar">${icono('subir')} Importar revisión</button>
-      <div class="ayuda"><span><kbd>j</kbd> <kbd>k</kbd> moverse en la cola</span><span><kbd>o</kbd> abrir en GitHub</span><span><kbd>/</kbd> buscar</span><span><kbd>[</kbd> menú lateral</span></div>
+      <div class="ayuda"><span><kbd>j</kbd> <kbd>k</kbd> moverse en la cola</span><span><kbd>o</kbd> abrir en GitHub</span><span><kbd>/</kbd> buscar</span><span><kbd>[</kbd> menú lateral</span><span><kbd>]</kbd> cola</span></div>
     </div>`;
 }
 
@@ -654,7 +665,25 @@ function pilaEstados(pr) {
 }
 
 const lista = (items) => (items?.length ? `<ul>${items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : '<p class="sin-dato">Sin datos.</p>');
-const sec = (titulo, cuerpo) => `<div class="seccion"><h3>${titulo}</h3>${cuerpo}</div>`;
+const sec = (titulo, cuerpo, clave) => {
+  if (!clave || !API) return `<div class="seccion"><h3>${titulo}</h3>${cuerpo}</div>`;
+  const pr = prSel();
+  const hilos = pr ? dePr(pr, clave) : [];
+  return `<div class="seccion"><h3 class="con-accion">${titulo}<button type="button" class="btn-texto" data-ampliar="${clave}" title="La IA amplía esta sección con ejemplos del diff">${icono('chispa')} Ampliar</button></h3>${cuerpo}
+    ${hilos.length ? `<div class="hilos-pr">${hilos.map(hiloCuerpo).join('')}</div>` : ''}</div>`;
+};
+
+function preguntaPrHtml(pr) {
+  if (!API) return '';
+  const generales = dePr(pr, null);
+  const opciones = Object.entries(SECCIONES).filter(([k]) => pr.explicacion?.[k]?.length || k === 'resumen')
+    .map(([k, t]) => `<option value="${k}">${esc(t)}</option>`).join('');
+  return `<div class="seccion pregunta-pr"><h3>Preguntar sobre esta PR</h3>
+    ${generales.length ? `<div class="hilos-pr">${generales.map(hiloCuerpo).join('')}</div>` : ''}
+    <textarea id="preguntaPr" rows="3" placeholder="Por ejemplo: ¿qué pasa con los webhooks que ya estaban configurados en producción?" aria-label="Pregunta sobre la PR"></textarea>
+    <div class="prop-acciones"><select id="preguntaPrSeccion" aria-label="Sobre qué parte"><option value="">Toda la PR</option>${opciones}</select>
+      <button type="button" class="btn chico primario" data-accion="preguntarPr">Preguntar</button><span class="muy-tenue">Ctrl + Enter</span></div></div>`;
+}
 
 function tabResumen(pr) {
   const e = pr.explicacion;
@@ -670,19 +699,20 @@ function tabResumen(pr) {
   }
   return `
     ${e.desactualizada ? `<div class="seccion"><span class="estado ambar">${icono('alerta')} La PR recibió commits después de esta explicación</span></div>` : ''}
-    ${sec('Qué resuelve', `<p>${esc(e.resumen)}</p>`)}
-    ${sec('Por qué', `<p>${esc(e.por_que)}</p>`)}
-    ${e.impacto_usuario ? sec('Qué nota quien usa el portal', `<p>${esc(e.impacto_usuario)}</p>`) : ''}
-    ${sec('Qué cambia', lista(e.que_cambia))}
-    ${e.orden_lectura?.length ? sec('Orden de lectura', `<ol class="lectura">${e.orden_lectura.map((o) => `<li><span class="mono">${esc(o.archivo)}</span><br><span class="tenue">${esc(o.motivo)}</span></li>`).join('')}</ol>`) : ''}
-    ${e.diagrama ? sec('Flujo', `<pre class="mermaid">${esc(e.diagrama.replace(/#(?!\d+;)/g, '#35;'))}</pre>`) : ''}
+    ${sec('Qué resuelve', `<p>${esc(e.resumen)}</p>`, 'resumen')}
+    ${sec('Por qué', `<p>${esc(e.por_que)}</p>`, 'por_que')}
+    ${e.impacto_usuario ? sec('Qué nota quien usa el portal', `<p>${esc(e.impacto_usuario)}</p>`, 'impacto_usuario') : ''}
+    ${sec('Qué cambia', lista(e.que_cambia), 'que_cambia')}
+    ${e.orden_lectura?.length ? sec('Orden de lectura', `<ol class="lectura">${e.orden_lectura.map((o) => `<li><span class="mono">${esc(o.archivo)}</span><br><span class="tenue">${esc(o.motivo)}</span></li>`).join('')}</ol>`, 'orden_lectura') : ''}
+    ${e.diagrama ? sec('Flujo', `<pre class="mermaid">${esc(e.diagrama.replace(/#(?!\d+;)/g, '#35;'))}</pre>`, 'diagrama') : ''}
     ${e.tecnologias?.length ? sec('Tecnologías', `<div class="tabla"><table><thead><tr><th>Tecnología</th><th>Uso en este cambio</th><th>Por qué esta</th><th>Descartadas</th></tr></thead><tbody>
       ${e.tecnologias.map((t) => `<tr><td><strong>${esc(t.nombre)}</strong></td><td>${esc(t.uso)}</td><td>${esc(t.por_que)}</td><td class="tenue">${esc((t.alternativas_descartadas ?? []).join(' '))}</td></tr>`).join('')}
-      </tbody></table></div>`) : ''}
-    ${e.alternativas?.length ? sec('Alternativas consideradas', lista(e.alternativas)) : ''}
-    ${e.dependencias?.length ? sec('Debe ir antes', lista(e.dependencias)) : ''}
-    ${e.riesgos?.length ? sec('Riesgos', lista(e.riesgos)) : ''}
-    <p class="nota-pie">Explicación del ${esc(e.fecha?.slice(0, 10))} sobre el commit <span class="mono">${esc(e.headSha?.slice(0, 7))}</span>${e.riesgo ? ` · riesgo ${esc(e.riesgo)}` : ''}${e.esfuerzo ? ` · esfuerzo ${e.esfuerzo} de 5` : ''}.</p>`;
+      </tbody></table></div>`, 'tecnologias') : ''}
+    ${e.alternativas?.length ? sec('Alternativas consideradas', lista(e.alternativas), 'alternativas') : ''}
+    ${e.dependencias?.length ? sec('Debe ir antes', lista(e.dependencias), 'dependencias') : ''}
+    ${e.riesgos?.length ? sec('Riesgos', lista(e.riesgos), 'riesgos') : ''}
+    ${preguntaPrHtml(pr)}
+    <p class="nota-pie">Explicación del ${esc(e.fecha?.slice(0, 10))} sobre el commit <span class="mono">${esc(e.headSha?.slice(0, 7))}</span>${e.riesgo ? ` · riesgo ${esc(e.riesgo)}` : ''}${e.esfuerzo ? ` · esfuerzo ${e.esfuerzo} de 5` : ''}.${API ? ` <button type="button" class="btn-texto" data-accion="analizar" ${trabajoActivo(pr) ? 'disabled' : ''}>Volver a analizar con IA</button>` : ''}</p>`;
 }
 
 function tabVerificaciones(pr) {
@@ -743,6 +773,25 @@ const ESTADOS_COMENTARIO = {
 const claveComentarios = (pr) => `pw-revision:comentarios:${pr.id}`;
 const comentarios = (pr) => almacen.leer(claveComentarios(pr), []);
 const vivos = (pr) => comentarios(pr).filter((c) => c.estado !== 'descartado');
+const deLineas = (pr) => vivos(pr).filter((c) => !c.ambito);
+const dePr = (pr, seccion) => vivos(pr).filter((c) => c.ambito === 'pr' && (c.seccion ?? null) === (seccion ?? null));
+const SECCIONES = {
+  resumen: 'Qué resuelve', por_que: 'Por qué', impacto_usuario: 'Qué nota quien usa el portal', que_cambia: 'Qué cambia',
+  orden_lectura: 'Orden de lectura', diagrama: 'Flujo', tecnologias: 'Tecnologías', alternativas: 'Alternativas consideradas',
+  dependencias: 'Debe ir antes', riesgos: 'Riesgos', como_probar: 'Cómo probar',
+};
+
+// Preguntas sobre la PR o una sección de la explicación: se envían al momento, sin pasar por "Revisión pendiente".
+async function preguntarPr(pr, seccion, textoFijo) {
+  const caja = $('preguntaPr');
+  const texto = (textoFijo ?? caja?.value ?? '').trim();
+  if (!texto) { avisar('Escriba la pregunta antes de enviarla.'); return caja?.focus(); }
+  const sobre = seccion ?? ($('preguntaPrSeccion')?.value || undefined);
+  const c = { id: nuevoIdComentario(), creado: new Date().toISOString(), tipo: 'pregunta', estado: 'borrador', ambito: 'pr', seccion: sobre, texto, headSha: pr.headSha };
+  guardarComentario(pr, c);
+  if (caja && !textoFijo) caja.value = '';
+  await enviarRevision(pr, [c.id]);
+}
 const borradores = (pr) => comentarios(pr).filter((c) => c.estado === 'borrador');
 // El servidor no envía comentarios hechos sobre otro commit; al editarlos se anclan al commit actual.
 const deOtroCommit = (pr, c) => !!c.headSha && c.headSha !== pr.headSha;
@@ -827,18 +876,21 @@ function cajaHtml(rango) {
   </div></td></tr>`;
 }
 
-function hiloHtml(c) {
+const hiloHtml = (c) => `<tr class="hilo"><td class="n"></td><td class="n"></td><td>${hiloCuerpo(c)}</td></tr>`;
+
+function hiloCuerpo(c) {
   const [txt, cls] = ESTADOS_COMENTARIO[c.estado] ?? [c.estado, ''];
-  const editable = c.estado === 'borrador' || c.estado === 'nota';
-  return `<tr class="hilo"><td class="n"></td><td class="n"></td><td><div class="hilo-com">
-    <div class="hilo-cab"><strong>${TIPOS_COMENTARIO[c.tipo]?.etiqueta ?? esc(c.tipo)}</strong><span class="mono muy-tenue">${rangoTexto(c)}</span><span class="punto-estado ${cls}">${esc(txt)}</span>
-      ${editable ? `<span class="der"><button type="button" class="btn-texto" data-com-editar="${esc(c.id)}">Editar</button><button type="button" class="btn-texto" data-com-borrar="${esc(c.id)}">Borrar</button></span>` : ''}</div>
+  const editable = (c.estado === 'borrador' || c.estado === 'nota') && !c.ambito;
+  const donde = c.ambito === 'pr' ? (c.seccion ? esc(SECCIONES[c.seccion] ?? '') : 'Toda la PR') : rangoTexto(c);
+  return `<div class="hilo-com">
+    <div class="hilo-cab"><strong>${TIPOS_COMENTARIO[c.tipo]?.etiqueta ?? esc(c.tipo)}</strong><span class="mono muy-tenue">${donde}</span><span class="punto-estado ${cls}">${esc(txt)}</span>
+      ${editable ? `<span class="der"><button type="button" class="btn-texto" data-com-editar="${esc(c.id)}">Editar</button><button type="button" class="btn-texto" data-com-borrar="${esc(c.id)}">Borrar</button></span>` : ''}${c.ambito && c.estado === 'borrador' ? `<span class="der"><button type="button" class="btn-texto" data-com-borrar="${esc(c.id)}">Borrar</button></span>` : ''}</div>
     <div class="hilo-texto">${esc(c.texto)}</div>
     ${c.sugerido !== undefined ? `<pre class="sugerido" aria-label="Código sugerido">${esc(c.sugerido)}</pre>` : ''}
     ${c.respuesta ? `<div class="hilo-respuesta">${esc(c.respuesta)}<div class="hilo-pie muy-tenue">${c.desdeCache ? 'Respuesta guardada, sin costo' : `${esc(nombreModelo(c.modelo))}${c.costo ? ` · ${usd(c.costo)}${Number(c.lote) > 1 ? ` por el lote de ${Number(c.lote)}` : ''}` : ''}`}<button type="button" class="btn-texto" data-com-repreguntar="${esc(c.id)}">Repreguntar</button></div></div>` : ''}
     ${c.propuestaId ? propuestaHtml(c) : ''}
     ${c.estado === 'error' && c.motivo ? `<div class="hilo-motivo">${esc(c.motivo)}${API && c.tipo !== 'nota' ? ` <button type="button" class="btn-texto" data-com-reintentar="${esc(c.id)}">Reintentar</button>` : ''}</div>` : ''}
-  </div></td></tr>`;
+  </div>`;
 }
 
 // Propuestas de cambio de la IA, pedidas al servidor bajo demanda.
@@ -1085,7 +1137,7 @@ function tabArchivos(pr) {
   estado.lineasArchivo = archivos.map((a) => (a.patch !== undefined ? PWAnclaje.lineasDePatch(a.patch) : []));
   estado.archivosTab = archivos.map((a) => a.filename);
   if (API && !estado.comentariosCargados.has(pr.id)) { estado.comentariosCargados.add(pr.id); sincronizarComentarios(pr); }
-  const lista = vivos(pr);
+  const lista = deLineas(pr);
   const anclados = archivos.map((_, k) => new Map());
   const sueltos = archivos.map(() => []);
   const fuera = [];
@@ -1340,6 +1392,15 @@ const prSel = () => FOTO.prs.find((p) => p.id === estado.seleccion);
 function repreguntar(pr, id) {
   const c = comentarios(pr).find((x) => x.id === id);
   if (!c) return;
+  const resumenDe = (t) => { const r = t.replace(/\s+/g, ' '); return r.length > 160 ? `${r.slice(0, 160)}…` : r; };
+  if (c.ambito === 'pr') {
+    const caja = $('preguntaPr');
+    if (!caja) return;
+    caja.value = `Sobre la respuesta anterior («${resumenDe(c.respuesta)}»): `;
+    if ($('preguntaPrSeccion')) $('preguntaPrSeccion').value = c.seccion ?? '';
+    caja.scrollIntoView({ block: 'center' });
+    return caja.focus();
+  }
   editarComentario(pr, id);
   const resumen = c.respuesta.replace(/\s+/g, ' ');
   estado.caja = { ...cajaVacia('pregunta'), texto: `Sobre la respuesta anterior («${resumen.length > 160 ? `${resumen.slice(0, 160)}…` : resumen}»): ` };
@@ -1360,6 +1421,17 @@ async function enviarRevision(pr, soloIds) {
     pintarCola();
   } catch (err) { avisar(err.message); }
   sondear();
+}
+
+function aplicarCola(oculta) {
+  document.body.toggleAttribute('data-sin-cola', oculta);
+  document.querySelector('[data-accion="cola"]').setAttribute('aria-pressed', String(!oculta));
+}
+
+function alternarCola() {
+  const oculta = !document.body.hasAttribute('data-sin-cola');
+  almacen.escribir('pw-revision:sin-cola', oculta);
+  aplicarCola(oculta);
 }
 
 function aplicarLateral(oculto) {
@@ -1425,6 +1497,9 @@ document.addEventListener('click', (ev) => {
   if (d.accion === 'copiarResumen') return copiar(t, resumenTexto());
   if (d.plegar) return $(d.plegar).toggleAttribute('data-plegado');
   if (d.accion === 'lateral') return alternarLateral();
+  if (d.accion === 'cola') return alternarCola();
+  if (d.accion === 'preguntarPr') return preguntarPr(prSel());
+  if (d.ampliar) return preguntarPr(prSel(), d.ampliar, `Ampliar la sección «${SECCIONES[d.ampliar]}»: más detalle y ejemplos concretos tomados del diff.`);
   if (d.cajaTipo) { leerCaja(); estado.caja.tipo = d.cajaTipo; return marcarSeleccion(); }
   if (d.accion === 'cajaAgregar') return agregarComentario();
   if (d.accion === 'cajaCancelar') return cerrarCaja();
@@ -1513,6 +1588,7 @@ document.addEventListener('input', (ev) => {
 
 document.addEventListener('keydown', (ev) => {
   if ((ev.target.id === 'cajaTexto' || ev.target.id === 'cajaSugerido') && ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); return agregarComentario(); }
+  if (ev.target.id === 'preguntaPr' && ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); return preguntarPr(prSel()); }
   if (ev.target.matches('input, textarea, select')) {
     if (ev.key === 'Escape') ev.target.blur();
     return;
@@ -1527,6 +1603,7 @@ document.addEventListener('keydown', (ev) => {
   if (ev.key === 'k' || ev.key === 'ArrowUp') { ev.preventDefault(); ir(filas[Math.max(i - 1, 0)]); }
   if (ev.key === '/') { ev.preventDefault(); $('buscar').focus(); }
   if (ev.key === '[') { ev.preventDefault(); alternarLateral(); }
+  if (ev.key === ']') { ev.preventDefault(); alternarCola(); }
   if (ev.key === 'o') { const pr = FOTO.prs.find((p) => p.id === estado.seleccion); if (pr) window.open(pr.url, '_blank', 'noopener'); }
 });
 
@@ -1534,6 +1611,7 @@ $('titulo').textContent = `Revisión de PRs · ${FOTO.proyecto}`;
 $('foto').textContent = `Datos de GitHub del ${new Date(FOTO.generado).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })}`;
 document.querySelectorAll('[data-rol]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.rol === estado.rol)));
 aplicarLateral(almacen.leer('pw-revision:sin-lateral', false));
+aplicarCola(almacen.leer('pw-revision:sin-cola', false));
 estado.caja = cajaVacia();
 const [inicial, tabInicial] = decodeURIComponent(location.hash.slice(1)).split('/');
 if (CUERPOS[tabInicial]) estado.tab = tabInicial;

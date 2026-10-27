@@ -61,3 +61,14 @@ test('contextoPreguntas respeta el tope de 60000 caracteres', async () => {
   assert.ok(t.length <= 60000, String(t.length));
   for (const c of coms) assert.match(t, new RegExp(c.id));
 });
+
+test('contextoPreguntas: una pregunta sobre la PR lleva la explicación y el diff completo', async () => {
+  const archivos = [{ filename: 'a.ts', patch: '@@ -1 +1 @@\n-viejo\n+nuevo' }, { filename: 'b.ts', patch: '@@ -0,0 +1 @@\n+otro' }];
+  const pr = { id: 'x#7', titulo: 'T', explicacion: { resumen: 'Cierra rutas', por_que: 'Hallazgo H-031', que_cambia: ['La ruta exige apikey'] } };
+  const ctx = await contextoPreguntas({}, pr, [{ id: 'c-0001', ambito: 'pr', seccion: 'por_que', texto: '¿Cuál hallazgo?' }], { archivos });
+  assert.match(ctx, /Pregunta c-0001 sobre la PR \(sección «Por qué»\)/);
+  assert.match(ctx, /Hallazgo H-031/);
+  assert.match(ctx, /La ruta exige apikey/);
+  assert.match(ctx, /### a\.ts\n@@ -1 \+1 @@\n-viejo\n\+nuevo/);
+  assert.match(ctx, /### b\.ts/);
+});

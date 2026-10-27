@@ -9,9 +9,15 @@ const DEL_NAVEGADOR = new Set(['borrador', 'nota']);
 const MAX_TEXTO = 4000;
 const MAX_SUGERIDO = 20000;
 const LADOS = new Set(['nuevo', 'viejo', 'mixto']);
+// Secciones de la explicación sobre las que se puede preguntar o pedir que se amplíe.
+export const SECCIONES = {
+  resumen: 'Qué resuelve', por_que: 'Por qué', impacto_usuario: 'Qué nota quien usa el portal', que_cambia: 'Qué cambia',
+  orden_lectura: 'Orden de lectura', diagrama: 'Flujo', tecnologias: 'Tecnologías', alternativas: 'Alternativas consideradas',
+  dependencias: 'Debe ir antes', riesgos: 'Riesgos', como_probar: 'Cómo probar',
+};
 const PENDIENTES = new Set(['en_cola', 'en_curso']);
 // Lo que el navegador puede escribir; respuesta, costo, propuesta y demás los pone solo el servidor.
-const CAMPOS = ['id', 'tipo', 'estado', 'archivo', 'lado', 'desde', 'hasta', 'claves', 'textoOriginal', 'texto', 'sugerido', 'headSha', 'creado', 'actualizado'];
+const CAMPOS = ['id', 'tipo', 'estado', 'ambito', 'seccion', 'archivo', 'lado', 'desde', 'hasta', 'claves', 'textoOriginal', 'texto', 'sugerido', 'headSha', 'creado', 'actualizado'];
 
 // Última escritura por PR, para que el tablero sepa cuándo recargar sin leer todos los archivos.
 const marcas = new Map();
@@ -30,12 +36,20 @@ function validar(c) {
   if (typeof c.texto !== 'string' || c.texto.length > MAX_TEXTO) throw new Error(`Comentario ${c.id}: texto vacío o de más de ${MAX_TEXTO} caracteres`);
   if (c.sugerido !== undefined && (typeof c.sugerido !== 'string' || c.sugerido.length > MAX_SUGERIDO)) throw new Error(`Comentario ${c.id}: código sugerido de más de ${MAX_SUGERIDO} caracteres`);
   if (!DEL_NAVEGADOR.has(c.estado)) throw new Error(`Comentario ${c.id}: estado no permitido`);
+  if (c.headSha !== undefined && (typeof c.headSha !== 'string' || !/^[0-9a-z]{0,64}$/i.test(c.headSha))) throw new Error(`Comentario ${c.id}: commit inválido`);
+  if (c.ambito !== undefined) return validarDePr(c);
   if (!LADOS.has(c.lado)) throw new Error(`Comentario ${c.id}: lado desconocido`);
   if (!Number.isInteger(c.desde) || !Number.isInteger(c.hasta) || c.desde < 1 || c.hasta < c.desde) throw new Error(`Comentario ${c.id}: rango de líneas inválido`);
   if (c.claves !== undefined && (!Array.isArray(c.claves) || c.claves.length > 2000 || !c.claves.every((k) => /^[nv]\d{1,7}$/.test(k)))) throw new Error(`Comentario ${c.id}: claves de línea inválidas`);
   if (typeof c.archivo !== 'string' || !c.archivo || c.archivo.length > 500) throw new Error(`Comentario ${c.id}: archivo inválido`);
   if (c.textoOriginal !== undefined && (typeof c.textoOriginal !== 'string' || c.textoOriginal.length > MAX_SUGERIDO)) throw new Error(`Comentario ${c.id}: texto original demasiado largo`);
-  if (c.headSha !== undefined && (typeof c.headSha !== 'string' || !/^[0-9a-z]{0,64}$/i.test(c.headSha))) throw new Error(`Comentario ${c.id}: commit inválido`);
+}
+
+// Pregunta sobre la PR o una sección de su explicación, sin líneas del diff.
+function validarDePr(c) {
+  if (c.ambito !== 'pr') throw new Error(`Comentario ${c.id}: ámbito desconocido`);
+  if (c.tipo !== 'pregunta') throw new Error(`Comentario ${c.id}: sobre la PR solo se admite una pregunta`);
+  if (c.seccion !== undefined && !Object.hasOwn(SECCIONES, c.seccion)) throw new Error(`Comentario ${c.id}: sección desconocida`);
 }
 
 const limpiar = (c) => Object.fromEntries(CAMPOS.filter((k) => c[k] !== undefined).map((k) => [k, c[k]]));

@@ -112,3 +112,14 @@ test('separarEnviables aparta los comentarios de otro commit', () => {
   assert.deepEqual(r.cambios, ['c-0002']);
   assert.deepEqual(r.desactualizados, ['c-0003']);
 });
+
+test('una pregunta sobre la PR no necesita archivo ni líneas', () => {
+  const [c] = guardarComentarios(p(), 'r', 1, [{ id: 'c-0001', tipo: 'pregunta', estado: 'borrador', ambito: 'pr', seccion: 'por_que', texto: '¿Por qué 404?', headSha: 'abc' }]);
+  assert.equal(c.ambito, 'pr');
+  assert.equal(c.seccion, 'por_que');
+});
+
+test('una pregunta sobre la PR solo acepta secciones conocidas', () => {
+  assert.throws(() => guardarComentarios(p(), 'r', 1, [{ id: 'c-0001', tipo: 'pregunta', estado: 'borrador', ambito: 'pr', seccion: '<x>', texto: 'x' }]), /sección/);
+  assert.throws(() => guardarComentarios(p(), 'r', 1, [{ id: 'c-0001', tipo: 'cambio', estado: 'borrador', ambito: 'pr', texto: 'x' }]), /pregunta/);
+});

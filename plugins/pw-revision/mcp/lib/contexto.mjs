@@ -4,6 +4,7 @@ import { expandir } from './config.mjs';
 import { asegurarDiff } from './diffs.mjs';
 import { enCola } from './estado.mjs';
 import { git } from './proceso.mjs';
+import { SECCIONES } from './comentarios.mjs';
 
 const MARGEN = 40;
 // Un archivo corto va completo: cuesta poco y evita respuestas de "no se puede determinar".
@@ -55,11 +56,24 @@ function recortar(texto, max) {
   return texto.length <= max ? texto : `${texto.slice(0, Math.max(0, max - 40))}\n... (recortado por longitud)`;
 }
 
+function contextoDePr(pr, archivos) {
+  const e = pr.explicacion;
+  const explicacion = e ? Object.entries(SECCIONES).filter(([k]) => e[k] !== undefined && e[k] !== null && e[k] !== '')
+    .map(([k, titulo]) => `#### ${titulo}\n${typeof e[k] === 'string' ? e[k] : JSON.stringify(e[k], null, 1)}`).join('\n') : '';
+  const diff = archivos.map((a) => `### ${a.filename}\n${a.patch ?? '(sin diff: binario o demasiado grande)'}`).join('\n\n');
+  return [explicacion ? `## Explicación actual de la PR\n${explicacion}` : '## La PR aún no tiene explicación', `## Diff de la PR\n${diff}`].join('\n\n');
+}
+
 export async function contextoPreguntas(p, pr, comentarios, { archivos } = {}) {
   archivos ??= await asegurarDiff(p, pr.repo, pr.numero, pr.headSha);
   const contenidos = new Map();
   const bloques = [];
-  for (const c of comentarios) {
+  const dePr = comentarios.filter((c) => c.ambito === 'pr');
+  for (const c of dePr) {
+    bloques.push([`### Pregunta ${c.id} sobre la PR${c.seccion ? ` (sección «${SECCIONES[c.seccion]}»)` : ''}`, `Texto: ${c.texto}`].join('\n'));
+  }
+  if (dePr.length) bloques.push(contextoDePr(pr, archivos));
+  for (const c of comentarios.filter((x) => x.ambito !== 'pr')) {
     const a = archivos.find((x) => x.filename === c.archivo);
     const lado = c.lado === 'viejo' ? 'viejo' : 'nuevo';
     const diff = a?.patch ? hunks(a.patch).filter((h) => cruza(h[lado], c.desde, c.hasta)).map((h) => h.lineas.join('\n')).join('\n') : '';
