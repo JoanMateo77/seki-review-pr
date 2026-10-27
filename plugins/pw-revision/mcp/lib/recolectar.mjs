@@ -7,6 +7,7 @@ import { buscarGemela } from './gemelas.mjs';
 import { enParalelo, ghJson } from './proceso.mjs';
 import { verificar } from './verificar.mjs';
 import { compararFotos, hayCambios } from './cambios.mjs';
+import { asegurarDiff } from './diffs.mjs';
 
 const CAMPOS = 'number,title,url,baseRefName,headRefName,createdAt,updatedAt,additions,deletions,changedFiles,isDraft,headRefOid,author,reviewDecision';
 
@@ -94,8 +95,9 @@ export async function recolectar({ proyecto: clave = 'demo', repos, incluirInact
 
   async function verificaciones(repo, numero, headSha) {
     const claveCache = `${repo}#${numero}`;
+    const archivos = await asegurarDiff(p, repo, numero, headSha);
     if (cacheVerif[claveCache]?.headSha === headSha) return cacheVerif[claveCache];
-    const [archivos, commits] = await Promise.all([archivosPr(p.owner, repo, numero), commitsPr(p.owner, repo, numero)]);
+    const commits = await commitsPr(p.owner, repo, numero);
     const r = { headSha, ...verificar({ repo, archivos, commits, omitidas: p.repos[repo]?.reglas_omitidas }) };
     cacheVerif[claveCache] = r;
     return r;

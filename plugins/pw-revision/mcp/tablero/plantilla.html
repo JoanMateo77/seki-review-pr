@@ -176,6 +176,45 @@ textarea { width: 100%; min-height: 96px; padding: 8px 10px; border: 1px solid v
 .cambio a { color: inherit; text-decoration: none; }
 .cambio a:hover { text-decoration: underline; }
 
+/* Diff */
+body[data-enfoque] .app { grid-template-columns: 1fr; }
+body[data-enfoque] .lateral, body[data-enfoque] .cola { display: none; }
+.det.ancho { max-width: none; }
+.diff-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 12px; color: var(--texto-2); }
+.diff-barra label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.diff-barra .der { margin-left: auto; display: flex; gap: 8px; }
+.indice { border: 1px solid var(--linea); border-radius: 8px; background: var(--panel); margin-bottom: 14px; }
+.indice a { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 12px; color: var(--texto); text-decoration: none; border-bottom: 1px solid var(--linea); }
+.indice a:last-child { border-bottom: 0; }
+.indice a:hover { background: var(--hover); }
+.indice .ruta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.indice .visto { color: var(--texto-3); text-decoration: line-through; }
+.barrita { display: inline-flex; gap: 1px; margin-left: 6px; vertical-align: 1px; }
+.barrita i { width: 7px; height: 7px; border-radius: 1px; background: var(--linea-fuerte); }
+.barrita i.a { background: var(--verde); } .barrita i.d { background: var(--rojo); }
+.archivo { border: 1px solid var(--linea); border-radius: 8px; background: var(--panel); margin-bottom: 14px; overflow: hidden; }
+.archivo-cab { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 10px; padding: 7px 12px; background: var(--lateral); border-bottom: 1px solid var(--linea); }
+.archivo-cab button.plegar { border: 0; background: none; padding: 0; cursor: pointer; color: var(--texto-3); display: inline-flex; }
+.archivo[data-plegado] .archivo-cab button.plegar svg { transform: rotate(-90deg); }
+.archivo[data-plegado] .codigo-diff, .archivo[data-plegado] .aviso-diff { display: none; }
+.archivo-cab .ruta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.archivo-cab label { display: inline-flex; align-items: center; gap: 5px; color: var(--texto-2); cursor: pointer; white-space: nowrap; }
+.codigo-diff { overflow-x: auto; }
+.codigo-diff table { border-collapse: collapse; width: 100%; font: 12px/1.55 var(--mono); }
+.codigo-diff td { padding: 0 10px; border: 0; vertical-align: top; }
+.codigo-diff td.n { width: 1%; min-width: 44px; text-align: right; color: var(--texto-3); user-select: none; padding: 0 8px; }
+.codigo-diff td.c { white-space: pre; }
+.ajustar .codigo-diff td.c { white-space: pre-wrap; overflow-wrap: anywhere; }
+.codigo-diff tr.add td { background: var(--verde-bg); } .codigo-diff tr.add td.n { color: var(--verde); }
+.codigo-diff tr.del td { background: var(--rojo-bg); } .codigo-diff tr.del td.n { color: var(--rojo); }
+.codigo-diff tr.hunk td { background: var(--sel); color: var(--texto-2); padding-top: 3px; padding-bottom: 3px; }
+.codigo-diff td.c::before { display: inline-block; width: 1.2ch; color: var(--texto-3); }
+.codigo-diff tr.add td.c::before { content: '+'; color: var(--verde); }
+.codigo-diff tr.del td.c::before { content: '−'; color: var(--rojo); }
+.codigo-diff tr.ctx td.c::before { content: ' '; }
+.codigo-diff tr.nota td { padding: 6px 10px 8px; background: var(--panel); border-top: 1px solid var(--linea); border-bottom: 1px solid var(--linea); font-family: var(--sans); white-space: normal; }
+.aviso-diff { padding: 10px 14px; color: var(--texto-2); }
+
 @media (max-width: 1180px) {
   .app { grid-template-columns: 200px minmax(320px, 1fr) minmax(400px, 1.2fr); }
   .barra .foto { display: none; }
@@ -265,6 +304,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 let FOTO = /*DATOS*/null;
 // Con el servidor local (tablero_servir) llega { token } y aparecen las acciones; como archivo suelto es null.
 const API = /*API*/null;
+// Diffs por PR, ya recortados. En el servidor se piden a /api/diff si faltan.
+const DIFFS = /*DIFFS*/null ?? {};
 
 const GRUPOS = {
   pruebas_sin_prod: ['En pruebas, sin salir a producción', 'Código en pruebas que no aparece en producción ni en ninguna PR hacia producción'],
@@ -578,13 +619,121 @@ function tabRevision(pr) {
     <div class="acciones"><button class="btn" data-accion="exportar">${icono('descargar')} Exportar revisión</button><button class="btn" data-accion="copiarResumen">${icono('copiar')} Copiar resumen</button></div>`;
 }
 
+const ESTADO_ARCHIVO = { added: 'Agregado', removed: 'Eliminado', modified: 'Modificado', renamed: 'Renombrado', copied: 'Copiado', changed: 'Cambiado' };
+const claveVistos = (pr) => `pw-revision:vistos:${pr.id}:${pr.headSha}`;
+const idArchivo = (i) => `archivo-${i}`;
+
+function barrita(a, d) {
+  const total = a + d;
+  if (!total) return '';
+  const verdes = Math.round((a / total) * 5);
+  return `<span class="barrita" aria-hidden="true">${[0, 1, 2, 3, 4].map((i) => `<i class="${i < verdes ? 'a' : 'd'}"></i>`).join('')}</span>`;
+}
+
+// Filas de un parche unificado con número de línea viejo y nuevo; los hallazgos se cuelgan bajo su línea nueva.
+function filasDiff(patch, hallazgos) {
+  const filas = [];
+  let viejo = 0;
+  let nuevo = 0;
+  const porLinea = new Map();
+  for (const h of hallazgos) {
+    if (!porLinea.has(h.linea)) porLinea.set(h.linea, []);
+    porLinea.get(h.linea).push(h);
+  }
+  const color = { bloqueante: 'rojo', alto: 'ambar', medio: '', aviso: '' };
+  for (const l of patch.split('\n')) {
+    const h = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/.exec(l);
+    if (h) {
+      viejo = +h[1]; nuevo = +h[2];
+      filas.push(`<tr class="hunk"><td class="n"></td><td class="n"></td><td class="c">${esc(l)}</td></tr>`);
+      continue;
+    }
+    if (l.startsWith('\\')) continue;
+    const tipo = l[0] === '+' ? 'add' : l[0] === '-' ? 'del' : 'ctx';
+    const texto = esc(l.slice(1));
+    if (tipo === 'add') filas.push(`<tr class="add"><td class="n"></td><td class="n">${nuevo}</td><td class="c">${texto}</td></tr>`);
+    else if (tipo === 'del') filas.push(`<tr class="del"><td class="n">${viejo}</td><td class="n"></td><td class="c">${texto}</td></tr>`);
+    else filas.push(`<tr class="ctx"><td class="n">${viejo}</td><td class="n">${nuevo}</td><td class="c">${texto}</td></tr>`);
+    if (tipo !== 'del' && porLinea.has(nuevo)) {
+      for (const x of porLinea.get(nuevo)) {
+        filas.push(`<tr class="nota"><td class="n"></td><td class="n"></td><td><span class="estado ${color[x.severidad]}">${esc(x.severidad)}</span> <strong>${esc(x.titulo)}</strong> · <span class="tenue">${esc(x.mensaje)}</span></td></tr>`);
+      }
+    }
+    if (tipo === 'add') nuevo++;
+    else if (tipo === 'del') viejo++;
+    else { viejo++; nuevo++; }
+  }
+  return filas.join('');
+}
+
+function ordenarArchivos(pr, archivos) {
+  const orden = (pr.explicacion?.orden_lectura ?? []).map((o) => o.archivo);
+  const pos = (a) => { const i = orden.findIndex((o) => a.filename === o || a.filename.endsWith('/' + o) || o.endsWith(a.filename)); return i < 0 ? orden.length : i; };
+  return archivos.map((a, i) => ({ ...a, i })).sort((a, b) => pos(a) - pos(b) || a.i - b.i);
+}
+
+let diffPendiente = null;
+function tabArchivos(pr) {
+  let archivos = DIFFS[pr.id];
+  if (!archivos) {
+    if (API) {
+      if (diffPendiente !== pr.id) {
+        diffPendiente = pr.id;
+        api(`/api/diff?id=${encodeURIComponent(pr.id)}`).then((d) => { DIFFS[pr.id] = d; if (estado.seleccion === pr.id) pintarDetalle(); }, (e) => avisar(e.message)).finally(() => { diffPendiente = null; });
+      }
+      return '<p class="tenue">Cargando los cambios de GitHub.</p>';
+    }
+    return `<p class="tenue">Este tablero no trae el diff de esta PR. Véalo en <a href="${esc(pr.url)}/files" target="_blank" rel="noopener">GitHub</a> o regenere el tablero.</p>`;
+  }
+  archivos = ordenarArchivos(pr, archivos);
+  const vistos = new Set(almacen.leer(claveVistos(pr), []));
+  const hallazgos = pr.verificaciones?.hallazgos ?? [];
+  const ajustar = almacen.leer('pw-revision:ajustar', false);
+  const totalA = archivos.reduce((n, a) => n + a.additions, 0);
+  const totalD = archivos.reduce((n, a) => n + a.deletions, 0);
+  const plegarDesde = totalA + totalD > 1200 ? 3 : 99;
+  const ordenados = !!pr.explicacion?.orden_lectura?.length;
+  return `<div class="${ajustar ? 'ajustar' : ''}">
+    <div class="diff-barra">
+      <span>${plural(archivos.length, 'archivo', 'archivos')} · <span class="mas">+${totalA}</span> <span class="menos">−${totalD}</span> · ${vistos.size} de ${archivos.length} vistos</span>
+      ${ordenados ? '<span class="muy-tenue">En el orden de lectura de la explicación</span>' : ''}
+      <span class="der">
+        <label><input type="checkbox" data-accion-diff="ajustar" ${ajustar ? 'checked' : ''}> Ajustar líneas largas</label>
+        <button class="btn chico" data-accion="plegarTodo">Plegar todo</button>
+        <button class="btn chico" data-accion="enfoque" title="Esconde la cola y el lateral; Esc para volver">${document.body.hasAttribute('data-enfoque') ? 'Ver la cola' : 'Ampliar'}</button>
+        <a class="btn chico" href="${esc(pr.url)}/files" target="_blank" rel="noopener">Ver en GitHub ${icono('externo')}</a>
+      </span>
+    </div>
+    <nav class="indice" aria-label="Archivos de la PR">${archivos.map((a, k) => `<a href="#${idArchivo(k)}" data-saltar="${idArchivo(k)}"><span class="mono muy-tenue">${k + 1}</span><span class="ruta mono ${vistos.has(a.filename) ? 'visto' : ''}" title="${esc(a.filename)}"><bdi>${esc(a.filename)}</bdi></span><span class="mono"><span class="mas">+${a.additions}</span> <span class="menos">−${a.deletions}</span>${barrita(a.additions, a.deletions)}</span></a>`).join('')}</nav>
+    ${archivos.map((a, k) => {
+      const plegado = vistos.has(a.filename) || k >= plegarDesde;
+      const propios = hallazgos.filter((h) => h.archivo === a.filename && h.linea);
+      const cuerpo = a.patch !== undefined
+        ? `<div class="codigo-diff"><table>${filasDiff(a.patch, propios)}</table></div>${a.recortado ? `<div class="aviso-diff">El resto de este archivo no viene en el tablero. <a href="${esc(pr.url)}/files" target="_blank" rel="noopener">Ver completo en GitHub</a>.</div>` : ''}`
+        : `<div class="aviso-diff">${a.recortado ? 'La PR supera el tope de líneas que trae el tablero.' : 'GitHub no muestra el diff de este archivo (binario o demasiado grande).'} <a href="${esc(pr.url)}/files" target="_blank" rel="noopener">Ver en GitHub</a>.</div>`;
+      return `<section class="archivo" id="${idArchivo(k)}" ${plegado ? 'data-plegado' : ''}>
+        <div class="archivo-cab">
+          <button class="plegar" data-plegar="${idArchivo(k)}" aria-label="Plegar o desplegar">${icono('chevron')}</button>
+          <span class="estado">${ESTADO_ARCHIVO[a.status] ?? esc(a.status)}</span>
+          <span class="ruta mono" title="${esc(a.filename)}">${a.previous_filename ? `${esc(a.previous_filename)} → ` : ''}${esc(a.filename)}</span>
+          ${propios.length ? `<span class="senal ambar" title="Hallazgos en este archivo">${icono('alerta')}${propios.length}</span>` : ''}
+          <span class="mono"><span class="mas">+${a.additions}</span> <span class="menos">−${a.deletions}</span></span>
+          <label><input type="checkbox" data-visto="${esc(a.filename)}" ${vistos.has(a.filename) ? 'checked' : ''}> Visto</label>
+        </div>
+        ${cuerpo}
+      </section>`;
+    }).join('')}
+  </div>`;
+}
+
 const TABS = [
   ['resumen', 'Resumen', () => null],
+  ['archivos', 'Archivos', (pr) => pr.archivos ?? DIFFS[pr.id]?.length ?? null],
   ['verificaciones', 'Verificaciones', (pr) => pr.verificaciones?.hallazgos.length || null],
   ['probar', 'Cómo probar', (pr) => pr.explicacion?.como_probar?.length || null],
   ['revision', 'Revisión', () => null],
 ];
-const CUERPOS = { resumen: tabResumen, verificaciones: tabVerificaciones, probar: tabProbar, revision: tabRevision };
+const CUERPOS = { resumen: tabResumen, archivos: tabArchivos, verificaciones: tabVerificaciones, probar: tabProbar, revision: tabRevision };
 
 function pintarDetalle() {
   const pr = FOTO.prs.find((p) => p.id === estado.seleccion);
@@ -597,7 +746,7 @@ function pintarDetalle() {
   const etiqueta = pr.estadoPr === 'MERGED'
     ? `<span class="estado violeta">${icono('merge')} Mergeada en pruebas</span>`
     : `<span class="estado ${t}">${esc(nombreGrupo)}</span>`;
-  $('detalle').innerHTML = `<article class="det">
+  $('detalle').innerHTML = `<article class="det ${estado.tab === 'archivos' ? 'ancho' : ''}">
     <button class="btn chico volver" data-accion="volver">${icono('flecha')} Cola</button>
     <div class="det-meta">${etiqueta}<span class="mono">${esc(pr.repo)} #${pr.numero}</span><span>${esc(pr.portal)}</span></div>
     <h2>${esc(pr.titulo)}</h2>
@@ -693,7 +842,7 @@ function pintarTodo({ detalle = true } = {}) {
 
 function seleccionar(id, { enfocar = false } = {}) {
   estado.seleccion = id;
-  history.replaceState(null, '', `#${encodeURIComponent(id)}`);
+  history.replaceState(null, '', `#${encodeURIComponent(id)}/${estado.tab}`);
   document.body.dataset.vista = 'detalle';
   document.querySelectorAll('.fila').forEach((f) => f.setAttribute('aria-current', String(f.dataset.id === id)));
   pintarDetalle();
@@ -767,6 +916,8 @@ function copiar(boton, texto) {
 }
 
 document.addEventListener('click', (ev) => {
+  const salto = ev.target.closest('a[data-saltar]');
+  if (salto) { ev.preventDefault(); const a = $(salto.dataset.saltar); a.removeAttribute('data-plegado'); a.scrollIntoView({ block: 'start' }); return; }
   const ir = ev.target.closest('a[data-ir]');
   if (ir) { ev.preventDefault(); return seleccionar(ir.dataset.ir); }
   const t = ev.target.closest('button, a[data-tab-ir]');
@@ -789,7 +940,7 @@ document.addEventListener('click', (ev) => {
     document.querySelectorAll('[data-rol]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.rol === estado.rol)));
     return pintarTodo();
   }
-  if (d.tab) { estado.tab = d.tab; return pintarDetalle(); }
+  if (d.tab) { estado.tab = d.tab; history.replaceState(null, '', `#${encodeURIComponent(estado.seleccion)}/${estado.tab}`); return pintarDetalle(); }
   if (d.tabIr) { ev.preventDefault(); estado.tab = d.tabIr; return pintarDetalle(); }
   if (d.copiar) return copiar(t, d.copiar);
   if (d.accion === 'limpiar') { estado.filtros.clear(); estado.portal = null; $('buscar').value = ''; return pintarTodo(); }
@@ -797,6 +948,9 @@ document.addEventListener('click', (ev) => {
   if (d.accion === 'exportar') return exportar();
   if (d.accion === 'importar') return $('archivoRevision').click();
   if (d.accion === 'copiarResumen') return copiar(t, resumenTexto());
+  if (d.plegar) return $(d.plegar).toggleAttribute('data-plegado');
+  if (d.accion === 'enfoque') { document.body.toggleAttribute('data-enfoque'); return pintarDetalle(); }
+  if (d.accion === 'plegarTodo') { document.querySelectorAll('.archivo').forEach((a) => a.setAttribute('data-plegado', '')); return; }
   if (d.accion === 'refrescar') { estado.refrescando = true; pintarBarra(); return accionApi('/api/refrescar', {}); }
   if (d.accion === 'analizar') {
     const pr = FOTO.prs.find((p) => p.id === estado.seleccion);
@@ -822,6 +976,18 @@ document.addEventListener('change', (ev) => {
   const pr = FOTO.prs.find((p) => p.id === estado.seleccion);
   if (!pr) return;
   if (ev.target.name === 'decision') return guardarRevision(pr, { decision: ev.target.value });
+  if (ev.target.dataset.visto !== undefined) {
+    const vistos = new Set(almacen.leer(claveVistos(pr), []));
+    ev.target.checked ? vistos.add(ev.target.dataset.visto) : vistos.delete(ev.target.dataset.visto);
+    almacen.escribir(claveVistos(pr), [...vistos]);
+    const seccion = ev.target.closest('.archivo');
+    if (ev.target.checked) seccion.setAttribute('data-plegado', ''); else seccion.removeAttribute('data-plegado');
+    const scroll = $('detalle').scrollTop;
+    pintarDetalle();
+    $('detalle').scrollTop = scroll;
+    return;
+  }
+  if (ev.target.dataset.accionDiff === 'ajustar') { almacen.escribir('pw-revision:ajustar', ev.target.checked); return pintarDetalle(); }
   if (ev.target.dataset.paso !== undefined) {
     const marcados = [...document.querySelectorAll('[data-paso]:checked')].map((x) => +x.dataset.paso);
     almacen.escribir(clavePasos(pr), marcados);
@@ -844,6 +1010,7 @@ document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape') ev.target.blur();
     return;
   }
+  if (ev.key === 'Escape' && document.body.hasAttribute('data-enfoque')) { document.body.removeAttribute('data-enfoque'); return pintarDetalle(); }
   if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
   const filas = [...document.querySelectorAll('.grupo:not([data-cerrado]) .fila')];
   const i = filas.findIndex((f) => f.dataset.id === estado.seleccion);
@@ -857,7 +1024,8 @@ document.addEventListener('keydown', (ev) => {
 $('titulo').textContent = `Revisión de PRs · ${FOTO.proyecto}`;
 $('foto').textContent = `Datos de GitHub del ${new Date(FOTO.generado).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })}`;
 document.querySelectorAll('[data-rol]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.rol === estado.rol)));
-const inicial = decodeURIComponent(location.hash.slice(1));
+const [inicial, tabInicial] = decodeURIComponent(location.hash.slice(1)).split('/');
+if (CUERPOS[tabInicial]) estado.tab = tabInicial;
 pintarTodo();
 if (FOTO.prs.some((p) => p.id === inicial)) seleccionar(inicial);
 if (API) sondear();

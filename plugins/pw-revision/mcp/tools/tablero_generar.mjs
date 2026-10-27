@@ -22,7 +22,7 @@ export default {
     const p = cargarProyecto(proyecto);
     if (refrescar || !fotoConExplicaciones(p)) await recolectar({ proyecto });
     const foto = fotoConExplicaciones(p);
-    const html = construirHtml(foto);
+    const html = construirHtml(p, foto);
     const ruta = join(p.salida, 'tablero.html');
     mkdirSync(p.salida, { recursive: true });
     writeFileSync(ruta, html);

@@ -8,6 +8,7 @@ import { proyecto as cargarProyecto } from './config.mjs';
 import { recolectar } from './recolectar.mjs';
 import { construirHtml, fotoConExplicaciones } from './tablero.mjs';
 import { crearCola } from './trabajos.mjs';
+import { asegurarDiff, diffParaTablero } from './diffs.mjs';
 
 const PUERTO = 4317;
 const MAX_CUERPO = 64 * 1024;
@@ -61,7 +62,7 @@ export async function iniciarServidor({ proyecto = 'demo', puerto = PUERTO, abri
       if (url.searchParams.get('t') !== token) return responder(res, 403, 'Falta el token de acceso. Abra el enlace que entregó pw-revision.', 'text/plain; charset=utf-8');
       const foto = fotoConExplicaciones(p);
       if (!foto) return responder(res, 503, 'Todavía no hay datos: actualice el estado desde Claude Code.', 'text/plain; charset=utf-8');
-      return responder(res, 200, construirHtml(foto, { token }), 'text/html; charset=utf-8');
+      return responder(res, 200, construirHtml(p, foto, { token }), 'text/html; charset=utf-8');
     }
 
     if (!url.pathname.startsWith('/api/')) return responder(res, 404, { error: 'No existe' });
@@ -69,6 +70,11 @@ export async function iniciarServidor({ proyecto = 'demo', puerto = PUERTO, abri
 
     try {
       if (req.method === 'GET' && url.pathname === '/api/foto') return responder(res, 200, fotoConExplicaciones(p));
+      if (req.method === 'GET' && url.pathname === '/api/diff') {
+        const pr = fotoConExplicaciones(p).prs.find((x) => x.id === url.searchParams.get('id'));
+        if (!pr) return responder(res, 404, { error: 'PR fuera de la foto' });
+        return responder(res, 200, diffParaTablero(await asegurarDiff(p, pr.repo, pr.numero, pr.headSha)));
+      }
       if (req.method === 'GET' && url.pathname === '/api/estado') {
         return responder(res, 200, { refrescando: !!refresco, ultimoRefresco, trabajos: cola.lista() });
       }

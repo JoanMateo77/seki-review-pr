@@ -7,7 +7,7 @@ Tablero de revisión de PRs (`mcp/tablero/plantilla.html`). Modo Operate: herram
 - Barra superior: proyecto, fecha de la foto, búsqueda (`/`), selector Autor / Revisor.
 - Lateral (segunda capa neutra): vistas, portal y filtros con conteos; exportar e importar revisión; atajos.
 - Cola: grupos colapsables por acción (autor) o por decisión del revisor; filas de una línea con punto de tono, id en mono, título truncado y hasta cuatro señales (hallazgos, revisión, seguridad, esfuerzo, días).
-- Detalle: estado, título, rama y tamaño; acciones; pila de estados (pruebas, producción, gemela, otros portales, verificaciones, revisor); pestañas Resumen, Verificaciones, Cómo probar, Revisión.
+- Detalle: estado, título, rama y tamaño; acciones; pila de estados (pruebas, producción, gemela, otros portales, verificaciones, revisor); pestañas Resumen, Archivos (diff unificado estilo GitHub: índice con +/−, archivos plegables, casilla Visto, orden de lectura, hallazgos bajo su línea, Ampliar), Verificaciones, Cómo probar, Revisión.
 - Menos de 900 px: lateral como fila deslizable, cola y detalle como vistas separadas con botón "Cola".
 
 ## Color

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { leerJson, rutaExplicacion, rutaInstantanea } from './cache.mjs';
+import { diffsDeFoto } from './diffs.mjs';
 
 const PLANTILLA = join(dirname(fileURLToPath(import.meta.url)), '../tablero/plantilla.html');
 
@@ -19,5 +20,9 @@ export function fotoConExplicaciones(p) {
 const incrustar = (v) => JSON.stringify(v).replace(/</g, '\\u003c');
 
 // api: null para el archivo estático; { token } cuando lo sirve el servidor local con acciones.
-export const construirHtml = (foto, api = null) =>
-  readFileSync(PLANTILLA, 'utf8').replace('/*DATOS*/null', incrustar(foto)).replace('/*API*/null', incrustar(api));
+// p: proyecto, para incrustar los diffs guardados.
+export const construirHtml = (p, foto, api = null) =>
+  readFileSync(PLANTILLA, 'utf8')
+    .replace('/*DATOS*/null', () => incrustar(foto))
+    .replace('/*API*/null', () => incrustar(api))
+    .replace('/*DIFFS*/null', () => incrustar(diffsDeFoto(p, foto)));
