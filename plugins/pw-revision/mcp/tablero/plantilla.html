@@ -237,6 +237,13 @@ body[data-enfoque] .lateral, body[data-enfoque] .cola { display: none; }
 .caja-com, .hilo-com { position: sticky; left: 8px; box-sizing: border-box; width: min(720px, calc(100cqw - 110px)); margin: 6px 10px 8px 0; padding: 10px 12px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--panel); }
 .hilo-com { border-color: var(--linea); }
 .hilos-pr { display: grid; gap: 8px; margin-top: 10px; }
+.barra-sel { position: fixed; z-index: 20; box-sizing: border-box; padding: 8px; border: 1px solid var(--linea-fuerte); border-radius: 8px; background: var(--panel); box-shadow: var(--sombra), 0 8px 24px rgba(0, 0, 0, .25); }
+.barra-sel-botones { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.barra-sel-botones .btn-texto { margin-left: auto; }
+.barra-sel-caja { margin-top: 8px; }
+.barra-sel textarea { width: 100%; box-sizing: border-box; margin: 6px 0; padding: 6px 8px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--bg); color: var(--texto); font: inherit; resize: vertical; }
+.cita { margin: 4px 0 6px; padding: 2px 0 2px 10px; border-left: 3px solid var(--acento); color: var(--texto-2); font-size: .92em; white-space: pre-wrap; }
+::highlight(pw-citado) { background-color: color-mix(in srgb, var(--acento) 28%, transparent); }
 .hilos-pr .hilo-com, .pregunta-pr .hilo-com { position: static; width: auto; margin: 0; }
 h3.con-accion { display: flex; align-items: center; gap: 10px; }
 h3.con-accion .btn-texto { display: inline-flex; align-items: center; gap: 4px; font-weight: 400; opacity: .55; transition: opacity .12s; }
@@ -669,7 +676,7 @@ const sec = (titulo, cuerpo, clave) => {
   if (!clave || !API) return `<div class="seccion"><h3>${titulo}</h3>${cuerpo}</div>`;
   const pr = prSel();
   const hilos = pr ? dePr(pr, clave) : [];
-  return `<div class="seccion"><h3 class="con-accion">${titulo}<button type="button" class="btn-texto" data-ampliar="${clave}" title="La IA amplía esta sección con ejemplos del diff">${icono('chispa')} Ampliar</button></h3>${cuerpo}
+  return `<div class="seccion" data-seccion="${clave}"><h3 class="con-accion">${titulo}<button type="button" class="btn-texto" data-ampliar="${clave}" title="La IA amplía esta sección con ejemplos del diff">${icono('chispa')} Ampliar</button></h3>${cuerpo}
     ${hilos.length ? `<div class="hilos-pr">${hilos.map(hiloCuerpo).join('')}</div>` : ''}</div>`;
 };
 
@@ -682,7 +689,7 @@ function preguntaPrHtml(pr) {
     ${generales.length ? `<div class="hilos-pr">${generales.map(hiloCuerpo).join('')}</div>` : ''}
     <textarea id="preguntaPr" rows="3" placeholder="Por ejemplo: ¿qué pasa con los webhooks que ya estaban configurados en producción?" aria-label="Pregunta sobre la PR"></textarea>
     <div class="prop-acciones"><select id="preguntaPrSeccion" aria-label="Sobre qué parte"><option value="">Toda la PR</option>${opciones}</select>
-      <button type="button" class="btn chico primario" data-accion="preguntarPr">Preguntar</button><span class="muy-tenue">Ctrl + Enter</span></div></div>`;
+      <button type="button" class="btn chico primario" data-accion="preguntarPr">Preguntar</button><button type="button" class="btn chico" data-accion="agregarPreguntaPr">Agregar a la revisión</button><span class="muy-tenue">Ctrl + Enter pregunta · también puede seleccionar texto de la explicación</span></div></div>`;
 }
 
 function tabResumen(pr) {
@@ -711,6 +718,7 @@ function tabResumen(pr) {
     ${e.alternativas?.length ? sec('Alternativas consideradas', lista(e.alternativas), 'alternativas') : ''}
     ${e.dependencias?.length ? sec('Debe ir antes', lista(e.dependencias), 'dependencias') : ''}
     ${e.riesgos?.length ? sec('Riesgos', lista(e.riesgos), 'riesgos') : ''}
+    ${barraPendiente(pr)}
     ${preguntaPrHtml(pr)}
     <p class="nota-pie">Explicación del ${esc(e.fecha?.slice(0, 10))} sobre el commit <span class="mono">${esc(e.headSha?.slice(0, 7))}</span>${e.riesgo ? ` · riesgo ${esc(e.riesgo)}` : ''}${e.esfuerzo ? ` · esfuerzo ${e.esfuerzo} de 5` : ''}.${API ? ` <button type="button" class="btn-texto" data-accion="analizar" ${trabajoActivo(pr) ? 'disabled' : ''}>Volver a analizar con IA</button>` : ''}</p>`;
 }
@@ -782,15 +790,113 @@ const SECCIONES = {
 };
 
 // Preguntas sobre la PR o una sección de la explicación: se envían al momento, sin pasar por "Revisión pendiente".
-async function preguntarPr(pr, seccion, textoFijo) {
+async function preguntarPr(pr, seccion, textoFijo, { citado, enviar = true } = {}) {
   const caja = $('preguntaPr');
   const texto = (textoFijo ?? caja?.value ?? '').trim();
   if (!texto) { avisar('Escriba la pregunta antes de enviarla.'); return caja?.focus(); }
   const sobre = seccion ?? ($('preguntaPrSeccion')?.value || undefined);
-  const c = { id: nuevoIdComentario(), creado: new Date().toISOString(), tipo: 'pregunta', estado: 'borrador', ambito: 'pr', seccion: sobre, texto, headSha: pr.headSha };
+  const c = { id: nuevoIdComentario(), creado: new Date().toISOString(), tipo: 'pregunta', estado: 'borrador', ambito: 'pr', seccion: sobre, citado: citado || undefined, texto, headSha: pr.headSha };
   guardarComentario(pr, c);
   if (caja && !textoFijo) caja.value = '';
-  await enviarRevision(pr, [c.id]);
+  if (enviar) await enviarRevision(pr, [c.id]);
+  else { repintarDetalle(); pintarCola(); }
+}
+
+// Selección de texto en el Resumen: barra flotante para preguntar sobre el fragmento (como en Plannotator).
+const RAPIDAS = [
+  ['¿Por qué?', '¿Por qué se hizo así y no de otra forma?'],
+  ['Dar un ejemplo', 'Dar un ejemplo concreto tomado del diff.'],
+  ['Ampliar', 'Ampliar este punto con más detalle y ejemplos del diff.'],
+];
+let seleccionResumen = null;
+
+function cerrarBarraSel() {
+  $('barraSel')?.remove();
+  seleccionResumen = null;
+}
+
+function abrirBarraSel() {
+  const sel = window.getSelection();
+  const texto = sel?.toString().replace(/\s+/g, ' ').trim();
+  if (!API || !texto || estado.tab !== 'resumen' || sel.rangeCount === 0) return;
+  const rango = sel.getRangeAt(0);
+  const nodo = rango.commonAncestorContainer.nodeType === 1 ? rango.commonAncestorContainer : rango.commonAncestorContainer.parentElement;
+  const seccion = nodo?.closest('[data-seccion]');
+  if (!seccion || nodo.closest('.hilos-pr, textarea, button')) return;
+  seleccionResumen = { seccion: seccion.dataset.seccion, citado: texto.slice(0, 2000) };
+  const caja = rango.getBoundingClientRect();
+  $('barraSel')?.remove();
+  const barra = document.createElement('div');
+  barra.id = 'barraSel';
+  barra.className = 'barra-sel';
+  barra.setAttribute('role', 'dialog');
+  barra.setAttribute('aria-label', 'Preguntar sobre el texto seleccionado');
+  barra.innerHTML = `<div class="barra-sel-botones">
+      <button type="button" class="btn chico primario" data-sel="preguntar">${icono('chispa')} Preguntar</button>
+      ${RAPIDAS.map(([e], i) => `<button type="button" class="btn chico" data-sel-rapida="${i}">${esc(e)}</button>`).join('')}
+      <button type="button" class="btn-texto" data-sel="cerrar" aria-label="Cerrar">Esc</button>
+    </div>
+    <div class="barra-sel-caja" hidden>
+      <blockquote class="cita">${esc(seleccionResumen.citado.length > 180 ? `${seleccionResumen.citado.slice(0, 180)}…` : seleccionResumen.citado)}</blockquote>
+      <textarea id="barraSelTexto" rows="3" placeholder="Pregunta o comentario sobre este fragmento" aria-label="Pregunta sobre el fragmento"></textarea>
+      <div class="prop-acciones"><button type="button" class="btn chico primario" data-sel="enviar">Enviar ahora</button><button type="button" class="btn chico" data-sel="agregar">Agregar a la revisión</button><span class="muy-tenue">Ctrl + Enter agrega</span></div>
+    </div>`;
+  document.body.append(barra);
+  const ancho = Math.min(420, window.innerWidth - 24);
+  barra.style.width = `${ancho}px`;
+  barra.style.left = `${Math.max(12, Math.min(caja.left, window.innerWidth - ancho - 12))}px`;
+  const abajo = caja.bottom + 8;
+  barra.style.top = `${abajo + 170 > window.innerHeight ? Math.max(12, caja.top - 8 - barra.offsetHeight) : abajo}px`;
+}
+
+function accionBarraSel(accion, rapida) {
+  const pr = prSel();
+  const s = seleccionResumen;
+  if (!pr || !s) return cerrarBarraSel();
+  if (rapida !== undefined) { cerrarBarraSel(); return preguntarPr(pr, s.seccion, RAPIDAS[rapida][1], { citado: s.citado, enviar: false }); }
+  if (accion === 'cerrar') return cerrarBarraSel();
+  if (accion === 'preguntar') { $('barraSel').querySelector('.barra-sel-caja').hidden = false; return $('barraSelTexto').focus(); }
+  const texto = $('barraSelTexto')?.value.trim();
+  if (!texto) { avisar('Escriba la pregunta antes de agregarla.'); return $('barraSelTexto')?.focus(); }
+  cerrarBarraSel();
+  window.getSelection()?.removeAllRanges();
+  return preguntarPr(pr, s.seccion, texto, { citado: s.citado, enviar: accion === 'enviar' });
+}
+
+// Resalta en la explicación los fragmentos citados por preguntas (CSS Highlight API; sin ella no se resalta).
+function resaltarCitas(pr) {
+  if (!globalThis.CSS?.highlights || !globalThis.Highlight) return;
+  const rangos = [];
+  for (const c of vivos(pr).filter((x) => x.ambito === 'pr' && x.citado)) {
+    const el = document.querySelector(`[data-seccion="${c.seccion}"]`);
+    const rg = el && rangoDeTexto(el, c.citado);
+    if (rg) rangos.push(rg);
+  }
+  CSS.highlights.set('pw-citado', new Highlight(...rangos));
+}
+
+function rangoDeTexto(el, buscado) {
+  const nodos = [];
+  const andar = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.parentElement.closest('.hilos-pr, h3') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
+  let texto = '';
+  const mapa = [];
+  for (let n = andar.nextNode(); n; n = andar.nextNode()) {
+    for (let i = 0; i < n.data.length; i++) {
+      const ch = /\s/.test(n.data[i]) ? ' ' : n.data[i];
+      if (ch === ' ' && texto.endsWith(' ')) continue;
+      texto += ch;
+      mapa.push([n, i]);
+    }
+    nodos.push(n);
+  }
+  const ini = texto.indexOf(buscado);
+  if (ini < 0) return null;
+  const [na, ia] = mapa[ini];
+  const [nb, ib] = mapa[ini + buscado.length - 1];
+  const rg = document.createRange();
+  rg.setStart(na, ia);
+  rg.setEnd(nb, ib + 1);
+  return rg;
 }
 const borradores = (pr) => comentarios(pr).filter((c) => c.estado === 'borrador');
 // El servidor no envía comentarios hechos sobre otro commit; al editarlos se anclan al commit actual.
@@ -885,6 +991,7 @@ function hiloCuerpo(c) {
   return `<div class="hilo-com">
     <div class="hilo-cab"><strong>${TIPOS_COMENTARIO[c.tipo]?.etiqueta ?? esc(c.tipo)}</strong><span class="mono muy-tenue">${donde}</span><span class="punto-estado ${cls}">${esc(txt)}</span>
       ${editable ? `<span class="der"><button type="button" class="btn-texto" data-com-editar="${esc(c.id)}">Editar</button><button type="button" class="btn-texto" data-com-borrar="${esc(c.id)}">Borrar</button></span>` : ''}${c.ambito && c.estado === 'borrador' ? `<span class="der"><button type="button" class="btn-texto" data-com-borrar="${esc(c.id)}">Borrar</button></span>` : ''}</div>
+    ${c.citado ? `<blockquote class="cita">${esc(c.citado)}</blockquote>` : ''}
     <div class="hilo-texto">${esc(c.texto)}</div>
     ${c.sugerido !== undefined ? `<pre class="sugerido" aria-label="Código sugerido">${esc(c.sugerido)}</pre>` : ''}
     ${c.respuesta ? `<div class="hilo-respuesta">${esc(c.respuesta)}<div class="hilo-pie muy-tenue">${c.desdeCache ? 'Respuesta guardada, sin costo' : `${esc(nombreModelo(c.modelo))}${c.costo ? ` · ${usd(c.costo)}${Number(c.lote) > 1 ? ` por el lote de ${Number(c.lote)}` : ''}` : ''}`}<button type="button" class="btn-texto" data-com-repreguntar="${esc(c.id)}">Repreguntar</button></div></div>` : ''}
@@ -1235,8 +1342,15 @@ function pintarDetalle() {
     <div role="tabpanel">${CUERPOS[estado.tab](pr)}</div>
   </article>`;
   if (estado.tab === 'archivos') marcarSeleccion();
+  if (estado.tab === 'resumen') resaltarCitas(pr);
+  else cerrarBarraSel();
   pintarDiagramas();
 }
+
+document.addEventListener('mouseup', (ev) => {
+  if (ev.target.closest('#barraSel')) return;
+  setTimeout(abrirBarraSel, 0);
+});
 
 // Mermaid se carga del CDN solo cuando hay un diagrama a la vista; sin red queda el texto del diagrama.
 let mermaidListo = null;
@@ -1459,6 +1573,7 @@ function copiar(boton, texto) {
 }
 
 document.addEventListener('click', (ev) => {
+  if ($('barraSel') && !ev.target.closest('#barraSel') && window.getSelection()?.isCollapsed) cerrarBarraSel();
   const salto = ev.target.closest('a[data-saltar]');
   if (salto) { ev.preventDefault(); const a = $(salto.dataset.saltar); a.removeAttribute('data-plegado'); a.scrollIntoView({ block: 'start' }); return; }
   const ir = ev.target.closest('a[data-ir]');
@@ -1499,6 +1614,8 @@ document.addEventListener('click', (ev) => {
   if (d.accion === 'lateral') return alternarLateral();
   if (d.accion === 'cola') return alternarCola();
   if (d.accion === 'preguntarPr') return preguntarPr(prSel());
+  if (d.accion === 'agregarPreguntaPr') return preguntarPr(prSel(), undefined, undefined, { enviar: false });
+  if (d.sel || d.selRapida !== undefined) return accionBarraSel(d.sel, d.selRapida === undefined ? undefined : Number(d.selRapida));
   if (d.ampliar) return preguntarPr(prSel(), d.ampliar, `Ampliar la sección «${SECCIONES[d.ampliar]}»: más detalle y ejemplos concretos tomados del diff.`);
   if (d.cajaTipo) { leerCaja(); estado.caja.tipo = d.cajaTipo; return marcarSeleccion(); }
   if (d.accion === 'cajaAgregar') return agregarComentario();
@@ -1589,6 +1706,8 @@ document.addEventListener('input', (ev) => {
 document.addEventListener('keydown', (ev) => {
   if ((ev.target.id === 'cajaTexto' || ev.target.id === 'cajaSugerido') && ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); return agregarComentario(); }
   if (ev.target.id === 'preguntaPr' && ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); return preguntarPr(prSel()); }
+  if (ev.target.id === 'barraSelTexto' && ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); return accionBarraSel('agregar'); }
+  if (ev.key === 'Escape' && $('barraSel')) { ev.preventDefault(); return cerrarBarraSel(); }
   if (ev.target.matches('input, textarea, select')) {
     if (ev.key === 'Escape') ev.target.blur();
     return;

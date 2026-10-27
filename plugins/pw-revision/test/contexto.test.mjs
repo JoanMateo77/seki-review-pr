@@ -72,3 +72,9 @@ test('contextoPreguntas: una pregunta sobre la PR lleva la explicación y el dif
   assert.match(ctx, /### a\.ts\n@@ -1 \+1 @@\n-viejo\n\+nuevo/);
   assert.match(ctx, /### b\.ts/);
 });
+
+test('contextoPreguntas: la pregunta sobre la PR incluye el texto citado', async () => {
+  const pr = { id: 'x#7', titulo: 'T', explicacion: { resumen: 'R' } };
+  const ctx = await contextoPreguntas({}, pr, [{ id: 'c-0001', ambito: 'pr', seccion: 'resumen', citado: 'apaga los webhooks', texto: '¿Cuáles?' }], { archivos: [] });
+  assert.match(ctx, /Texto citado de la explicación: «apaga los webhooks»/);
+});

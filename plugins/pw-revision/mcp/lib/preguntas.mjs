@@ -14,7 +14,7 @@ const SCHEMA = {
   required: ['respuestas'],
 };
 
-const clave = (pr, c) => createHash('sha256').update([pr.headSha, c.ambito ?? '', c.seccion ?? '', c.archivo, c.lado, c.desde, c.hasta, c.texto.trim()].join('|')).digest('hex').slice(0, 32);
+const clave = (pr, c) => createHash('sha256').update([pr.headSha, c.ambito ?? '', c.seccion ?? '', c.citado ?? '', c.archivo, c.lado, c.desde, c.hasta, c.texto.trim()].join('|')).digest('hex').slice(0, 32);
 
 const detallePr = (p, pr) => ghJson(['pr', 'view', String(pr.numero), '-R', `${p.owner}/${pr.repo}`, '--json', 'body']).catch(() => null);
 

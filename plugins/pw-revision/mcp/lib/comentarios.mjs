@@ -17,7 +17,7 @@ export const SECCIONES = {
 };
 const PENDIENTES = new Set(['en_cola', 'en_curso']);
 // Lo que el navegador puede escribir; respuesta, costo, propuesta y demás los pone solo el servidor.
-const CAMPOS = ['id', 'tipo', 'estado', 'ambito', 'seccion', 'archivo', 'lado', 'desde', 'hasta', 'claves', 'textoOriginal', 'texto', 'sugerido', 'headSha', 'creado', 'actualizado'];
+const CAMPOS = ['id', 'tipo', 'estado', 'ambito', 'seccion', 'citado', 'archivo', 'lado', 'desde', 'hasta', 'claves', 'textoOriginal', 'texto', 'sugerido', 'headSha', 'creado', 'actualizado'];
 
 // Última escritura por PR, para que el tablero sepa cuándo recargar sin leer todos los archivos.
 const marcas = new Map();
@@ -50,6 +50,7 @@ function validarDePr(c) {
   if (c.ambito !== 'pr') throw new Error(`Comentario ${c.id}: ámbito desconocido`);
   if (c.tipo !== 'pregunta') throw new Error(`Comentario ${c.id}: sobre la PR solo se admite una pregunta`);
   if (c.seccion !== undefined && !Object.hasOwn(SECCIONES, c.seccion)) throw new Error(`Comentario ${c.id}: sección desconocida`);
+  if (c.citado !== undefined && (typeof c.citado !== 'string' || c.citado.length > 2000)) throw new Error(`Comentario ${c.id}: texto citado de más de 2000 caracteres`);
 }
 
 const limpiar = (c) => Object.fromEntries(CAMPOS.filter((k) => c[k] !== undefined).map((k) => [k, c[k]]));

@@ -70,7 +70,7 @@ export async function contextoPreguntas(p, pr, comentarios, { archivos } = {}) {
   const bloques = [];
   const dePr = comentarios.filter((c) => c.ambito === 'pr');
   for (const c of dePr) {
-    bloques.push([`### Pregunta ${c.id} sobre la PR${c.seccion ? ` (sección «${SECCIONES[c.seccion]}»)` : ''}`, `Texto: ${c.texto}`].join('\n'));
+    bloques.push([`### Pregunta ${c.id} sobre la PR${c.seccion ? ` (sección «${SECCIONES[c.seccion]}»)` : ''}`, c.citado ? `Texto citado de la explicación: «${c.citado}»` : '', `Texto: ${c.texto}`].filter(Boolean).join('\n'));
   }
   if (dePr.length) bloques.push(contextoDePr(pr, archivos));
   for (const c of comentarios.filter((x) => x.ambito !== 'pr')) {

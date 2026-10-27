@@ -46,6 +46,9 @@ rango) y se deja una nota manual, opcionalmente con código sugerido; las notas 
 y "Enviar revisión" las manda juntas (todas las preguntas de una PR en una sola llamada). El costo de cada trabajo
 queda en `revision-prs/datos/costos.jsonl`. Un pedido de cambio genera una propuesta en una copia aparte de la rama (con
 comprobaciones de reglas, tipos y tests). Solo el botón Aprobar la sube a la rama de la PR, y nunca hace merge.
+En el Resumen, al seleccionar texto de la explicación aparece una barra para preguntar sobre ese fragmento (o
+"¿Por qué?", "Dar un ejemplo", "Ampliar"); cada sección tiene "Ampliar" y al final hay una caja para preguntar sobre
+toda la PR. Las preguntas se envían al momento o se agregan a "Revisión pendiente" para mandarlas juntas.
 
 **"archivo":** `tablero_generar` solo cuando se necesita el archivo suelto (sin acciones) para enviarlo a quien
 revisa. El tablero servido vive mientras dure la sesión de Claude Code; su enlace es fijo por máquina. Fuera de Claude Code:

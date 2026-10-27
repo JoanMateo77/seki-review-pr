@@ -123,3 +123,9 @@ test('una pregunta sobre la PR solo acepta secciones conocidas', () => {
   assert.throws(() => guardarComentarios(p(), 'r', 1, [{ id: 'c-0001', tipo: 'pregunta', estado: 'borrador', ambito: 'pr', seccion: '<x>', texto: 'x' }]), /sección/);
   assert.throws(() => guardarComentarios(p(), 'r', 1, [{ id: 'c-0001', tipo: 'cambio', estado: 'borrador', ambito: 'pr', texto: 'x' }]), /pregunta/);
 });
+
+test('una pregunta sobre la PR guarda el texto citado y lo limita', () => {
+  const [c] = guardarComentarios(p(), 'r', 1, [{ id: 'c-0001', tipo: 'pregunta', estado: 'borrador', ambito: 'pr', seccion: 'orden_lectura', citado: 'Webhook PostPaymentInfo apagado.', texto: '¿Cómo se enciende?' }]);
+  assert.equal(c.citado, 'Webhook PostPaymentInfo apagado.');
+  assert.throws(() => guardarComentarios(p(), 'r', 1, [{ id: 'c-0002', tipo: 'pregunta', estado: 'borrador', ambito: 'pr', citado: 'x'.repeat(2001), texto: 'x' }]), /citado/);
+});
