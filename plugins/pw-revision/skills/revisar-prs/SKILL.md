@@ -31,6 +31,10 @@ mirando la línea en contexto y decir si es real o falso positivo. Antes de abri
 
 **"explicar pendientes":** tomar de `prs_pendientes` las PRs sin explicación o con explicación desactualizada, sin las de ramas inactivas. Priorizar seguridad y las que van a producción. Más de 5 PRs → repartir en subagentes con `model: "sonnet"`, cada uno con 3 a 5 PRs, y pedirles que llamen ellos mismos `pr_guardar_explicacion`. Al final, `tablero_generar`.
 
+**Revisión por otra persona:** el tablero es un archivo local que se puede enviar. Quien revisa elige "Revisor"
+arriba, deja su decisión y observaciones por PR y exporta un JSON; el autor lo importa en su tablero. Si piden leer
+esas decisiones, pedir la ruta del JSON exportado y resumirlo.
+
 **"tablero":** `tablero_generar` (con `refrescar: true` si la foto tiene más de un día).
 
 ## Cómo redactar la explicación

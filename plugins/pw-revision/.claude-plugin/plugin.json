@@ -1,6 +1,6 @@
 {
   "name": "pw-revision",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Revisión de PRs de el equipo: pendientes por ambiente, estado frente a pruebas, explicación del cambio y tablero local",
   "author": {
     "name": "JoanMateo77"

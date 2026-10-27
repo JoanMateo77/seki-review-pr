@@ -6,262 +6,549 @@
 <title>Revisión de PRs</title>
 <style>
 :root {
-  --fondo: #f6f7f9; --panel: #ffffff; --borde: #dfe3e8; --texto: #1c2430; --tenue: #5d6878;
-  --acento: #1f5fbf; --acento-suave: #e6eefb;
-  --ok: #1e7a46; --ok-suave: #e3f3ea; --aviso: #9a6200; --aviso-suave: #fbf0dc;
-  --mal: #b3261e; --mal-suave: #fbe6e4; --neutro-suave: #eef0f3;
-  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --bg: #fbfbfa; --panel: #ffffff; --lateral: #f4f4f2; --hover: #efefec; --sel: #e9eef8;
+  --linea: #e4e4e0; --linea-fuerte: #d3d3ce;
+  --texto: #1d1f22; --texto-2: #5b5f66; --texto-3: #80848b;
+  --acento: #2f5bd3; --acento-texto: #ffffff;
+  --verde: #1f7a4a; --verde-bg: #e6f2eb; --ambar: #8f5b00; --ambar-bg: #f8eedb;
+  --rojo: #b42318; --rojo-bg: #fbe9e7; --violeta: #6941c6; --violeta-bg: #efeafb; --gris-bg: #efefec;
+  --sombra: 0 1px 2px rgba(20, 22, 26, .06), 0 4px 12px rgba(20, 22, 26, .04);
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --fondo: #12161c; --panel: #1a2029; --borde: #2c3440; --texto: #e4e8ee; --tenue: #9aa5b4;
-    --acento: #7aa7ff; --acento-suave: #1d2a40;
-    --ok: #5cc98a; --ok-suave: #16301f; --aviso: #e2b25a; --aviso-suave: #33280f;
-    --mal: #ff8a80; --mal-suave: #3a1a18; --neutro-suave: #232a35;
+    --bg: #141517; --panel: #1a1b1e; --lateral: #17181a; --hover: #222327; --sel: #1f2a40;
+    --linea: #2a2b30; --linea-fuerte: #36383e;
+    --texto: #e7e8ea; --texto-2: #a3a7ae; --texto-3: #7d818a;
+    --acento: #7a9cff; --acento-texto: #0d1530;
+    --verde: #5cc68c; --verde-bg: #15291e; --ambar: #e0b25c; --ambar-bg: #2e2412;
+    --rojo: #ff8a7a; --rojo-bg: #351816; --violeta: #b49cff; --violeta-bg: #261e3d; --gris-bg: #232428;
+    --sombra: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 12px rgba(0, 0, 0, .2);
+    color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --fondo: #12161c; --panel: #1a2029; --borde: #2c3440; --texto: #e4e8ee; --tenue: #9aa5b4;
-  --acento: #7aa7ff; --acento-suave: #1d2a40;
-  --ok: #5cc98a; --ok-suave: #16301f; --aviso: #e2b25a; --aviso-suave: #33280f;
-  --mal: #ff8a80; --mal-suave: #3a1a18; --neutro-suave: #232a35;
+  --bg: #141517; --panel: #1a1b1e; --lateral: #17181a; --hover: #222327; --sel: #1f2a40;
+  --linea: #2a2b30; --linea-fuerte: #36383e;
+  --texto: #e7e8ea; --texto-2: #a3a7ae; --texto-3: #7d818a;
+  --acento: #7a9cff; --acento-texto: #0d1530;
+  --verde: #5cc68c; --verde-bg: #15291e; --ambar: #e0b25c; --ambar-bg: #2e2412;
+  --rojo: #ff8a7a; --rojo-bg: #351816; --violeta: #b49cff; --violeta-bg: #261e3d; --gris-bg: #232428;
+  --sombra: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 12px rgba(0, 0, 0, .2);
+  color-scheme: dark;
 }
+
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--fondo); color: var(--texto); font: 14px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif; }
-header { padding: 16px 24px; border-bottom: 1px solid var(--borde); background: var(--panel); display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: baseline; }
-header h1 { margin: 0; font-size: 18px; }
-header .meta { color: var(--tenue); font-size: 13px; }
-.resumen { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 24px; }
-.ficha { border: 1px solid var(--borde); background: var(--panel); border-radius: 8px; padding: 8px 12px; cursor: pointer; text-align: left; color: inherit; font: inherit; }
-.ficha b { display: block; font-size: 20px; line-height: 1.2; }
-.ficha span { color: var(--tenue); font-size: 12px; }
-.ficha[aria-pressed="true"] { border-color: var(--acento); background: var(--acento-suave); }
-.filtros { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 0 24px 12px; align-items: center; }
-.filtros input[type=search], .filtros select { font: inherit; padding: 6px 10px; border: 1px solid var(--borde); border-radius: 6px; background: var(--panel); color: inherit; }
-.filtros input[type=search] { min-width: 240px; flex: 1 1 240px; }
-.filtros label { display: inline-flex; gap: 6px; align-items: center; color: var(--tenue); }
-main { display: grid; grid-template-columns: minmax(320px, 440px) 1fr; gap: 16px; padding: 0 24px 24px; align-items: start; }
-.lista { display: flex; flex-direction: column; gap: 6px; max-height: calc(100vh - 220px); overflow: auto; padding-right: 4px; }
-.fila { border: 1px solid var(--borde); background: var(--panel); border-radius: 8px; padding: 10px 12px; cursor: pointer; text-align: left; color: inherit; font: inherit; width: 100%; }
-.fila:hover { border-color: var(--acento); }
-.fila[aria-current="true"] { border-color: var(--acento); box-shadow: inset 3px 0 0 var(--acento); }
-.fila .linea1 { display: flex; gap: 8px; align-items: baseline; }
-.fila .num { font-family: var(--mono); color: var(--tenue); font-size: 12px; white-space: nowrap; }
-.fila .titulo { font-weight: 600; }
-.etiquetas { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
-.etq { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--neutro-suave); color: var(--tenue); white-space: nowrap; }
-.etq.ok { background: var(--ok-suave); color: var(--ok); }
-.etq.aviso { background: var(--aviso-suave); color: var(--aviso); }
-.etq.mal { background: var(--mal-suave); color: var(--mal); }
-.etq.acento { background: var(--acento-suave); color: var(--acento); }
-.detalle { background: var(--panel); border: 1px solid var(--borde); border-radius: 10px; padding: 20px 24px; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
-.detalle h2 { margin: 0 0 4px; font-size: 18px; }
-.detalle h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--tenue); margin: 20px 0 6px; }
-.detalle ul { margin: 0; padding-left: 20px; }
-.detalle p { margin: 0; }
-.vacio { color: var(--tenue); }
-.datos { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 12px; }
-.dato { background: var(--fondo); border-radius: 6px; padding: 8px 10px; }
-.dato span { display: block; color: var(--tenue); font-size: 12px; }
-.barra { height: 6px; border-radius: 3px; background: var(--neutro-suave); overflow: hidden; margin-top: 4px; }
-.barra i { display: block; height: 100%; background: var(--ok); }
-table { border-collapse: collapse; width: 100%; font-size: 13px; }
-th, td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--borde); }
-th { color: var(--tenue); font-weight: 600; }
-.checklist li { list-style: none; margin-left: -20px; }
-.checklist label { display: flex; gap: 8px; align-items: flex-start; }
-.acciones { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.boton { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--borde); background: var(--fondo); color: inherit; text-decoration: none; cursor: pointer; }
-.boton.primario { background: var(--acento); border-color: var(--acento); color: #fff; }
-a { color: var(--acento); }
-code { font-family: var(--mono); font-size: 12px; background: var(--fondo); padding: 1px 5px; border-radius: 4px; }
-pre.mermaid { background: var(--fondo); border-radius: 6px; padding: 12px; overflow: auto; font-size: 12px; }
-.detalle ol { margin: 0; padding-left: 20px; }
-.aviso-caja { background: var(--aviso-suave); color: var(--aviso); padding: 8px 12px; border-radius: 6px; margin-top: 12px; }
-@media (max-width: 860px) {
-  header, .resumen, .filtros, main { padding-left: 16px; padding-right: 16px; }
-  main { grid-template-columns: 1fr; }
-  .lista { max-height: none; }
-  .detalle { position: static; max-height: none; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--texto); font: 13px/1.5 var(--sans); -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums; }
+::selection { background: var(--sel); color: var(--texto); }
+* { scrollbar-width: thin; scrollbar-color: var(--linea-fuerte) transparent; }
+a { color: var(--acento); text-underline-offset: 2px; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; border-radius: 4px; }
+input[type=checkbox], input[type=radio] { accent-color: var(--acento); }
+.mono { font-family: var(--mono); font-size: 12px; }
+.tenue { color: var(--texto-2); }
+.muy-tenue { color: var(--texto-3); }
+svg.i { width: 14px; height: 14px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; vertical-align: -2px; }
+
+/* Estructura: barra superior + lateral + cola + detalle */
+.app { display: grid; grid-template-columns: 232px minmax(360px, 1fr) minmax(460px, 1.35fr); grid-template-rows: 48px 1fr; height: 100vh; }
+.barra { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; padding: 0 16px; border-bottom: 1px solid var(--linea); background: var(--panel); }
+.barra h1 { font-size: 13px; font-weight: 600; margin: 0; white-space: nowrap; }
+.barra .foto { color: var(--texto-3); white-space: nowrap; }
+.buscar { flex: 1; max-width: 420px; margin-left: auto; position: relative; }
+.buscar input { width: 100%; height: 30px; padding: 0 30px; border: 1px solid var(--linea); border-radius: 6px; background: var(--bg); }
+.buscar input:hover { border-color: var(--linea-fuerte); }
+.buscar svg { position: absolute; left: 9px; top: 8px; color: var(--texto-3); }
+.buscar kbd { position: absolute; right: 8px; top: 6px; }
+kbd { font: 12px/1.2 var(--mono); padding: 1px 5px; border: 1px solid var(--linea-fuerte); border-bottom-width: 2px; border-radius: 4px; color: var(--texto-2); background: var(--panel); }
+.rol { display: inline-flex; border: 1px solid var(--linea); border-radius: 6px; padding: 2px; background: var(--bg); }
+.rol button { border: 0; background: none; padding: 3px 10px; border-radius: 4px; cursor: pointer; color: var(--texto-2); }
+.rol button:hover { color: var(--texto); }
+.rol button[aria-pressed="true"] { background: var(--panel); color: var(--texto); box-shadow: var(--sombra); }
+
+.lateral { background: var(--lateral); border-right: 1px solid var(--linea); overflow: auto; padding: 12px 8px 24px; }
+.lateral h2 { font-size: 12px; font-weight: 600; color: var(--texto-3); margin: 18px 8px 4px; }
+.lateral h2:first-child { margin-top: 4px; }
+.nav { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: none; padding: 5px 8px; border-radius: 5px; cursor: pointer; text-align: left; color: var(--texto-2); }
+.nav:hover { background: var(--hover); color: var(--texto); }
+.nav[aria-pressed="true"] { background: var(--panel); color: var(--texto); box-shadow: var(--sombra); font-weight: 500; }
+.nav .n { margin-left: auto; color: var(--texto-3); font-size: 12px; font-weight: 400; }
+.punto { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--linea-fuerte); }
+.punto.rojo { background: var(--rojo); } .punto.ambar { background: var(--ambar); } .punto.verde { background: var(--verde); } .punto.violeta { background: var(--violeta); }
+
+/* Cola */
+.cola { overflow: auto; border-right: 1px solid var(--linea); background: var(--panel); }
+.grupo-cab { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 14px; background: var(--lateral); border: 0; border-bottom: 1px solid var(--linea); cursor: pointer; text-align: left; font-weight: 600; }
+.grupo-cab:hover { background: var(--hover); }
+.grupo-cab > span:nth-of-type(1) { white-space: nowrap; }
+.grupo-cab .n { color: var(--texto-3); font-weight: 400; }
+.grupo-cab .desc { flex: 1; color: var(--texto-3); font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.grupo-cab svg { color: var(--texto-3); transition: transform .15s ease-out; }
+.grupo[data-cerrado] .grupo-cab svg { transform: rotate(-90deg); }
+.grupo[data-cerrado] .filas { display: none; }
+.fila { display: grid; grid-template-columns: 8px 92px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; min-height: 38px; padding: 6px 14px; border: 0; border-bottom: 1px solid var(--linea); background: none; cursor: pointer; text-align: left; }
+.fila:hover { background: var(--hover); }
+.fila[aria-current="true"] { background: var(--sel); }
+.fila .id { color: var(--texto-3); white-space: nowrap; }
+.fila .titulo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fila .senales { display: flex; align-items: center; gap: 10px; color: var(--texto-3); font-size: 12px; white-space: nowrap; }
+.senal { display: inline-flex; align-items: center; gap: 3px; }
+.senal.rojo { color: var(--rojo); } .senal.ambar { color: var(--ambar); } .senal.verde { color: var(--verde); }
+.vacio { padding: 48px 24px; text-align: center; color: var(--texto-2); }
+.vacio p { max-width: 40ch; margin: 0 auto; }
+.vacio button { margin-top: 12px; }
+
+/* Detalle */
+.detalle { overflow: auto; background: var(--bg); }
+.det { max-width: 820px; padding: 20px 28px 56px; }
+.det-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; color: var(--texto-2); }
+.det h2 { font-size: 20px; line-height: 1.35; font-weight: 600; margin: 10px 0 8px; text-wrap: balance; }
+.mas { color: var(--verde); } .menos { color: var(--rojo); }
+.acciones { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 18px; }
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--panel); cursor: pointer; text-decoration: none; color: var(--texto); white-space: nowrap; transition: background-color .15s ease-out; }
+.btn:hover { background: var(--hover); }
+.btn:active { transform: translateY(1px); }
+.btn.primario { background: var(--acento); border-color: var(--acento); color: var(--acento-texto); }
+.btn.primario:hover { filter: brightness(1.08); background: var(--acento); }
+.btn.chico { height: 26px; padding: 0 9px; font-size: 12px; }
+.estado { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; background: var(--gris-bg); color: var(--texto-2); }
+.estado.verde { background: var(--verde-bg); color: var(--verde); } .estado.ambar { background: var(--ambar-bg); color: var(--ambar); }
+.estado.rojo { background: var(--rojo-bg); color: var(--rojo); } .estado.violeta { background: var(--violeta-bg); color: var(--violeta); }
+
+.checks { border: 1px solid var(--linea); border-radius: 8px; background: var(--panel); overflow: hidden; }
+.check { display: grid; grid-template-columns: 16px 132px minmax(0, 1fr); gap: 10px; align-items: start; padding: 9px 14px; border-bottom: 1px solid var(--linea); }
+.check:last-child { border-bottom: 0; }
+.check .icono { padding-top: 1px; color: var(--texto-3); }
+.check .icono.verde { color: var(--verde); } .check .icono.ambar { color: var(--ambar); } .check .icono.rojo { color: var(--rojo); }
+.check .nombre { color: var(--texto-2); }
+.check .valor small { display: block; color: var(--texto-3); font-size: 12px; }
+
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--linea); margin: 24px 0 18px; overflow-x: auto; }
+.tab { border: 0; background: none; padding: 8px 12px; cursor: pointer; color: var(--texto-2); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+.tab:hover { color: var(--texto); }
+.tab[aria-selected="true"] { color: var(--texto); border-bottom-color: var(--acento); font-weight: 500; }
+.tab .n { color: var(--texto-3); margin-left: 5px; font-weight: 400; }
+
+.seccion { margin: 0 0 24px; }
+.seccion h3 { font-size: 13px; font-weight: 600; margin: 0 0 6px; }
+.seccion p { margin: 0; max-width: 72ch; }
+.seccion ul, .seccion ol { margin: 0; padding-left: 20px; max-width: 72ch; }
+.seccion li + li { margin-top: 4px; }
+.lectura .mono { color: var(--texto); }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--linea); }
+th { font-weight: 500; color: var(--texto-3); font-size: 12px; }
+.tabla { border: 1px solid var(--linea); border-radius: 8px; background: var(--panel); overflow: auto; }
+.tabla tr:last-child td { border-bottom: 0; }
+.codigo { display: block; margin-top: 4px; padding: 4px 6px; border-radius: 4px; background: var(--bg); font: 12px/1.4 var(--mono); color: var(--texto-2); overflow-wrap: anywhere; }
+pre.mermaid { margin: 0; padding: 16px; border: 1px solid var(--linea); border-radius: 8px; background: var(--panel); overflow: auto; font: 12px var(--mono); color: var(--texto-2); }
+.sin-dato { color: var(--texto-3); }
+.nota-pie { margin-top: 28px; padding-top: 12px; border-top: 1px solid var(--linea); color: var(--texto-3); font-size: 12px; }
+
+.pasos { list-style: none; padding: 0; margin: 0; border: 1px solid var(--linea); border-radius: 8px; background: var(--panel); }
+.pasos li { display: flex; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--linea); }
+.pasos li:last-child { border-bottom: 0; }
+.pasos input { margin-top: 3px; }
+.pasos input:checked + label { color: var(--texto-3); text-decoration: line-through; }
+
+.decision { display: flex; flex-wrap: wrap; gap: 8px; }
+.decision label { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--panel); cursor: pointer; }
+.decision label:hover { background: var(--hover); }
+.decision label:has(input:checked) { border-color: var(--acento); background: var(--sel); }
+textarea { width: 100%; min-height: 96px; padding: 8px 10px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--panel); color: var(--texto); font: inherit; resize: vertical; }
+.guardado { color: var(--texto-3); font-size: 12px; margin-top: 6px; min-height: 18px; }
+
+.ayuda { margin: 22px 8px 0; color: var(--texto-3); font-size: 12px; display: grid; gap: 6px; }
+.volver { display: none; }
+
+@media (max-width: 1180px) {
+  .app { grid-template-columns: 200px minmax(320px, 1fr) minmax(400px, 1.2fr); }
+  .barra .foto { display: none; }
 }
+@media (max-width: 900px) {
+  .app { display: block; height: auto; }
+  .barra { position: sticky; top: 0; z-index: 3; flex-wrap: wrap; height: auto; padding: 10px 16px; }
+  .buscar { order: 3; flex-basis: 100%; max-width: none; margin: 0; }
+  .rol { margin-left: auto; }
+  .lateral { display: flex; gap: 6px; overflow-x: auto; padding: 8px 16px; border-right: 0; border-bottom: 1px solid var(--linea); }
+  .lateral h2, .lateral .solo-escritorio { display: none; }
+  .lateral .nav { width: auto; white-space: nowrap; flex: none; }
+  .cola { border-right: 0; }
+  .detalle { display: none; }
+  body[data-vista="detalle"] .cola, body[data-vista="detalle"] .lateral { display: none; }
+  body[data-vista="detalle"] .detalle { display: block; }
+  .det { padding: 16px; }
+  .volver { display: inline-flex; margin-bottom: 10px; }
+  .check { grid-template-columns: 16px minmax(0, 1fr); }
+  .check .valor { grid-column: 2; }
+  .fila { grid-template-columns: 8px minmax(0, 1fr); row-gap: 2px; }
+  .fila .id, .fila .titulo, .fila .senales { grid-column: 2; }
+  .fila .punto { grid-row: 1; }
+  .grupo-cab .desc { display: none; }
+  .fila .titulo { white-space: normal; }
+  .ayuda { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
 <body>
-<header>
-  <h1 id="titulo">Revisión de PRs</h1>
-  <div class="meta" id="meta"></div>
-</header>
-<div class="resumen" id="resumen"></div>
-<div class="filtros">
-  <input type="search" id="buscar" placeholder="Buscar por número, título o rama">
-  <select id="portal"><option value="">Todos los portales</option></select>
-  <select id="riesgo"><option value="">Cualquier riesgo</option><option value="alto">Riesgo alto</option><option value="medio">Riesgo medio</option><option value="bajo">Riesgo bajo</option></select>
-  <label><input type="checkbox" id="seguridad"> Solo seguridad</label>
-  <label><input type="checkbox" id="conHallazgos"> Con hallazgos altos</label>
-  <label><input type="checkbox" id="sinExplicacion"> Sin explicación</label>
-  <label><input type="checkbox" id="inactivas"> Incluir ramas inactivas</label>
+<!--
+THESIS: una bandeja de trabajo ordenada por la acción que toca, no un muro de tarjetas; rechaza las fichas con números grandes y la sopa de etiquetas.
+OWN-WORLD: neutros cálidos de herramienta, color solo para estado (verde listo, ámbar revisar, rojo bloquea, violeta mergeada), sans del sistema a 13 px, mono solo para ids, ramas y rutas.
+STORY: el autor ve qué hacer hoy; el revisor entiende una PR, deja su decisión y la exporta como archivo.
+FIRST VIEWPORT: lateral con vistas y conteos, cola agrupada con filas de una línea, detalle con pila de estados y pestañas.
+FORM: bandeja de tres columnas (Linear, GitHub) y detalle tipo merge request (GitLab, Graphite); referencias de Mobbin.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
+-->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-buscar" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 16 16"><path d="m4 6 4 4 4-4"/></symbol>
+  <symbol id="i-ok" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2"/><path d="m5.4 8.2 1.8 1.8 3.4-3.6"/></symbol>
+  <symbol id="i-alerta" viewBox="0 0 16 16"><path d="M8 2.2 14.3 13H1.7L8 2.2Z"/><path d="M8 6.5v3"/><path d="M8 11.4v.1"/></symbol>
+  <symbol id="i-bloqueo" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></symbol>
+  <symbol id="i-circulo" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2" stroke-dasharray="2.5 2"/></symbol>
+  <symbol id="i-merge" viewBox="0 0 16 16"><circle cx="4.5" cy="3.5" r="1.6"/><circle cx="4.5" cy="12.5" r="1.6"/><circle cx="11.5" cy="8" r="1.6"/><path d="M4.5 5.1v5.8M4.5 5.5c0 2.5 2.5 2.5 5.4 2.5"/></symbol>
+  <symbol id="i-externo" viewBox="0 0 16 16"><path d="M9 3h4v4M13 3 7.5 8.5M11.5 9.5V13h-8.5V4.5H6.5"/></symbol>
+  <symbol id="i-copiar" viewBox="0 0 16 16"><rect x="5" y="5" width="8.5" height="8.5" rx="1.5"/><path d="M3 10.5V3.8C3 3.3 3.3 3 3.8 3h6.7"/></symbol>
+  <symbol id="i-escudo" viewBox="0 0 16 16"><path d="M8 1.8 13 3.7v4c0 3.1-2.1 5.4-5 6.5-2.9-1.1-5-3.4-5-6.5v-4L8 1.8Z"/></symbol>
+  <symbol id="i-reloj" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.8V8l2.2 1.4"/></symbol>
+  <symbol id="i-ojo" viewBox="0 0 16 16"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Z"/><circle cx="8" cy="8" r="1.8"/></symbol>
+  <symbol id="i-flecha" viewBox="0 0 16 16"><path d="M10 3.5 5.5 8l4.5 4.5"/></symbol>
+  <symbol id="i-descargar" viewBox="0 0 16 16"><path d="M8 2.5v8M4.8 7.5 8 10.7l3.2-3.2M3 13.5h10"/></symbol>
+  <symbol id="i-subir" viewBox="0 0 16 16"><path d="M8 10.5v-8M4.8 5.7 8 2.5l3.2 3.2M3 13.5h10"/></symbol>
+</svg>
+
+<div class="app">
+  <header class="barra">
+    <h1 id="titulo">Revisión de PRs</h1>
+    <span class="foto" id="foto"></span>
+    <label class="buscar">
+      <svg class="i" aria-hidden="true"><use href="#i-buscar"/></svg>
+      <input type="search" id="buscar" placeholder="Buscar por número, título, rama o archivo" aria-label="Buscar PRs">
+      <kbd>/</kbd>
+    </label>
+    <div class="rol" role="group" aria-label="Vista">
+      <button data-rol="autor" aria-pressed="true">Autor</button>
+      <button data-rol="revisor" aria-pressed="false">Revisor</button>
+    </div>
+  </header>
+
+  <nav class="lateral" id="lateral" aria-label="Vistas y filtros"></nav>
+
+  <main class="cola" id="cola" aria-label="Cola de PRs"></main>
+
+  <section class="detalle" id="detalle" aria-label="Detalle de la PR"></section>
 </div>
-<main>
-  <div class="lista" id="lista" role="list"></div>
-  <section class="detalle" id="detalle"><p class="vacio">Seleccione una PR para ver su detalle.</p></section>
-</main>
+<input type="file" id="archivoRevision" accept="application/json,.json" hidden>
+
 <script>
 const FOTO = /*DATOS*/null;
-const ESTADO = {
-  en_pruebas: ['Ya está en pruebas', 'ok'],
-  parcial: ['Otra versión en pruebas', 'aviso'],
-  no_en_pruebas: ['No está en pruebas', 'mal'],
+
+const GRUPOS = {
+  pruebas_sin_prod: ['En pruebas, sin salir a producción', 'Código en pruebas que no aparece en producción ni en ninguna PR hacia producción'],
+  solo_prod: ['Listo para producción', 'El código ya está en pruebas; falta mergear hacia producción'],
+  revisar_diferencias: ['Revisar diferencias con pruebas', 'Pruebas tiene otra versión del cambio'],
+  pruebas_abierta: ['Esperando merge en pruebas', 'Su PR hacia pruebas sigue abierta'],
+  sin_pruebas: ['Sin pasar por pruebas', 'No hay PR hacia pruebas ni el código está allá'],
+  hacia_pruebas: ['Hacia pruebas', 'PRs abiertas contra las ramas de pruebas'],
+  pruebas_automaticas: ['Solo pruebas automáticas', 'No cambian el funcionamiento'],
+  otra: ['Otras ramas', 'Base fuera de las líneas configuradas'],
+  inactiva: ['Ramas que ya no se usan', 'Legado�, pagos-legado del checkout y main del back'],
 };
-const ORDEN_ACCION = ['pruebas_sin_prod', 'solo_prod', 'revisar_diferencias', 'pruebas_abierta', 'sin_pruebas', 'hacia_pruebas', 'pruebas_automaticas', 'otra', 'inactiva'];
+const DECISIONES = {
+  aprobada: ['Aprobada', 'verde'],
+  probada: ['Probada en pruebas', 'verde'],
+  duda: ['Con preguntas', 'ambar'],
+  cambios: ['Pide cambios', 'rojo'],
+};
+const GRUPOS_REVISOR = {
+  sin_revisar: ['Sin revisar', 'Aún sin decisión del revisor'],
+  cambios: ['Pide cambios', 'El revisor dejó observaciones'],
+  duda: ['Con preguntas', 'Falta una aclaración del autor'],
+  aprobada: ['Aprobadas', 'Listas desde el punto de vista del revisor'],
+  probada: ['Probadas en pruebas', 'Validadas funcionalmente'],
+};
+
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const guardado = (k, v) => { try { if (v === undefined) return JSON.parse(localStorage.getItem(k)); localStorage.setItem(k, JSON.stringify(v)); } catch { return null; } };
+const icono = (nombre, clase = '') => `<svg class="i ${clase}" aria-hidden="true"><use href="#i-${nombre}"/></svg>`;
+const almacen = {
+  leer(k, d = null) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  escribir(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } },
+};
+const claveRevision = (pr) => `pw-revision:revision:${pr.id}`;
+const clavePasos = (pr, sha = pr.headSha) => `pw-revision:probado:${pr.id}:${sha}`;
+const revision = (pr) => almacen.leer(claveRevision(pr));
+const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;
+const gh = (repo, n) => `https://github.com/${FOTO.owner}/${repo}/pull/${n}`;
 
-let accionFiltro = null;
-let seleccion = null;
+const estado = {
+  rol: almacen.leer('pw-revision:rol', 'autor'),
+  vista: 'cola',
+  portal: null,
+  filtros: new Set(),
+  cerrados: new Set(almacen.leer('pw-revision:cerrados', ['pruebas_automaticas'])),
+  seleccion: null,
+  tab: 'resumen',
+};
 
-function filtrar() {
+// Un solo tono por PR, el más grave que aplique: rojo bloquea, ámbar pide mirar, verde listo, violeta mergeada.
+function tono(pr) {
+  const v = pr.verificaciones?.resumen ?? {};
+  if (v.bloqueante || (pr.sinProd && pr.seguridad)) return 'rojo';
+  if (pr.sinProd || v.alto || pr.estadoPruebas?.estado === 'parcial' || pr.explicacion?.riesgo === 'alto') return 'ambar';
+  if (pr.estadoPr === 'MERGED') return 'violeta';
+  if (pr.accion === 'solo_prod') return 'verde';
+  return '';
+}
+
+const definicionGrupos = () => (estado.rol === 'revisor' ? GRUPOS_REVISOR : GRUPOS);
+const grupoDe = (pr) => (estado.rol === 'revisor' ? revision(pr)?.decision ?? 'sin_revisar' : pr.accion);
+const enVista = (pr) => (estado.vista === 'inactivas' ? pr.ambiente === 'inactiva' : pr.ambiente !== 'inactiva');
+
+function pasaFiltros(pr) {
+  if (!enVista(pr)) return false;
+  if (estado.portal && pr.portal !== estado.portal) return false;
+  const v = pr.verificaciones?.resumen ?? {};
+  if (estado.filtros.has('seguridad') && !pr.seguridad) return false;
+  if (estado.filtros.has('hallazgos') && !(v.bloqueante || v.alto)) return false;
+  if (estado.filtros.has('sinExplicacion') && pr.explicacion && !pr.explicacion.desactualizada) return false;
+  if (estado.filtros.has('sinRevisar') && revision(pr)) return false;
   const q = $('buscar').value.trim().toLowerCase();
-  return FOTO.prs.filter((pr) => {
-    if (!$('inactivas').checked && pr.ambiente === 'inactiva' && accionFiltro !== 'inactiva') return false;
-    if (accionFiltro && pr.accion !== accionFiltro) return false;
-    if ($('portal').value && pr.portal !== $('portal').value) return false;
-    if ($('riesgo').value && pr.explicacion?.riesgo !== $('riesgo').value) return false;
-    if ($('seguridad').checked && !pr.seguridad) return false;
-    if ($('conHallazgos').checked && !(pr.verificaciones?.resumen.bloqueante || pr.verificaciones?.resumen.alto)) return false;
-    if ($('sinExplicacion').checked && pr.explicacion && !pr.explicacion.desactualizada) return false;
-    if (q && !`${pr.numero} #${pr.numero} ${pr.titulo} ${pr.rama} ${pr.repo}`.toLowerCase().includes(q)) return false;
-    return true;
-  }).sort((a, b) => ORDEN_ACCION.indexOf(a.accion) - ORDEN_ACCION.indexOf(b.accion) || a.repo.localeCompare(b.repo) || b.numero - a.numero);
-}
-
-function etiquetas(pr) {
-  const t = [`<span class="etq acento">${esc(pr.portal)}</span>`];
-  if (pr.estadoPruebas) {
-    const [txt, cls] = ESTADO[pr.estadoPruebas.estado] ?? [pr.estadoPruebas.estado, ''];
-    t.push(`<span class="etq ${cls}">${txt}</span>`);
+  if (q) {
+    const archivos = [...(pr.explicacion?.orden_lectura ?? []).map((o) => o.archivo), ...(pr.verificaciones?.hallazgos ?? []).map((h) => h.archivo)].join(' ');
+    if (!`${pr.numero} #${pr.numero} ${pr.titulo} ${pr.rama} ${pr.repo} ${pr.portal} ${archivos}`.toLowerCase().includes(q)) return false;
   }
-  if (pr.ambiente === 'pruebas') t.push(`<span class="etq">${pr.estadoPr === 'MERGED' ? 'Mergeada en pruebas' : 'Hacia pruebas'}</span>`);
-  if (pr.sinProd) t.push('<span class="etq mal">Código no encontrado en producción</span>');
-  if (pr.cubiertaPor) t.push(`<span class="etq">Cubierta por #${pr.cubiertaPor}</span>`);
-  if (pr.gemela) t.push(`<span class="etq">Gemela #${pr.gemela.numero} ${pr.gemela.estado === 'MERGED' ? 'mergeada' : pr.gemela.estado === 'OPEN' ? 'abierta' : 'cerrada'}</span>`);
-  const faltantes = (pr.hermanas ?? []).filter((h) => !h.numero).map((h) => h.portal);
-  if (faltantes.length) t.push(`<span class="etq aviso">Sin equivalente en ${esc(faltantes.join(', '))}</span>`);
-  if (pr.seguridad) t.push('<span class="etq mal">Seguridad</span>');
-  const v = pr.verificaciones?.resumen;
-  if (v?.bloqueante) t.push(`<span class="etq mal">${v.bloqueante} bloqueante${v.bloqueante > 1 ? 's' : ''}</span>`);
-  if (v?.alto) t.push(`<span class="etq aviso">${v.alto} hallazgo${v.alto > 1 ? 's' : ''} alto${v.alto > 1 ? 's' : ''}</span>`);
-  if (pr.explicacion?.riesgo) t.push(`<span class="etq ${pr.explicacion.riesgo === 'alto' ? 'mal' : pr.explicacion.riesgo === 'medio' ? 'aviso' : 'ok'}">Riesgo ${pr.explicacion.riesgo}</span>`);
-  if (!pr.explicacion) t.push('<span class="etq">Sin explicación</span>');
-  else if (pr.explicacion.desactualizada) t.push('<span class="etq aviso">Explicación desactualizada</span>');
+  return true;
+}
+
+function pintarLateral() {
+  const base = FOTO.prs.filter(enVista);
+  const portales = [...new Set(base.map((p) => p.portal))].sort();
+  const cuenta = (fn) => base.filter(fn).length;
+  const inactivas = FOTO.prs.filter((p) => p.ambiente === 'inactiva').length;
+  const nav = (attrs, contenido, n, activo) => `<button class="nav" ${attrs} aria-pressed="${activo}">${contenido}<span class="n">${n}</span></button>`;
+  const filtro = (clave, texto, n) => nav(`data-filtro="${clave}"`, texto, n, estado.filtros.has(clave));
+  $('lateral').innerHTML = `
+    <h2>Vistas</h2>
+    ${nav('data-vista="cola"', 'Cola de trabajo', FOTO.prs.length - inactivas, estado.vista === 'cola')}
+    ${nav('data-vista="inactivas"', 'Ramas que ya no se usan', inactivas, estado.vista === 'inactivas')}
+    <h2>Portal</h2>
+    ${nav('data-portal=""', 'Todos', base.length, !estado.portal)}
+    ${portales.map((p) => nav(`data-portal="${esc(p)}"`, esc(p), cuenta((x) => x.portal === p), estado.portal === p)).join('')}
+    <h2>Filtros</h2>
+    ${filtro('hallazgos', `${icono('alerta')} Con hallazgos altos`, cuenta((x) => x.verificaciones?.resumen.bloqueante || x.verificaciones?.resumen.alto))}
+    ${filtro('seguridad', `${icono('escudo')} Seguridad`, cuenta((x) => x.seguridad))}
+    ${filtro('sinExplicacion', `${icono('circulo')} Sin explicación`, cuenta((x) => !x.explicacion || x.explicacion.desactualizada))}
+    ${filtro('sinRevisar', `${icono('ojo')} Sin revisar`, cuenta((x) => !revision(x)))}
+    <div class="solo-escritorio">
+      <h2>Revisión</h2>
+      <button class="nav" data-accion="exportar">${icono('descargar')} Exportar revisión</button>
+      <button class="nav" data-accion="importar">${icono('subir')} Importar revisión</button>
+      <div class="ayuda"><span><kbd>j</kbd> <kbd>k</kbd> moverse en la cola</span><span><kbd>o</kbd> abrir en GitHub</span><span><kbd>/</kbd> buscar</span></div>
+    </div>`;
+}
+
+function senales(pr) {
+  const s = [];
+  const v = pr.verificaciones?.resumen ?? {};
+  if (v.bloqueante) s.push(`<span class="senal rojo" title="${plural(v.bloqueante, 'verificación bloqueante', 'verificaciones bloqueantes')}">${icono('bloqueo')}${v.bloqueante}</span>`);
+  else if (v.alto) s.push(`<span class="senal ambar" title="${plural(v.alto, 'hallazgo alto', 'hallazgos altos')}">${icono('alerta')}${v.alto}</span>`);
+  const r = revision(pr);
+  if (r?.decision) {
+    const [txt, cls] = DECISIONES[r.decision] ?? [r.decision, ''];
+    s.push(`<span class="senal ${cls}" title="Revisor: ${esc(txt)}">${icono(cls === 'rojo' ? 'bloqueo' : cls === 'ambar' ? 'alerta' : 'ok')}</span>`);
+  }
+  if (pr.seguridad) s.push(`<span class="senal" title="Seguridad">${icono('escudo')}</span>`);
   const esfuerzo = pr.explicacion?.esfuerzo ?? pr.esfuerzoTamano;
-  if (esfuerzo) t.push(`<span class="etq" title="${pr.explicacion?.esfuerzo ? 'Según la explicación' : 'Estimado por tamaño'}">Esfuerzo ${esfuerzo}/5</span>`);
-  t.push(`<span class="etq">${pr.dias} días</span>`);
-  if (pr.adiciones !== undefined) t.push(`<span class="etq">+${pr.adiciones} / -${pr.eliminaciones}</span>`);
-  return t.join('');
+  if (esfuerzo) s.push(`<span title="Esfuerzo de revisión, de 1 a 5">E${esfuerzo}</span>`);
+  s.push(`<span title="Días desde que se abrió">${pr.dias} d</span>`);
+  return s.join('');
 }
 
-const SEVERIDAD_CLASE = { bloqueante: 'mal', alto: 'aviso', medio: '', aviso: '' };
-
-function seccionVerificaciones(pr) {
-  const v = pr.verificaciones;
-  if (!v) return '';
-  if (!v.hallazgos.length) return '<h3>Verificaciones automáticas</h3><p class="vacio">Sin hallazgos en las líneas agregadas.</p>';
-  const archivoUrl = (h) => (h.linea ? `${pr.url}/files` : pr.url);
-  return `<h3>Verificaciones automáticas</h3>
-    <table><thead><tr><th>Severidad</th><th>Regla</th><th>Dónde</th><th>Qué hacer</th></tr></thead><tbody>
-    ${v.hallazgos.map((h) => `<tr>
-      <td><span class="etq ${SEVERIDAD_CLASE[h.severidad]}">${esc(h.severidad)}</span></td>
-      <td><b>${esc(h.titulo)}</b><br><span class="vacio">${esc(h.origen)}</span></td>
-      <td><a href="${esc(archivoUrl(h))}" target="_blank" rel="noopener"><code>${esc(h.archivo)}${h.linea ? ':' + h.linea : ''}</code></a>${h.texto ? `<br><code>${esc(h.texto)}</code>` : ''}</td>
-      <td>${esc(h.mensaje)}</td></tr>`).join('')}
-    </tbody></table>
-    <p class="vacio">Una línea se excluye con el comentario <code>pw-revision: ignorar &lt;regla&gt;</code>.</p>`;
-}
-
-function datoHermanas(pr) {
-  if (!pr.hermanas?.length) return '';
-  const enlace = (h) => h.numero
-    ? `<a href="https://github.com/${esc(FOTO.owner)}/${esc(pr.repo)}/pull/${h.numero}" target="_blank" rel="noopener">#${h.numero}</a> (${esc(h.estado)})`
-    : 'no encontrada';
-  return `<div class="dato"><span>Mismo cambio en otros portales</span>${pr.hermanas.map((h) => `${esc(h.portal)}: ${enlace(h)}`).join('<br>')}</div>`;
-}
-
-function pintarResumen() {
-  const visibles = FOTO.prs.filter((pr) => $('inactivas').checked || pr.ambiente !== 'inactiva' || accionFiltro === 'inactiva');
-  $('resumen').innerHTML = ORDEN_ACCION.map((a) => {
-    const n = (a === 'inactiva' ? FOTO.prs : visibles).filter((pr) => pr.accion === a).length;
-    if (!n) return '';
-    return `<button class="ficha" data-accion="${a}" aria-pressed="${accionFiltro === a}"><b>${n}</b><span>${esc(FOTO.acciones[a])}</span></button>`;
+function pintarCola() {
+  const prs = FOTO.prs.filter(pasaFiltros);
+  if (!prs.length) {
+    $('cola').innerHTML = `<div class="vacio"><p>Ninguna PR coincide con la búsqueda y los filtros activos.</p><button class="btn" data-accion="limpiar">Quitar filtros</button></div>`;
+    return;
+  }
+  const defs = definicionGrupos();
+  const orden = Object.keys(defs);
+  const porGrupo = new Map();
+  for (const pr of prs) {
+    const g = grupoDe(pr);
+    if (!porGrupo.has(g)) porGrupo.set(g, []);
+    porGrupo.get(g).push(pr);
+  }
+  const posicion = (g) => (orden.includes(g) ? orden.indexOf(g) : 99);
+  $('cola').innerHTML = [...porGrupo.keys()].sort((a, b) => posicion(a) - posicion(b)).map((g) => {
+    const [nombre, desc] = defs[g] ?? GRUPOS[g] ?? [FOTO.acciones?.[g] ?? g, ''];
+    const filas = porGrupo.get(g).sort((a, b) => a.repo.localeCompare(b.repo) || b.numero - a.numero);
+    const cerrado = estado.cerrados.has(g);
+    return `<section class="grupo" ${cerrado ? 'data-cerrado' : ''}>
+      <button class="grupo-cab" data-grupo-toggle="${g}" aria-expanded="${!cerrado}">${icono('chevron')}<span>${esc(nombre)}</span><span class="n">${filas.length}</span><span class="desc">${esc(desc)}</span></button>
+      <div class="filas">${filas.map((pr) => `
+        <button class="fila" data-id="${esc(pr.id)}" aria-current="${estado.seleccion === pr.id}">
+          <span class="punto ${tono(pr)}"></span>
+          <span class="id mono">${esc(pr.repoEtiqueta)} #${pr.numero}</span>
+          <span class="titulo" title="${esc(pr.titulo)}">${esc(pr.titulo)}</span>
+          <span class="senales">${senales(pr)}</span>
+        </button>`).join('')}</div>
+    </section>`;
   }).join('');
 }
 
-function pintarLista() {
-  const prs = filtrar();
-  $('lista').innerHTML = prs.length
-    ? prs.map((pr) => `<button class="fila" role="listitem" data-id="${esc(pr.id)}" aria-current="${seleccion === pr.id}">
-        <div class="linea1"><span class="num">${esc(pr.repoEtiqueta)} #${pr.numero}</span><span class="titulo">${esc(pr.titulo)}</span></div>
-        <div class="etiquetas">${etiquetas(pr)}</div></button>`).join('')
-    : '<p class="vacio">No hay PRs con estos filtros.</p>';
+function check(icon, color, nombre, valor, detalle = '') {
+  return `<div class="check"><span class="icono ${color}">${icono(icon)}</span><span class="nombre">${nombre}</span><span class="valor">${valor}${detalle ? `<small>${detalle}</small>` : ''}</span></div>`;
 }
 
-const listaHtml = (items) => (items?.length ? `<ul>${items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : '<p class="vacio">Sin datos.</p>');
-
-function pintarDetalle(pr) {
-  const e = pr.explicacion;
+function pilaEstados(pr) {
+  const filas = [];
   const ep = pr.estadoPruebas;
-  const claveChecklist = `pw-revision:probado:${pr.id}:${pr.headSha}`;
-  const marcados = guardado(claveChecklist) ?? [];
-  const pct = ep && ep.total ? Math.round((ep.iguales / ep.total) * 100) : 0;
-  const metodo = ep?.metodo === 'parche' ? 'comprobado aplicando el cambio sobre pruebas' : 'comparando archivo por archivo';
+  if (ep) {
+    const metodo = ep.metodo === 'parche' ? 'Comprobado aplicando el cambio sobre la rama de pruebas' : 'Comparado archivo por archivo';
+    const mapa = { en_pruebas: ['ok', 'verde', 'El código ya está en pruebas'], parcial: ['alerta', 'ambar', 'Pruebas tiene otra versión del cambio'], no_en_pruebas: ['circulo', '', 'Todavía no está en pruebas'] };
+    const [i, c, t] = mapa[ep.estado] ?? ['circulo', '', ep.estado];
+    filas.push(check(i, c, 'Pruebas', t, `${ep.iguales} de ${ep.total} archivos iguales${ep.conflicto ? ', con conflicto' : ''}. ${metodo}.`));
+  }
+  if (pr.estadoProd) {
+    const det = `${pr.estadoProd.iguales} de ${pr.estadoProd.total} archivos iguales en producción`;
+    filas.push(pr.sinProd
+      ? check('bloqueo', pr.seguridad ? 'rojo' : 'ambar', 'Producción', 'Código no encontrado en producción y sin PR hacia producción', det)
+      : check('ok', '', 'Producción', pr.cubiertaPor ? `La PR <a href="${gh(pr.repo, pr.cubiertaPor)}" target="_blank" rel="noopener">#${pr.cubiertaPor}</a> hacia producción trae los mismos archivos` : 'Sin alertas', det));
+  }
+  if (pr.gemela) {
+    const txt = { MERGED: 'mergeada', OPEN: 'abierta', CLOSED: 'cerrada sin mergear' }[pr.gemela.estado] ?? pr.gemela.estado;
+    filas.push(check(pr.gemela.estado === 'MERGED' ? 'merge' : 'circulo', pr.gemela.estado === 'MERGED' ? 'verde' : '', pr.ambiente === 'prod' ? 'PR hacia pruebas' : 'PR hacia producción',
+      `<a href="${gh(pr.repo, pr.gemela.numero)}" target="_blank" rel="noopener">#${pr.gemela.numero}</a> ${txt}`, 'Encontrada por título; el estado de pruebas de arriba es la comprobación'));
+  }
+  if (pr.hermanas?.length) {
+    const faltan = pr.hermanas.some((h) => !h.numero);
+    filas.push(check(faltan ? 'alerta' : 'ok', faltan ? 'ambar' : 'verde', 'Otros portales',
+      pr.hermanas.map((h) => (h.numero ? `${esc(h.portal)}: <a href="${gh(pr.repo, h.numero)}" target="_blank" rel="noopener">#${h.numero}</a>` : `${esc(h.portal)}: sin PR equivalente`)).join(' · '),
+      faltan ? 'Confirmar si el cambio aplica también a ese portal' : ''));
+  }
+  const v = pr.verificaciones;
+  if (v) {
+    const r = v.resumen;
+    const [i, c] = r.bloqueante ? ['bloqueo', 'rojo'] : r.alto ? ['alerta', 'ambar'] : ['ok', 'verde'];
+    const partes = [r.bloqueante && plural(r.bloqueante, 'bloqueante', 'bloqueantes'), r.alto && plural(r.alto, 'alta', 'altas'), r.medio && plural(r.medio, 'media', 'medias'), r.aviso && plural(r.aviso, 'aviso', 'avisos')].filter(Boolean);
+    filas.push(check(i, c, 'Verificaciones', partes.length ? partes.join(', ') : 'Sin hallazgos en las líneas agregadas', partes.length ? '<a href="#" data-tab-ir="verificaciones">Ver hallazgos</a>' : ''));
+  }
+  const rev = revision(pr);
+  if (rev?.decision) {
+    const [txt, cls] = DECISIONES[rev.decision] ?? [rev.decision, ''];
+    const cambio = rev.headSha && rev.headSha !== pr.headSha ? ' · la PR cambió después de esta revisión' : '';
+    filas.push(check(cls === 'rojo' ? 'bloqueo' : cls === 'ambar' ? 'alerta' : 'ok', cls, 'Revisor', esc(txt), `${esc(new Date(rev.fecha).toLocaleDateString('es-CO'))}${cambio}`));
+  } else if (pr.revisionGithub) {
+    filas.push(check('ojo', '', 'Revisión en GitHub', esc(pr.revisionGithub)));
+  }
+  return filas.length ? `<div class="checks">${filas.join('')}</div>` : '';
+}
 
-  $('detalle').innerHTML = `
-    <div class="num">${esc(pr.repo)} #${pr.numero} &middot; ${esc(pr.base)} &larr; ${esc(pr.rama)}</div>
+const lista = (items) => (items?.length ? `<ul>${items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : '<p class="sin-dato">Sin datos.</p>');
+const sec = (titulo, cuerpo) => `<div class="seccion"><h3>${titulo}</h3>${cuerpo}</div>`;
+
+function tabResumen(pr) {
+  const e = pr.explicacion;
+  if (!e) {
+    return `<div class="seccion"><p class="tenue">Esta PR todavía no tiene explicación. Se genera desde Claude Code y aparece aquí al regenerar el tablero.</p>
+      <p style="margin-top:12px"><button class="btn chico" data-copiar="/pw-revision:revisar-prs explicar ${esc(pr.repo)}#${pr.numero}">${icono('copiar')} Copiar el comando</button></p></div>`;
+  }
+  return `
+    ${e.desactualizada ? `<div class="seccion"><span class="estado ambar">${icono('alerta')} La PR recibió commits después de esta explicación</span></div>` : ''}
+    ${sec('Qué resuelve', `<p>${esc(e.resumen)}</p>`)}
+    ${sec('Por qué', `<p>${esc(e.por_que)}</p>`)}
+    ${e.impacto_usuario ? sec('Qué nota quien usa el portal', `<p>${esc(e.impacto_usuario)}</p>`) : ''}
+    ${sec('Qué cambia', lista(e.que_cambia))}
+    ${e.orden_lectura?.length ? sec('Orden de lectura', `<ol class="lectura">${e.orden_lectura.map((o) => `<li><span class="mono">${esc(o.archivo)}</span><br><span class="tenue">${esc(o.motivo)}</span></li>`).join('')}</ol>`) : ''}
+    ${e.diagrama ? sec('Flujo', `<pre class="mermaid">${esc(e.diagrama.replace(/#(?!\d+;)/g, '#35;'))}</pre>`) : ''}
+    ${e.tecnologias?.length ? sec('Tecnologías', `<div class="tabla"><table><thead><tr><th>Tecnología</th><th>Uso en este cambio</th><th>Por qué esta</th><th>Descartadas</th></tr></thead><tbody>
+      ${e.tecnologias.map((t) => `<tr><td><strong>${esc(t.nombre)}</strong></td><td>${esc(t.uso)}</td><td>${esc(t.por_que)}</td><td class="tenue">${esc((t.alternativas_descartadas ?? []).join(' '))}</td></tr>`).join('')}
+      </tbody></table></div>`) : ''}
+    ${e.alternativas?.length ? sec('Alternativas consideradas', lista(e.alternativas)) : ''}
+    ${e.dependencias?.length ? sec('Debe ir antes', lista(e.dependencias)) : ''}
+    ${e.riesgos?.length ? sec('Riesgos', lista(e.riesgos)) : ''}
+    <p class="nota-pie">Explicación del ${esc(e.fecha?.slice(0, 10))} sobre el commit <span class="mono">${esc(e.headSha?.slice(0, 7))}</span>${e.riesgo ? ` · riesgo ${esc(e.riesgo)}` : ''}${e.esfuerzo ? ` · esfuerzo ${e.esfuerzo} de 5` : ''}.</p>`;
+}
+
+function tabVerificaciones(pr) {
+  const v = pr.verificaciones;
+  if (!v) return '<p class="sin-dato">Sin verificaciones para esta PR.</p>';
+  if (!v.hallazgos.length) return '<p class="tenue">Las líneas agregadas pasan todas las reglas.</p>';
+  const color = { bloqueante: 'rojo', alto: 'ambar', medio: '', aviso: '' };
+  return `<div class="tabla"><table><thead><tr><th>Severidad</th><th>Hallazgo</th><th>Dónde</th></tr></thead><tbody>
+    ${v.hallazgos.map((h) => `<tr>
+      <td><span class="estado ${color[h.severidad]}">${esc(h.severidad)}</span></td>
+      <td><strong>${esc(h.titulo)}</strong><br><span class="tenue">${esc(h.mensaje)}</span><br><span class="muy-tenue">${esc(h.origen)}</span></td>
+      <td><a class="mono" href="${esc(pr.url)}/files" target="_blank" rel="noopener">${esc(h.archivo)}${h.linea ? ':' + h.linea : ''}</a>${h.texto ? `<code class="codigo">${esc(h.texto)}</code>` : ''}</td>
+    </tr>`).join('')}
+  </tbody></table></div>
+  <p class="nota-pie">Una línea se excluye de una regla con el comentario <span class="mono">pw-revision: ignorar &lt;regla&gt;</span>.</p>`;
+}
+
+function tabProbar(pr) {
+  const pasos = pr.explicacion?.como_probar ?? [];
+  if (!pasos.length) return '<p class="sin-dato">La explicación no trae pasos de prueba.</p>';
+  const marcados = almacen.leer(clavePasos(pr), []);
+  return `<ul class="pasos">${pasos.map((p, i) => `<li><input type="checkbox" id="paso${i}" data-paso="${i}" ${marcados.includes(i) ? 'checked' : ''}><label for="paso${i}">${esc(p)}</label></li>`).join('')}</ul>
+    <p class="nota-pie">${marcados.length} de ${plural(pasos.length, 'paso marcado', 'pasos marcados')}. Se guarda en este navegador y viaja con la revisión exportada.</p>`;
+}
+
+function tabRevision(pr) {
+  const r = revision(pr) ?? {};
+  return `${sec('Decisión', `<div class="decision" role="radiogroup">${Object.entries(DECISIONES).map(([k, [t]]) => `<label><input type="radio" name="decision" value="${k}" ${r.decision === k ? 'checked' : ''}> ${t}</label>`).join('')}</div>`)}
+    ${sec('Observaciones para el autor', `<textarea id="notaRevision" placeholder="Qué falta, qué se probó, qué hay que aclarar">${esc(r.nota ?? '')}</textarea>
+      <div class="guardado" id="guardado">${r.fecha ? `Guardado el ${esc(new Date(r.fecha).toLocaleString('es-CO'))}` : ''}</div>`)}
+    <p class="tenue">La revisión queda en este navegador. Para enviarla al autor:</p>
+    <div class="acciones"><button class="btn" data-accion="exportar">${icono('descargar')} Exportar revisión</button><button class="btn" data-accion="copiarResumen">${icono('copiar')} Copiar resumen</button></div>`;
+}
+
+const TABS = [
+  ['resumen', 'Resumen', () => null],
+  ['verificaciones', 'Verificaciones', (pr) => pr.verificaciones?.hallazgos.length || null],
+  ['probar', 'Cómo probar', (pr) => pr.explicacion?.como_probar?.length || null],
+  ['revision', 'Revisión', () => null],
+];
+const CUERPOS = { resumen: tabResumen, verificaciones: tabVerificaciones, probar: tabProbar, revision: tabRevision };
+
+function pintarDetalle() {
+  const pr = FOTO.prs.find((p) => p.id === estado.seleccion);
+  if (!pr) {
+    $('detalle').innerHTML = `<div class="vacio"><p>Seleccione una PR de la cola para ver dónde está, qué cambia y cómo probarla.</p></div>`;
+    return;
+  }
+  const t = tono(pr);
+  const [nombreGrupo] = definicionGrupos()[grupoDe(pr)] ?? GRUPOS[pr.accion] ?? [pr.accion];
+  const etiqueta = pr.estadoPr === 'MERGED'
+    ? `<span class="estado violeta">${icono('merge')} Mergeada en pruebas</span>`
+    : `<span class="estado ${t}">${esc(nombreGrupo)}</span>`;
+  $('detalle').innerHTML = `<article class="det">
+    <button class="btn chico volver" data-accion="volver">${icono('flecha')} Cola</button>
+    <div class="det-meta">${etiqueta}<span class="mono">${esc(pr.repo)} #${pr.numero}</span><span>${esc(pr.portal)}</span></div>
     <h2>${esc(pr.titulo)}</h2>
-    <div class="etiquetas">${etiquetas(pr)}</div>
-    <div class="datos">
-      <div class="dato"><span>Acción</span>${esc(FOTO.acciones[pr.accion])}</div>
-      ${ep ? `<div class="dato"><span>Frente a pruebas</span>${ep.iguales} de ${ep.total} archivos iguales${ep.conflicto ? ', con conflicto' : ''}<div class="barra"><i style="width:${pct}%"></i></div><span>${metodo}</span></div>` : ''}
-      ${pr.gemela ? `<div class="dato"><span>PR gemela</span><a href="https://github.com/${esc(FOTO.owner)}/${esc(pr.repo)}/pull/${pr.gemela.numero}" target="_blank" rel="noopener">#${pr.gemela.numero}</a> (${esc(pr.gemela.estado)})</div>` : ''}
-      ${pr.estadoProd ? `<div class="dato"><span>Frente a producción</span>${pr.estadoProd.iguales} de ${pr.estadoProd.total} archivos iguales${pr.cubiertaPor ? `; la PR #${pr.cubiertaPor} hacia producción trae los mismos archivos` : ''}</div>` : ''}
-      ${datoHermanas(pr)}
-      ${pr.adiciones !== undefined ? `<div class="dato"><span>Tamaño</span>${pr.archivos} archivos, +${pr.adiciones} / -${pr.eliminaciones}</div>` : ''}
-      <div class="dato"><span>Esfuerzo de revisión</span>${pr.explicacion?.esfuerzo ?? pr.esfuerzoTamano ?? 'sin dato'} de 5<span>${pr.explicacion?.esfuerzo ? 'según la explicación' : 'estimado por tamaño'}</span></div>
-      <div class="dato"><span>${pr.estadoPr === 'MERGED' ? 'Creada' : 'Abierta'}</span>${esc(pr.creada.slice(0, 10))} (${pr.dias} días)</div>
-      ${pr.motivoInactiva ? `<div class="dato"><span>Rama inactiva</span>${esc(pr.motivoInactiva)}</div>` : ''}
+    <div class="det-meta">
+      <span class="mono">${esc(pr.base)} ← ${esc(pr.rama)}</span>
+      ${pr.adiciones !== undefined ? `<span class="mono"><span class="mas">+${pr.adiciones}</span> <span class="menos">−${pr.eliminaciones}</span> · ${plural(pr.archivos, 'archivo', 'archivos')}</span>` : ''}
+      <span>${icono('reloj')} hace ${plural(pr.dias, 'día', 'días')}</span>
     </div>
     <div class="acciones">
-      <a class="boton primario" href="${esc(pr.url)}" target="_blank" rel="noopener">Abrir en GitHub</a>
-      <button class="boton" data-copiar="/pw-revision:revisar-prs explicar ${esc(pr.repo)}#${pr.numero}">Copiar: explicar</button>
-      <button class="boton" data-copiar="/plannotator-review ${esc(pr.url)}">Copiar: revisar línea por línea</button>
+      <a class="btn primario" href="${esc(pr.url)}" target="_blank" rel="noopener">Abrir en GitHub ${icono('externo')}</a>
+      <button class="btn" data-copiar="/plannotator-review ${esc(pr.url)}">${icono('copiar')} Revisar línea por línea</button>
+      <button class="btn" data-copiar="/pw-revision:revisar-prs explicar ${esc(pr.repo)}#${pr.numero}">${icono('copiar')} ${pr.explicacion ? 'Regenerar explicación' : 'Explicar'}</button>
     </div>
-    ${e?.desactualizada ? '<div class="aviso-caja">La PR recibió commits después de esta explicación. Conviene regenerarla.</div>' : ''}
-    ${seccionVerificaciones(pr)}
-    ${e ? `
-      <h3>Resumen</h3><p>${esc(e.resumen)}</p>
-      <h3>Por qué</h3><p>${esc(e.por_que)}</p>
-      ${e.impacto_usuario ? `<h3>Qué nota quien usa el portal</h3><p>${esc(e.impacto_usuario)}</p>` : ''}
-      <h3>Qué cambia</h3>${listaHtml(e.que_cambia)}
-      ${e.orden_lectura?.length ? `<h3>Orden de lectura</h3><ol>${e.orden_lectura.map((o) => `<li><code>${esc(o.archivo)}</code> &middot; ${esc(o.motivo)}</li>`).join('')}</ol>` : ''}
-      ${e.diagrama ? `<h3>Flujo</h3><pre class="mermaid">${esc(e.diagrama.replace(/#(?!\d+;)/g, '#35;'))}</pre>` : ''}
-      ${e.tecnologias?.length ? `<h3>Tecnologías</h3><table><thead><tr><th>Tecnología</th><th>Uso en este cambio</th><th>Por qué esta</th><th>Descartadas</th></tr></thead><tbody>
-        ${e.tecnologias.map((t) => `<tr><td><b>${esc(t.nombre)}</b></td><td>${esc(t.uso)}</td><td>${esc(t.por_que)}</td><td>${esc((t.alternativas_descartadas ?? []).join('; '))}</td></tr>`).join('')}
-      </tbody></table>` : ''}
-      ${e.alternativas?.length ? `<h3>Alternativas consideradas</h3>${listaHtml(e.alternativas)}` : ''}
-      ${e.dependencias?.length ? `<h3>Debe ir antes</h3>${listaHtml(e.dependencias)}` : ''}
-      ${e.riesgos?.length ? `<h3>Riesgos</h3>${listaHtml(e.riesgos)}` : ''}
-      ${e.como_probar?.length ? `<h3>Cómo probar</h3><ul class="checklist">${e.como_probar.map((paso, i) => `<li><label><input type="checkbox" data-paso="${i}" ${marcados.includes(i) ? 'checked' : ''}> <span>${esc(paso)}</span></label></li>`).join('')}</ul>` : ''}
-      <p class="vacio" style="margin-top:16px">Explicación del ${esc(e.fecha?.slice(0, 10))} sobre el commit <code>${esc(e.headSha?.slice(0, 7))}</code>.</p>
-    ` : `<h3>Explicación</h3><p class="vacio">Esta PR aún no tiene explicación. En Claude Code: <code>/pw-revision:revisar-prs explicar ${esc(pr.repo)}#${pr.numero}</code></p>`}
-  `;
+    ${pilaEstados(pr)}
+    <div class="tabs" role="tablist">${TABS.map(([k, nombre, n]) => { const c = n(pr); return `<button class="tab" role="tab" data-tab="${k}" aria-selected="${estado.tab === k}">${nombre}${c ? `<span class="n">${c}</span>` : ''}</button>`; }).join('')}</div>
+    <div role="tabpanel">${CUERPOS[estado.tab](pr)}</div>
+  </article>`;
   pintarDiagramas();
-  $('detalle').querySelectorAll('[data-paso]').forEach((c) => c.addEventListener('change', () => {
-    const actuales = [...$('detalle').querySelectorAll('[data-paso]:checked')].map((x) => +x.dataset.paso);
-    guardado(claveChecklist, actuales);
-  }));
 }
 
-// Mermaid se carga del CDN solo si alguna PR tiene diagrama; sin red se ve el texto del diagrama.
+// Mermaid se carga del CDN solo cuando hay un diagrama a la vista; sin red queda el texto del diagrama.
 let mermaidListo = null;
 function pintarDiagramas() {
   const nodos = $('detalle').querySelectorAll('pre.mermaid');
@@ -270,7 +557,7 @@ function pintarDiagramas() {
     const s = document.createElement('script');
     s.src = 'https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js';
     s.onload = () => {
-      const oscuro = matchMedia('(prefers-color-scheme: dark)').matches;
+      const oscuro = getComputedStyle(document.documentElement).colorScheme === 'dark';
       window.mermaid.initialize({ startOnLoad: false, theme: oscuro ? 'dark' : 'neutral', securityLevel: 'strict' });
       ok(window.mermaid);
     };
@@ -280,35 +567,165 @@ function pintarDiagramas() {
   mermaidListo.then((m) => m.run({ nodes: nodos })).catch(() => {});
 }
 
-function pintar() { pintarResumen(); pintarLista(); }
+function pintarTodo() {
+  pintarLateral();
+  pintarCola();
+  pintarDetalle();
+}
+
+function seleccionar(id, { enfocar = false } = {}) {
+  estado.seleccion = id;
+  history.replaceState(null, '', `#${encodeURIComponent(id)}`);
+  document.body.dataset.vista = 'detalle';
+  document.querySelectorAll('.fila').forEach((f) => f.setAttribute('aria-current', String(f.dataset.id === id)));
+  pintarDetalle();
+  $('detalle').scrollTop = 0;
+  const fila = document.querySelector(`.fila[data-id="${CSS.escape(id)}"]`);
+  if (fila) { fila.scrollIntoView({ block: 'nearest' }); if (enfocar) fila.focus(); }
+}
+
+function guardarRevision(pr, cambios) {
+  const nueva = { ...(revision(pr) ?? {}), ...cambios, fecha: new Date().toISOString(), headSha: pr.headSha };
+  const ok = almacen.escribir(claveRevision(pr), nueva);
+  const g = $('guardado');
+  if (g) g.textContent = ok ? `Guardado el ${new Date(nueva.fecha).toLocaleString('es-CO')}` : 'No se pudo guardar: el navegador bloquea el almacenamiento local.';
+  pintarLateral();
+  pintarCola();
+}
+
+function revisionesExportables() {
+  return FOTO.prs.map((pr) => {
+    const r = revision(pr);
+    const pasos = almacen.leer(clavePasos(pr), []);
+    if (!r && !pasos.length) return null;
+    return { id: pr.id, repo: pr.repo, numero: pr.numero, titulo: pr.titulo, url: pr.url, headSha: pr.headSha, ...r, pasosProbados: pasos };
+  }).filter(Boolean);
+}
+
+function exportar() {
+  const datos = { proyecto: FOTO.proyecto, exportado: new Date().toISOString(), revisiones: revisionesExportables() };
+  if (!datos.revisiones.length) return avisar('Todavía no hay decisiones ni pasos marcados para exportar.');
+  const blob = new Blob([JSON.stringify(datos, null, 2)], { type: 'application/json' });
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `revision-prs-${datos.exportado.slice(0, 10)}.json` });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  avisar(`${plural(datos.revisiones.length, 'revisión exportada', 'revisiones exportadas')}.`);
+}
+
+function resumenTexto() {
+  const rs = revisionesExportables().filter((r) => r.decision);
+  if (!rs.length) return 'Sin decisiones de revisión registradas.';
+  return rs.map((r) => `- ${r.repo}#${r.numero} ${r.titulo}: ${(DECISIONES[r.decision] ?? [r.decision])[0]}${r.nota ? `. ${r.nota.replace(/\s+/g, ' ')}` : ''}\n  ${r.url}`).join('\n');
+}
+
+function importar(archivo) {
+  archivo.text().then((t) => {
+    const datos = JSON.parse(t);
+    let n = 0;
+    for (const r of datos.revisiones ?? []) {
+      const pr = FOTO.prs.find((p) => p.id === r.id);
+      if (!pr) continue;
+      const { pasosProbados, id, repo, numero, titulo, url, ...decision } = r;
+      if (decision.decision) almacen.escribir(claveRevision(pr), decision);
+      if (pasosProbados?.length) almacen.escribir(clavePasos(pr, r.headSha), pasosProbados);
+      n++;
+    }
+    pintarTodo();
+    avisar(`${plural(n, 'revisión importada', 'revisiones importadas')}.`);
+  }).catch(() => avisar('El archivo no es una revisión exportada desde este tablero.'));
+}
+
+function avisar(texto) {
+  const destino = $('guardado') ?? $('foto');
+  const previo = destino.textContent;
+  destino.textContent = texto;
+  setTimeout(() => { if (destino.textContent === texto) destino.textContent = previo; }, 3500);
+}
+
+function copiar(boton, texto) {
+  const original = boton.innerHTML;
+  const fin = (t) => { boton.textContent = t; setTimeout(() => { boton.innerHTML = original; }, 1400); };
+  (navigator.clipboard ? navigator.clipboard.writeText(texto) : Promise.reject()).then(() => fin('Copiado'), () => fin('No se pudo copiar'));
+}
+
+document.addEventListener('click', (ev) => {
+  const t = ev.target.closest('button, a[data-tab-ir]');
+  if (!t) return;
+  const d = t.dataset;
+  if (d.id) return seleccionar(d.id);
+  if (d.grupoToggle) {
+    estado.cerrados.has(d.grupoToggle) ? estado.cerrados.delete(d.grupoToggle) : estado.cerrados.add(d.grupoToggle);
+    almacen.escribir('pw-revision:cerrados', [...estado.cerrados]);
+    t.closest('.grupo').toggleAttribute('data-cerrado');
+    t.setAttribute('aria-expanded', String(!estado.cerrados.has(d.grupoToggle)));
+    return;
+  }
+  if (d.vista) { estado.vista = d.vista; return pintarTodo(); }
+  if (d.portal !== undefined) { estado.portal = d.portal || null; return pintarTodo(); }
+  if (d.filtro) { estado.filtros.has(d.filtro) ? estado.filtros.delete(d.filtro) : estado.filtros.add(d.filtro); return pintarTodo(); }
+  if (d.rol) {
+    estado.rol = d.rol;
+    almacen.escribir('pw-revision:rol', estado.rol);
+    document.querySelectorAll('[data-rol]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.rol === estado.rol)));
+    return pintarTodo();
+  }
+  if (d.tab) { estado.tab = d.tab; return pintarDetalle(); }
+  if (d.tabIr) { ev.preventDefault(); estado.tab = d.tabIr; return pintarDetalle(); }
+  if (d.copiar) return copiar(t, d.copiar);
+  if (d.accion === 'limpiar') { estado.filtros.clear(); estado.portal = null; $('buscar').value = ''; return pintarTodo(); }
+  if (d.accion === 'volver') { document.body.dataset.vista = 'cola'; return; }
+  if (d.accion === 'exportar') return exportar();
+  if (d.accion === 'importar') return $('archivoRevision').click();
+  if (d.accion === 'copiarResumen') return copiar(t, resumenTexto());
+});
+
+document.addEventListener('change', (ev) => {
+  if (ev.target.id === 'archivoRevision') {
+    if (ev.target.files[0]) importar(ev.target.files[0]);
+    ev.target.value = '';
+    return;
+  }
+  const pr = FOTO.prs.find((p) => p.id === estado.seleccion);
+  if (!pr) return;
+  if (ev.target.name === 'decision') return guardarRevision(pr, { decision: ev.target.value });
+  if (ev.target.dataset.paso !== undefined) {
+    const marcados = [...document.querySelectorAll('[data-paso]:checked')].map((x) => +x.dataset.paso);
+    almacen.escribir(clavePasos(pr), marcados);
+    pintarDetalle();
+  }
+});
+
+let temporizadorNota;
+document.addEventListener('input', (ev) => {
+  if (ev.target.id === 'buscar') return pintarCola();
+  if (ev.target.id === 'notaRevision') {
+    const pr = FOTO.prs.find((p) => p.id === estado.seleccion);
+    clearTimeout(temporizadorNota);
+    temporizadorNota = setTimeout(() => guardarRevision(pr, { nota: ev.target.value }), 400);
+  }
+});
+
+document.addEventListener('keydown', (ev) => {
+  if (ev.target.matches('input, textarea, select')) {
+    if (ev.key === 'Escape') ev.target.blur();
+    return;
+  }
+  if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  const filas = [...document.querySelectorAll('.grupo:not([data-cerrado]) .fila')];
+  const i = filas.findIndex((f) => f.dataset.id === estado.seleccion);
+  const ir = (f) => f && seleccionar(f.dataset.id, { enfocar: true });
+  if (ev.key === 'j' || ev.key === 'ArrowDown') { ev.preventDefault(); ir(filas[i + 1] ?? filas[i]); }
+  if (ev.key === 'k' || ev.key === 'ArrowUp') { ev.preventDefault(); ir(filas[Math.max(i - 1, 0)]); }
+  if (ev.key === '/') { ev.preventDefault(); $('buscar').focus(); }
+  if (ev.key === 'o') { const pr = FOTO.prs.find((p) => p.id === estado.seleccion); if (pr) window.open(pr.url, '_blank', 'noopener'); }
+});
 
 $('titulo').textContent = `Revisión de PRs · ${FOTO.proyecto}`;
-$('meta').textContent = `${FOTO.prs.length} PRs abiertas · datos de GitHub del ${new Date(FOTO.generado).toLocaleString('es-CO')}`;
-[...new Set(FOTO.prs.map((p) => p.portal))].sort().forEach((p) => $('portal').insertAdjacentHTML('beforeend', `<option>${esc(p)}</option>`));
-['buscar', 'portal', 'riesgo', 'seguridad', 'conHallazgos', 'sinExplicacion', 'inactivas'].forEach((id) => $(id).addEventListener('input', pintar));
-$('resumen').addEventListener('click', (ev) => {
-  const b = ev.target.closest('[data-accion]');
-  if (!b) return;
-  accionFiltro = accionFiltro === b.dataset.accion ? null : b.dataset.accion;
-  pintar();
-});
-$('lista').addEventListener('click', (ev) => {
-  const b = ev.target.closest('[data-id]');
-  if (!b) return;
-  seleccion = b.dataset.id;
-  pintarLista();
-  pintarDetalle(FOTO.prs.find((p) => p.id === seleccion));
-  if (location.hash !== `#${seleccion}`) history.replaceState(null, '', `#${encodeURIComponent(seleccion)}`);
-});
-$('detalle').addEventListener('click', (ev) => {
-  const b = ev.target.closest('[data-copiar]');
-  if (!b) return;
-  navigator.clipboard?.writeText(b.dataset.copiar).then(() => { b.textContent = 'Copiado'; });
-});
-pintar();
+$('foto').textContent = `Datos de GitHub del ${new Date(FOTO.generado).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })}`;
+document.querySelectorAll('[data-rol]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.rol === estado.rol)));
 const inicial = decodeURIComponent(location.hash.slice(1));
-const prInicial = FOTO.prs.find((p) => p.id === inicial);
-if (prInicial) { seleccion = prInicial.id; pintarLista(); pintarDetalle(prInicial); }
+pintarTodo();
+if (FOTO.prs.some((p) => p.id === inicial)) seleccionar(inicial);
 </script>
 </body>
 </html>

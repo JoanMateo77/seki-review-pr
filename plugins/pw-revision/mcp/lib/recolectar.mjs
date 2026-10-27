@@ -7,7 +7,7 @@ import { buscarGemela } from './gemelas.mjs';
 import { enParalelo, ghJson } from './proceso.mjs';
 import { verificar } from './verificar.mjs';
 
-const CAMPOS = 'number,title,url,baseRefName,headRefName,createdAt,updatedAt,additions,deletions,changedFiles,isDraft,headRefOid,author';
+const CAMPOS = 'number,title,url,baseRefName,headRefName,createdAt,updatedAt,additions,deletions,changedFiles,isDraft,headRefOid,author,reviewDecision';
 
 export const ACCIONES = {
   pruebas_sin_prod: 'En pruebas sin PR hacia producción',
@@ -158,6 +158,7 @@ export async function recolectar({ proyecto: clave = 'demo', repos, incluirInact
       eliminaciones: pr.deletions,
       archivos: pr.changedFiles,
       headSha: pr.headRefOid,
+      revisionGithub: pr.reviewDecision || null,
       seguridad: esSeguridad(pr.title),
       esfuerzoTamano: esfuerzoPorTamano(pr.additions + pr.deletions, pr.changedFiles),
     };
@@ -204,6 +205,9 @@ export async function recolectar({ proyecto: clave = 'demo', repos, incluirInact
         const estadoProd = await estadoEn({ repo, numero: x.number, headSha: x.headSha, origen: linea.pruebas, destino: linea.prod, baseSha: x.baseSha });
         if (!ausenteEnProd(estadoProd) || (await cubiertaPor(repo, linea, x.number))) return null;
         const explicacion = leerJson(rutaExplicacion(p.salida, repo, x.number));
+        const archivos = await archivosPr(p.owner, repo, x.number);
+        const adiciones = archivos.reduce((n, a) => n + a.additions, 0);
+        const eliminaciones = archivos.reduce((n, a) => n + a.deletions, 0);
         return {
           id: `${repo}#${x.number}`,
           repo,
@@ -221,6 +225,11 @@ export async function recolectar({ proyecto: clave = 'demo', repos, incluirInact
           dias: diasDesde(x.creada),
           headSha: x.headSha,
           seguridad: esSeguridad(x.title),
+          adiciones,
+          eliminaciones,
+          archivos: archivos.length,
+          esfuerzoTamano: esfuerzoPorTamano(adiciones + eliminaciones, archivos.length),
+          verificaciones: await verificaciones(repo, x.number, x.headSha),
           estadoProd,
           sinProd: true,
           explicacion: explicacion && { ...explicacion, desactualizada: explicacion.headSha !== x.headSha },
