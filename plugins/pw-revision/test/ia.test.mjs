@@ -1,19 +1,11 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { argsClaude, costosDelDia, ejecutarClaude, elegirModelo, registrarCosto } from '../mcp/lib/ia.mjs';
 
-// Falso `claude`: imprime el JSON indicado y sale con el código indicado.
-export function falsoClaude(json, codigo = 0) {
-  const dir = mkdtempSync(join(tmpdir(), 'pw-claude-'));
-  const ruta = join(dir, 'claude');
-  writeFileSync(join(dir, 'salida.json'), JSON.stringify(json));
-  writeFileSync(ruta, `#!/bin/sh\ncat "${join(dir, 'salida.json')}"\nexit ${codigo}\n`);
-  chmodSync(ruta, 0o755);
-  return ruta;
-}
+import { falsoClaude } from './util/claude.mjs';
 
 const chica = { seguridad: false, adiciones: 20, eliminaciones: 5, esfuerzoTamano: 1 };
 

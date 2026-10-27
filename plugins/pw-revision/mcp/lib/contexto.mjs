@@ -6,6 +6,8 @@ import { enCola } from './estado.mjs';
 import { git } from './proceso.mjs';
 
 const MARGEN = 40;
+// Un archivo corto va completo: cuesta poco y evita respuestas de "no se puede determinar".
+const ARCHIVO_COMPLETO = 400;
 const TOPE = 60000;
 
 export async function archivoEnSha(p, repo, numero, headSha, archivo) {
@@ -66,7 +68,8 @@ export async function contextoPreguntas(p, pr, comentarios, { archivos } = {}) {
       if (!contenidos.has(c.archivo)) contenidos.set(c.archivo, await archivoEnSha(p, pr.repo, pr.numero, pr.headSha, c.archivo));
       const texto = contenidos.get(c.archivo);
       if (texto !== null) {
-        const f = fragmento(texto, c.desde, c.hasta);
+        const total = texto.split('\n').length;
+        const f = fragmento(texto, c.desde, c.hasta, total <= ARCHIVO_COMPLETO ? total : MARGEN);
         archivo = `Archivo en la versión de la PR (líneas ${f.desde}–${f.hasta}):\n${f.texto}`;
       }
     }

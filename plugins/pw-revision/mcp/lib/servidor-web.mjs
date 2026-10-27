@@ -8,7 +8,8 @@ import { recolectar } from './recolectar.mjs';
 import { construirHtml, fotoConExplicaciones } from './tablero.mjs';
 import { crearCola } from './trabajos.mjs';
 import { asegurarDiff, diffParaTablero } from './diffs.mjs';
-import { guardarComentarios, leerComentarios, marcasComentarios } from './comentarios.mjs';
+import { actualizarComentario, guardarComentarios, leerComentarios, marcasComentarios } from './comentarios.mjs';
+import { responderPreguntas } from './preguntas.mjs';
 import { explicarConIa } from './explicar.mjs';
 import { costosDelDia } from './ia.mjs';
 
@@ -85,6 +86,18 @@ export async function iniciarServidor({ proyecto = 'demo', puerto = PUERTO, abri
         const pr = prDeFoto(id);
         if (!Array.isArray(comentarios) || !Array.isArray(borrados)) throw new Error('comentarios y borrados deben ser listas');
         return responder(res, 200, guardarComentarios(p, pr.repo, pr.numero, comentarios, borrados));
+      }
+      if (req.method === 'POST' && url.pathname === '/api/enviar-revision') {
+        const { id, ids = [] } = await leerCuerpo(req);
+        const pr = prDeFoto(id);
+        const pedidos = new Set(ids);
+        const enviables = leerComentarios(p, pr.repo, pr.numero).filter((c) => pedidos.has(c.id) && (c.estado === 'borrador' || c.estado === 'error'));
+        const preguntas = enviables.filter((c) => c.tipo === 'pregunta').map((c) => c.id);
+        const cambios = enviables.filter((c) => c.tipo === 'cambio').map((c) => c.id);
+        if (cambios.length) throw new Error('Pedir cambio todavía no está disponible');
+        for (const cid of preguntas) actualizarComentario(p, pr.repo, pr.numero, cid, { estado: 'en_cola', motivo: null });
+        if (preguntas.length) cola.encolar([{ id: `${pr.id}:responder:${Date.now()}`, tipo: 'responder', prId: pr.id, ejecutar: () => responderPreguntas(p, pr, preguntas) }]);
+        return responder(res, 202, { preguntas: preguntas.length, cambios: cambios.length });
       }
       if (req.method === 'GET' && url.pathname === '/api/foto') return responder(res, 200, fotoConExplicaciones(p));
       if (req.method === 'GET' && url.pathname === '/api/diff') {

@@ -243,6 +243,7 @@ body[data-enfoque] .lateral, body[data-enfoque] .cola { display: none; }
 .hilo-com pre.sugerido { margin: 8px 0 0; padding: 7px 9px; border-radius: 6px; background: var(--verde-bg); font: 12px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .hilo-respuesta { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--linea); white-space: pre-wrap; overflow-wrap: anywhere; }
 .hilo-motivo { margin-top: 6px; color: var(--rojo); }
+.hilo-pie { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; }
 .desact { padding: 8px 14px 4px; border-bottom: 1px solid var(--linea); }
 .desact table { width: 100%; border-collapse: collapse; }
 .barra-pendiente { position: sticky; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 12px; padding: 10px 14px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--panel); box-shadow: 0 -4px 12px rgb(0 0 0 / .06); }
@@ -790,8 +791,8 @@ function hiloHtml(c) {
       ${editable ? `<span class="der"><button type="button" class="btn-texto" data-com-editar="${esc(c.id)}">Editar</button><button type="button" class="btn-texto" data-com-borrar="${esc(c.id)}">Borrar</button></span>` : ''}</div>
     <div class="hilo-texto">${esc(c.texto)}</div>
     ${c.sugerido !== undefined ? `<pre class="sugerido" aria-label="Código sugerido">${esc(c.sugerido)}</pre>` : ''}
-    ${c.respuesta ? `<div class="hilo-respuesta">${esc(c.respuesta)}</div>` : ''}
-    ${c.estado === 'error' && c.motivo ? `<div class="hilo-motivo">${esc(c.motivo)}</div>` : ''}
+    ${c.respuesta ? `<div class="hilo-respuesta">${esc(c.respuesta)}<div class="hilo-pie muy-tenue">${c.desdeCache ? 'Respuesta guardada, sin costo' : `${esc(nombreModelo(c.modelo))}${c.costo ? ` · ${usd(c.costo)}${c.lote > 1 ? ` por el lote de ${c.lote}` : ''}` : ''}`}<button type="button" class="btn-texto" data-com-repreguntar="${esc(c.id)}">Repreguntar</button></div></div>` : ''}
+    ${c.estado === 'error' && c.motivo ? `<div class="hilo-motivo">${esc(c.motivo)}${API && c.tipo !== 'nota' ? ` <button type="button" class="btn-texto" data-com-reintentar="${esc(c.id)}">Reintentar</button>` : ''}</div>` : ''}
   </div></td></tr>`;
 }
 
@@ -1201,8 +1202,17 @@ function importar(archivo) {
 
 const prSel = () => FOTO.prs.find((p) => p.id === estado.seleccion);
 
-async function enviarRevision(pr) {
-  const ids = borradores(pr).map((c) => c.id);
+function repreguntar(pr, id) {
+  const c = comentarios(pr).find((x) => x.id === id);
+  if (!c) return;
+  editarComentario(pr, id);
+  const resumen = c.respuesta.replace(/\s+/g, ' ');
+  estado.caja = { ...cajaVacia('pregunta'), texto: `Sobre la respuesta anterior («${resumen.length > 160 ? `${resumen.slice(0, 160)}…` : resumen}»): ` };
+  marcarSeleccion();
+}
+
+async function enviarRevision(pr, soloIds) {
+  const ids = soloIds ?? borradores(pr).map((c) => c.id);
   if (!ids.length) return;
   try {
     await api('/api/enviar-revision', { id: pr.id, ids });
@@ -1290,6 +1300,8 @@ document.addEventListener('click', (ev) => {
     return pintarCola();
   }
   if (d.accion === 'enviarRevision') return enviarRevision(prSel());
+  if (d.comReintentar) return enviarRevision(prSel(), [d.comReintentar]);
+  if (d.comRepreguntar) return repreguntar(prSel(), d.comRepreguntar);
   if (d.accion === 'enfoque') { document.body.toggleAttribute('data-enfoque'); return pintarDetalle(); }
   if (d.accion === 'plegarTodo') { document.querySelectorAll('.archivo').forEach((a) => a.setAttribute('data-plegado', '')); return; }
   if (d.accion === 'refrescar') { estado.refrescando = true; pintarBarra(); return accionApi('/api/refrescar', {}); }

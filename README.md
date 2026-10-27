@@ -75,5 +75,19 @@ regla en un repo: `reglas_omitidas: ["id"]` en su entrada de `proyectos.json`.
 
 `tablero_servir` (o `sh plugins/pw-revision/bin/tablero.sh`) sirve el tablero en `127.0.0.1:4317` con un token en la URL.
 "Actualizar estado" vuelve a consultar GitHub y git y muestra qué se mergeó, se cerró, es nuevo o cambió de grupo.
-"Analizar con IA" lanza `claude -p` con modelo sonnet y solo las herramientas de pw-revision más Read, Grep y Glob
-(no puede editar ni ejecutar comandos); `PW_IA_MODELO` cambia el modelo y `PW_IA_PARALELO` (1 o 2) los análisis simultáneos.
+"Analizar con IA" y las preguntas sobre líneas lanzan `claude -p` en modo mínimo: sin CLAUDE.md, memoria, skills ni
+MCP de otros plugins, con un prompt de sistema propio (`mcp/prompts/`). Solo aplica a lo que lanza el tablero; las
+sesiones normales de Claude Code no cambian. Medido el 27-10-2026: la explicación de api#428 bajó de
+USD 0,20 a 0,058, y dos preguntas con Haiku costaron USD 0,0023.
+
+| Trabajo | Modelo por defecto | Tope por defecto |
+|---|---|---|
+| Pregunta sobre hasta 40 líneas en PR de esfuerzo 1-2 | Haiku | USD 0,50 por pregunta |
+| Otras preguntas, explicaciones | Sonnet | USD 0,50 / 2 |
+| Pedido de cambio | Sonnet (nunca Haiku) | USD 1,50 |
+| Explicación o pedido en PR de seguridad o de más de 1.500 líneas | Opus | igual que su tipo |
+
+Variables: `PW_IA_MODELO` (todo) o `PW_IA_MODELO_RESPONDER`, `PW_IA_MODELO_EXPLICAR`, `PW_IA_MODELO_CAMBIAR`;
+`PW_IA_TOPE_<TIPO>` en dólares; `PW_IA_PARALELO` (1 o 2); `PW_CLAUDE` para otro ejecutable. Cada trabajo queda en
+`revision-prs/datos/costos.jsonl` y el tablero muestra el gasto del día. Las respuestas se guardan por commit, archivo,
+líneas y texto, y no se vuelven a pedir.

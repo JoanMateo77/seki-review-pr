@@ -26,8 +26,8 @@ test('archivoEnSha trae la versión de la PR aunque el checkout no tenga el comm
 });
 
 test('contextoPreguntas incluye el hunk y el fragmento de cada comentario', async () => {
-  const antes = lineas(120);
-  const despues = lineas(120, (i) => (i === 60 ? 'linea 60 cambiada' : `linea ${i}`));
+  const antes = lineas(600);
+  const despues = lineas(600, (i) => (i === 60 ? 'linea 60 cambiada' : `linea ${i}`));
   const r = repoConPr({ antes, despues });
   const p = { repos: { x: { checkout: r.checkout } } };
   const pr = { id: 'x#7', repo: 'x', numero: 7, titulo: 'Cambio', headSha: r.head, explicacion: { resumen: 'Cambia la línea 60.' } };
@@ -39,6 +39,15 @@ test('contextoPreguntas incluye el hunk y el fragmento de cada comentario', asyn
   assert.match(t, / {3}20│ linea 20/);
   assert.doesNotMatch(t, / {3}19│/);
   assert.match(t, /Cambia la línea 60\./);
+});
+
+test('contextoPreguntas manda el archivo completo si es corto', async () => {
+  const r = repoConPr({ antes: lineas(300), despues: lineas(300, (i) => (i === 200 ? 'nueva' : `linea ${i}`)) });
+  const p = { repos: { x: { checkout: r.checkout } } };
+  const pr = { id: 'x#7', repo: 'x', numero: 7, titulo: 'Cambio', headSha: r.head };
+  const t = await contextoPreguntas(p, pr, [{ id: 'c-0001', tipo: 'pregunta', archivo: 'a.ts', lado: 'nuevo', desde: 200, hasta: 200, texto: '¿?' }], { archivos: [{ filename: 'a.ts', patch: '@@ -200 +200 @@\n-linea 200\n+nueva' }] });
+  assert.match(t, / {4}1│ linea 1\n/);
+  assert.match(t, /300│ linea 300/);
 });
 
 test('contextoPreguntas respeta el tope de 60000 caracteres', async () => {

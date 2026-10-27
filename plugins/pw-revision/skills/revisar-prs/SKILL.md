@@ -38,7 +38,9 @@ esas decisiones, pedir la ruta del JSON exportado y resumirlo.
 
 **Comentarios sobre líneas:** en la pestaña Archivos se seleccionan líneas (clic en el número, Shift + clic para un
 rango) y se deja una nota manual, opcionalmente con código sugerido; las notas salen en la revisión exportada y en
-"Copiar resumen". Preguntar y Pedir cambio solo funcionan con el tablero servido.
+"Copiar resumen". Preguntar y Pedir cambio solo funcionan con el tablero servido: se acumulan en "Revisión pendiente"
+y "Enviar revisión" las manda juntas (todas las preguntas de una PR en una sola llamada). El costo de cada trabajo
+queda en `revision-prs/datos/costos.jsonl`.
 
 **"tablero":** `tablero_servir` para trabajar con acciones (la URL trae un token y vive mientras dure la sesión);
 `tablero_generar` cuando se necesita el archivo suelto para enviarlo a quien revisa. Fuera de Claude Code:
