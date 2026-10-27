@@ -413,6 +413,9 @@ const estado = {
   confirmarPendientes: false,
 };
 const trabajo = (pr) => estado.trabajos.get(pr.id);
+const usd = (n) => `USD ${n.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: n < 0.01 ? 4 : 2 })}`;
+const nombreModelo = (m) => (m ?? '').replace(/^claude-/, '').replace(/-\d.*$/, '').replace(/^./, (c) => c.toUpperCase());
+const costoTexto = (t) => `${t.modelo ? ` · ${nombreModelo(t.modelo)}` : ''}${t.costo ? ` · ${usd(t.costo)}` : ''}`;
 const trabajoActivo = (pr) => ['en_cola', 'en_curso'].includes(trabajo(pr)?.estado);
 const pendientesDeAnalisis = () => FOTO.prs.filter((p) => p.ambiente !== 'inactiva' && (!p.explicacion || p.explicacion.desactualizada) && !trabajoActivo(p));
 
@@ -597,7 +600,7 @@ function pilaEstados(pr) {
     const mapa = {
       en_cola: ['reloj', '', 'En cola para analizar', ''],
       en_curso: ['actualizar', '', 'Analizando la PR', `Desde las ${hora(tr.inicio)}. Suele tardar entre uno y tres minutos.`],
-      terminado: ['ok', 'verde', 'Explicación generada', `A las ${hora(tr.fin)}${tr.costo ? ` · USD ${tr.costo.toFixed(2)}` : ''}`],
+      terminado: ['ok', 'verde', 'Explicación generada', `A las ${hora(tr.fin)}${costoTexto(tr)}`],
       error: ['bloqueo', 'rojo', 'El análisis no se completó', esc(tr.mensaje ?? '')],
       cancelado: ['circulo', '', 'Análisis cancelado', ''],
     };
@@ -1069,7 +1072,8 @@ function pintarDiagramas() {
 function pintarBarra() {
   if (!API) return;
   const r = estado.ultimoRefresco;
-  const texto = estado.refrescando ? 'Consultando GitHub y git' : r && !r.ok ? 'La última actualización falló' : '';
+  const gasto = estado.costoHoy?.trabajos ? `Gasto de IA hoy: ${usd(estado.costoHoy.total)} · ${plural(estado.costoHoy.trabajos, 'trabajo', 'trabajos')}` : '';
+  const texto = estado.refrescando ? 'Consultando GitHub y git' : r && !r.ok ? 'La última actualización falló' : gasto;
   $('accionesBarra').innerHTML = `<span class="estado-texto">${texto}</span>
     <button class="btn chico" data-accion="refrescar" ${estado.refrescando ? 'disabled' : ''} title="${esc(r && !r.ok ? r.mensaje : 'Vuelve a consultar GitHub y git: qué se mergeó, qué es nuevo y dónde está cada PR')}">${icono('actualizar', estado.refrescando ? 'girando' : '')} ${estado.refrescando ? 'Actualizando' : 'Actualizar estado'}</button>`;
 }
@@ -1094,6 +1098,7 @@ async function sondear() {
     estado.trabajos = new Map(e.trabajos.map((t) => [t.id, t]));
     estado.refrescando = e.refrescando;
     estado.ultimoRefresco = e.ultimoRefresco;
+    estado.costoHoy = e.costoHoy;
     const marcas = e.comentarios ?? {};
     for (const [id, marca] of Object.entries(marcas)) {
       const pr = FOTO.prs.find((x) => x.id === id);

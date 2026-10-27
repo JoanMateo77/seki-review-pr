@@ -3,13 +3,14 @@
 import { execFile } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
-import { dirname } from 'node:path';
 import { proyecto as cargarProyecto } from './config.mjs';
 import { recolectar } from './recolectar.mjs';
 import { construirHtml, fotoConExplicaciones } from './tablero.mjs';
 import { crearCola } from './trabajos.mjs';
 import { asegurarDiff, diffParaTablero } from './diffs.mjs';
 import { guardarComentarios, leerComentarios, marcasComentarios } from './comentarios.mjs';
+import { explicarConIa } from './explicar.mjs';
+import { costosDelDia } from './ia.mjs';
 
 const PUERTO = 4317;
 const MAX_CUERPO = 64 * 1024;
@@ -40,7 +41,6 @@ export async function iniciarServidor({ proyecto = 'demo', puerto = PUERTO, abri
   }
   const p = cargarProyecto(proyecto);
   const token = randomBytes(18).toString('base64url');
-  const espacio = p.espacio ? p.espacio.replace(/^~\//, `${process.env.HOME}/`) : dirname(p.salida);
   let refresco = null;
   let ultimoRefresco = null;
 
@@ -52,7 +52,7 @@ export async function iniciarServidor({ proyecto = 'demo', puerto = PUERTO, abri
     return refresco;
   };
 
-  const cola = crearCola({ proyecto, cwd: espacio });
+  const cola = crearCola();
 
   const servidor = createServer(async (req, res) => {
     const host = req.headers.host ?? '';
@@ -93,7 +93,7 @@ export async function iniciarServidor({ proyecto = 'demo', puerto = PUERTO, abri
         return responder(res, 200, diffParaTablero(await asegurarDiff(p, pr.repo, pr.numero, pr.headSha)));
       }
       if (req.method === 'GET' && url.pathname === '/api/estado') {
-        return responder(res, 200, { refrescando: !!refresco, ultimoRefresco, trabajos: cola.lista(), comentarios: marcasComentarios() });
+        return responder(res, 200, { refrescando: !!refresco, ultimoRefresco, trabajos: cola.lista(), comentarios: marcasComentarios(), costoHoy: costosDelDia(p) });
       }
       if (req.method === 'POST' && url.pathname === '/api/refrescar') {
         refrescar();
@@ -102,9 +102,9 @@ export async function iniciarServidor({ proyecto = 'demo', puerto = PUERTO, abri
       if (req.method === 'POST' && url.pathname === '/api/analizar') {
         const { prs = [] } = await leerCuerpo(req);
         const validas = fotoConExplicaciones(p).prs;
-        const items = prs
-          .filter((x) => validas.some((v) => v.repo === x.repo && v.numero === x.numero))
-          .map(({ repo, numero }) => ({ repo, numero }));
+        const items = validas
+          .filter((v) => prs.some((x) => v.repo === x.repo && v.numero === x.numero))
+          .map((pr) => ({ id: pr.id, tipo: 'explicar', prId: pr.id, ejecutar: () => explicarConIa(p, pr) }));
         return responder(res, 202, { encolados: cola.encolar(items) });
       }
       if (req.method === 'POST' && url.pathname === '/api/cancelar-cola') return responder(res, 200, { cancelados: cola.vaciar() });
