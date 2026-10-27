@@ -27,6 +27,8 @@ lo fija a mano). Sin dependencias npm.
 | Plantilla del tablero | `plugins/pw-revision/mcp/tablero/plantilla.html` |
 | Proyectos, repos y ramas por ambiente | `plugins/pw-revision/config/proyectos.json` |
 | Flujo para Claude | `plugins/pw-revision/skills/revisar-prs/SKILL.md` |
+| Servidor del tablero con acciones (127.0.0.1, token en la URL) | `plugins/pw-revision/mcp/lib/servidor-web.mjs`, `bin/tablero.sh` |
+| Cola de análisis con IA (`claude -p`, sonnet, solo lectura) | `plugins/pw-revision/mcp/lib/trabajos.mjs` |
 | Prueba de humo | `node plugins/pw-revision/test/humo.mjs [herramienta] ['{"arg":1}']` |
 
 Salida (por proyecto, campo `salida`): `datos/prs.json` (última foto), `datos/*-cache.json`, `verificaciones/`,
@@ -68,3 +70,10 @@ Un objeto más en `REGLAS` de `mcp/lib/reglas.mjs` con `id`, `titulo`, `severida
 `patron` (regex sobre la línea agregada), `mensaje` y `origen` (el incidente o la regla que la justifica).
 Opcionales: `excluir`, `cuando(linea, archivo)`, `severidadPara(linea)`, `repos`, `porArchivo`. Para apagar una
 regla en un repo: `reglas_omitidas: ["id"]` en su entrada de `proyectos.json`.
+
+### Tablero con acciones
+
+`tablero_servir` (o `sh plugins/pw-revision/bin/tablero.sh`) sirve el tablero en `127.0.0.1:4317` con un token en la URL.
+"Actualizar estado" vuelve a consultar GitHub y git y muestra qué se mergeó, se cerró, es nuevo o cambió de grupo.
+"Analizar con IA" lanza `claude -p` con modelo sonnet y solo las herramientas de pw-revision más Read, Grep y Glob
+(no puede editar ni ejecutar comandos); `PW_IA_MODELO` cambia el modelo y `PW_IA_PARALELO` (1 o 2) los análisis simultáneos.

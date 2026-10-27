@@ -19,6 +19,14 @@ export default {
   async handler({ proyecto, repos, incluir_inactivas = false }) {
     const foto = await recolectar({ proyecto, repos, incluirInactivas: true });
     const lineas = [`${foto.proyecto}: ${foto.prs.length} PRs abiertas (${foto.generado.slice(0, 16)})`];
+    const c = foto.cambios;
+    if (c) {
+      lineas.push('', `## Cambios detectados entre ${c.desde.slice(0, 16)} y ${c.hasta.slice(0, 16)}`);
+      for (const x of c.mergeadas) lineas.push(`- Mergeada: ${x.repo}#${x.numero} ${x.titulo} (en ${x.base})`);
+      for (const x of c.cerradas) lineas.push(`- ${x.estado === 'cerrada' ? 'Cerrada sin mergear' : 'Salió de la lista'}: ${x.repo}#${x.numero} ${x.titulo}`);
+      for (const x of c.nuevas) lineas.push(`- Nueva: ${x.repo}#${x.numero} ${x.titulo}`);
+      for (const x of c.movidas) lineas.push(`- Cambió de grupo: ${x.repo}#${x.numero} ${foto.acciones[x.de] ?? x.de} -> ${foto.acciones[x.a] ?? x.a}`);
+    }
     for (const [accion, titulo] of Object.entries(foto.acciones)) {
       if (accion === 'inactiva' && !incluir_inactivas) {
         const n = foto.prs.filter((x) => x.accion === accion).length;

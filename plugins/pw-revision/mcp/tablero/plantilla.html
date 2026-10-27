@@ -165,6 +165,17 @@ textarea { width: 100%; min-height: 96px; padding: 8px 10px; border: 1px solid v
 .ayuda { margin: 22px 8px 0; color: var(--texto-3); font-size: 12px; display: grid; gap: 6px; }
 .volver { display: none; }
 
+.girando { animation: girar 1s linear infinite; }
+@keyframes girar { to { transform: rotate(360deg); } }
+.senal.azul { color: var(--acento); }
+.barra .acciones-barra { display: flex; align-items: center; gap: 8px; }
+.barra .acciones-barra .estado-texto { color: var(--texto-3); white-space: nowrap; }
+.btn[disabled] { opacity: .55; cursor: default; }
+.cambio { display: grid; grid-template-columns: 92px 92px minmax(0, 1fr); gap: 10px; align-items: center; padding: 6px 14px; border-bottom: 1px solid var(--linea); }
+.cambio .titulo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cambio a { color: inherit; text-decoration: none; }
+.cambio a:hover { text-decoration: underline; }
+
 @media (max-width: 1180px) {
   .app { grid-template-columns: 200px minmax(320px, 1fr) minmax(400px, 1.2fr); }
   .barra .foto { display: none; }
@@ -188,6 +199,8 @@ textarea { width: 100%; min-height: 96px; padding: 8px 10px; border: 1px solid v
   .fila { grid-template-columns: 8px minmax(0, 1fr); row-gap: 2px; }
   .fila .id, .fila .titulo, .fila .senales { grid-column: 2; }
   .fila .punto { grid-row: 1; }
+  .cambio { grid-template-columns: 1fr; gap: 2px; }
+  .barra .acciones-barra .estado-texto { display: none; }
   .grupo-cab .desc { display: none; }
   .fila .titulo { white-space: normal; }
   .ayuda { display: none; }
@@ -219,6 +232,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   <symbol id="i-ojo" viewBox="0 0 16 16"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Z"/><circle cx="8" cy="8" r="1.8"/></symbol>
   <symbol id="i-flecha" viewBox="0 0 16 16"><path d="M10 3.5 5.5 8l4.5 4.5"/></symbol>
   <symbol id="i-descargar" viewBox="0 0 16 16"><path d="M8 2.5v8M4.8 7.5 8 10.7l3.2-3.2M3 13.5h10"/></symbol>
+  <symbol id="i-chispa" viewBox="0 0 16 16"><path d="M8 1.8v3M8 11.2v3M1.8 8h3M11.2 8h3M3.6 3.6l2 2M10.4 10.4l2 2M12.4 3.6l-2 2M5.6 10.4l-2 2"/></symbol>
+  <symbol id="i-actualizar" viewBox="0 0 16 16"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></symbol>
   <symbol id="i-subir" viewBox="0 0 16 16"><path d="M8 10.5v-8M4.8 5.7 8 2.5l3.2 3.2M3 13.5h10"/></symbol>
 </svg>
 
@@ -231,6 +246,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
       <input type="search" id="buscar" placeholder="Buscar por número, título, rama o archivo" aria-label="Buscar PRs">
       <kbd>/</kbd>
     </label>
+    <div class="acciones-barra" id="accionesBarra"></div>
     <div class="rol" role="group" aria-label="Vista">
       <button data-rol="autor" aria-pressed="true">Autor</button>
       <button data-rol="revisor" aria-pressed="false">Revisor</button>
@@ -246,7 +262,9 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 <input type="file" id="archivoRevision" accept="application/json,.json" hidden>
 
 <script>
-const FOTO = /*DATOS*/null;
+let FOTO = /*DATOS*/null;
+// Con el servidor local (tablero_servir) llega { token } y aparecen las acciones; como archivo suelto es null.
+const API = /*API*/null;
 
 const GRUPOS = {
   pruebas_sin_prod: ['En pruebas, sin salir a producción', 'Código en pruebas que no aparece en producción ni en ninguna PR hacia producción'],
@@ -294,7 +312,14 @@ const estado = {
   cerrados: new Set(almacen.leer('pw-revision:cerrados', ['pruebas_automaticas'])),
   seleccion: null,
   tab: 'resumen',
+  trabajos: new Map(),
+  refrescando: false,
+  ultimoRefresco: null,
+  confirmarPendientes: false,
 };
+const trabajo = (pr) => estado.trabajos.get(pr.id);
+const trabajoActivo = (pr) => ['en_cola', 'en_curso'].includes(trabajo(pr)?.estado);
+const pendientesDeAnalisis = () => FOTO.prs.filter((p) => p.ambiente !== 'inactiva' && (!p.explicacion || p.explicacion.desactualizada) && !trabajoActivo(p));
 
 // Un solo tono por PR, el más grave que aplique: rojo bloquea, ámbar pide mirar, verde listo, violeta mergeada.
 function tono(pr) {
@@ -345,6 +370,11 @@ function pintarLateral() {
     ${filtro('seguridad', `${icono('escudo')} Seguridad`, cuenta((x) => x.seguridad))}
     ${filtro('sinExplicacion', `${icono('circulo')} Sin explicación`, cuenta((x) => !x.explicacion || x.explicacion.desactualizada))}
     ${filtro('sinRevisar', `${icono('ojo')} Sin revisar`, cuenta((x) => !revision(x)))}
+    ${API ? `<h2>Análisis con IA</h2>
+      ${estado.confirmarPendientes
+        ? nav('data-accion="analizarPendientes"', `${icono('chispa')} Confirmar: ${plural(pendientesDeAnalisis().length, 'PR', 'PRs')}`, '', true)
+        : nav('data-accion="pedirConfirmacion"', `${icono('chispa')} Analizar las que no tienen explicación`, pendientesDeAnalisis().length, false)}
+      ${[...estado.trabajos.values()].some((t) => t.estado === 'en_cola') ? nav('data-accion="cancelarCola"', `${icono('bloqueo')} Cancelar los que están en cola`, [...estado.trabajos.values()].filter((t) => t.estado === 'en_cola').length, false) : ''}` : ''}
     <div class="solo-escritorio">
       <h2>Revisión</h2>
       <button class="nav" data-accion="exportar">${icono('descargar')} Exportar revisión</button>
@@ -363,6 +393,10 @@ function senales(pr) {
     const [txt, cls] = DECISIONES[r.decision] ?? [r.decision, ''];
     s.push(`<span class="senal ${cls}" title="Revisor: ${esc(txt)}">${icono(cls === 'rojo' ? 'bloqueo' : cls === 'ambar' ? 'alerta' : 'ok')}</span>`);
   }
+  const t = trabajo(pr);
+  if (t?.estado === 'en_curso') s.push(`<span class="senal azul" title="Analizando con IA">${icono('actualizar', 'girando')}</span>`);
+  else if (t?.estado === 'en_cola') s.push(`<span class="senal azul" title="En cola para analizar">${icono('reloj')}</span>`);
+  else if (t?.estado === 'error') s.push(`<span class="senal rojo" title="El análisis falló">${icono('bloqueo')}</span>`);
   if (pr.seguridad) s.push(`<span class="senal" title="Seguridad">${icono('escudo')}</span>`);
   const esfuerzo = pr.explicacion?.esfuerzo ?? pr.esfuerzoTamano;
   if (esfuerzo) s.push(`<span title="Esfuerzo de revisión, de 1 a 5">E${esfuerzo}</span>`);
@@ -385,7 +419,7 @@ function pintarCola() {
     porGrupo.get(g).push(pr);
   }
   const posicion = (g) => (orden.includes(g) ? orden.indexOf(g) : 99);
-  $('cola').innerHTML = [...porGrupo.keys()].sort((a, b) => posicion(a) - posicion(b)).map((g) => {
+  $('cola').innerHTML = seccionCambios() + [...porGrupo.keys()].sort((a, b) => posicion(a) - posicion(b)).map((g) => {
     const [nombre, desc] = defs[g] ?? GRUPOS[g] ?? [FOTO.acciones?.[g] ?? g, ''];
     const filas = porGrupo.get(g).sort((a, b) => a.repo.localeCompare(b.repo) || b.numero - a.numero);
     const cerrado = estado.cerrados.has(g);
@@ -400,6 +434,27 @@ function pintarCola() {
         </button>`).join('')}</div>
     </section>`;
   }).join('');
+}
+
+function seccionCambios() {
+  const c = FOTO.cambios;
+  if (!c || estado.vista !== 'cola') return '';
+  const fecha = (f) => new Date(f).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
+  const enlace = (x) => `<a href="${gh(x.repo, x.numero)}" target="_blank" rel="noopener" title="${esc(x.titulo)}">${esc(x.titulo)}</a>`;
+  const fila = (etiqueta, color, x, extra = '') => `<div class="cambio"><span class="estado ${color}">${etiqueta}</span><span class="mono muy-tenue">${esc(x.repo.replace('core-', ''))} #${x.numero}</span><span class="titulo">${FOTO.prs.some((p) => p.id === x.id) ? `<a href="#" data-ir="${esc(x.id)}">${esc(x.titulo)}</a>` : enlace(x)}${extra}</span></div>`;
+  const nombreGrupo = (g) => (GRUPOS[g] ?? [g])[0];
+  const filas = [
+    ...c.mergeadas.map((x) => fila('Mergeada', 'violeta', x, ` <span class="muy-tenue">en ${esc(x.base)}</span>`)),
+    ...c.cerradas.map((x) => fila(x.estado === 'cerrada' ? 'Cerrada' : 'Salió', '', x)),
+    ...c.nuevas.map((x) => fila('Nueva', 'verde', x)),
+    ...c.movidas.map((x) => fila('Cambió', 'ambar', x, ` <span class="muy-tenue">${esc(nombreGrupo(x.de))} → ${esc(nombreGrupo(x.a))}</span>`)),
+  ];
+  const n = filas.length;
+  const cerrado = estado.cerrados.has('_cambios');
+  return `<section class="grupo" ${cerrado ? 'data-cerrado' : ''}>
+    <button class="grupo-cab" data-grupo-toggle="_cambios" aria-expanded="${!cerrado}">${icono('chevron')}<span>Cambios detectados</span><span class="n">${n}</span><span class="desc">entre ${fecha(c.desde)} y ${fecha(c.hasta)}</span></button>
+    <div class="filas">${filas.join('')}</div>
+  </section>`;
 }
 
 function check(icon, color, nombre, valor, detalle = '') {
@@ -439,6 +494,19 @@ function pilaEstados(pr) {
     const partes = [r.bloqueante && plural(r.bloqueante, 'bloqueante', 'bloqueantes'), r.alto && plural(r.alto, 'alta', 'altas'), r.medio && plural(r.medio, 'media', 'medias'), r.aviso && plural(r.aviso, 'aviso', 'avisos')].filter(Boolean);
     filas.push(check(i, c, 'Verificaciones', partes.length ? partes.join(', ') : 'Sin hallazgos en las líneas agregadas', partes.length ? '<a href="#" data-tab-ir="verificaciones">Ver hallazgos</a>' : ''));
   }
+  const tr = trabajo(pr);
+  if (tr) {
+    const hora = (f) => (f ? new Date(f).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) : '');
+    const mapa = {
+      en_cola: ['reloj', '', 'En cola para analizar', ''],
+      en_curso: ['actualizar', '', 'Analizando la PR', `Desde las ${hora(tr.inicio)}. Suele tardar entre uno y tres minutos.`],
+      terminado: ['ok', 'verde', 'Explicación generada', `A las ${hora(tr.fin)}${tr.costo ? ` · USD ${tr.costo.toFixed(2)}` : ''}`],
+      error: ['bloqueo', 'rojo', 'El análisis no se completó', esc(tr.mensaje ?? '')],
+      cancelado: ['circulo', '', 'Análisis cancelado', ''],
+    };
+    const [i, c, txt, det] = mapa[tr.estado] ?? ['circulo', '', tr.estado, ''];
+    filas.push(check(i, c, 'Análisis con IA', txt, det).replace('<svg class="i "', tr.estado === 'en_curso' ? '<svg class="i girando"' : '<svg class="i "'));
+  }
   const rev = revision(pr);
   if (rev?.decision) {
     const [txt, cls] = DECISIONES[rev.decision] ?? [rev.decision, ''];
@@ -456,6 +524,8 @@ const sec = (titulo, cuerpo) => `<div class="seccion"><h3>${titulo}</h3>${cuerpo
 function tabResumen(pr) {
   const e = pr.explicacion;
   if (!e) {
+    if (API) return `<div class="seccion"><p class="tenue">Esta PR todavía no tiene explicación.</p>
+      <p style="margin-top:12px"><button class="btn chico" data-accion="analizar" ${trabajoActivo(pr) ? 'disabled' : ''}>${icono('chispa')} ${trabajoActivo(pr) ? 'Analizando' : 'Analizar con IA'}</button></p></div>`;
     return `<div class="seccion"><p class="tenue">Esta PR todavía no tiene explicación. Se genera desde Claude Code y aparece aquí al regenerar el tablero.</p>
       <p style="margin-top:12px"><button class="btn chico" data-copiar="/pw-revision:revisar-prs explicar ${esc(pr.repo)}#${pr.numero}">${icono('copiar')} Copiar el comando</button></p></div>`;
   }
@@ -539,7 +609,9 @@ function pintarDetalle() {
     <div class="acciones">
       <a class="btn primario" href="${esc(pr.url)}" target="_blank" rel="noopener">Abrir en GitHub ${icono('externo')}</a>
       <button class="btn" data-copiar="/plannotator-review ${esc(pr.url)}">${icono('copiar')} Revisar línea por línea</button>
-      <button class="btn" data-copiar="/pw-revision:revisar-prs explicar ${esc(pr.repo)}#${pr.numero}">${icono('copiar')} ${pr.explicacion ? 'Regenerar explicación' : 'Explicar'}</button>
+      ${API
+        ? `<button class="btn" data-accion="analizar" ${trabajoActivo(pr) ? 'disabled' : ''}>${icono('chispa')} ${trabajoActivo(pr) ? 'Analizando' : pr.explicacion ? 'Volver a analizar con IA' : 'Analizar con IA'}</button>`
+        : `<button class="btn" data-copiar="/pw-revision:revisar-prs explicar ${esc(pr.repo)}#${pr.numero}">${icono('copiar')} ${pr.explicacion ? 'Regenerar explicación' : 'Explicar'}</button>`}
     </div>
     ${pilaEstados(pr)}
     <div class="tabs" role="tablist">${TABS.map(([k, nombre, n]) => { const c = n(pr); return `<button class="tab" role="tab" data-tab="${k}" aria-selected="${estado.tab === k}">${nombre}${c ? `<span class="n">${c}</span>` : ''}</button>`; }).join('')}</div>
@@ -567,10 +639,56 @@ function pintarDiagramas() {
   mermaidListo.then((m) => m.run({ nodes: nodos })).catch(() => {});
 }
 
-function pintarTodo() {
+function pintarBarra() {
+  if (!API) return;
+  const r = estado.ultimoRefresco;
+  const texto = estado.refrescando ? 'Consultando GitHub y git' : r && !r.ok ? 'La última actualización falló' : '';
+  $('accionesBarra').innerHTML = `<span class="estado-texto">${texto}</span>
+    <button class="btn chico" data-accion="refrescar" ${estado.refrescando ? 'disabled' : ''} title="${esc(r && !r.ok ? r.mensaje : 'Vuelve a consultar GitHub y git: qué se mergeó, qué es nuevo y dónde está cada PR')}">${icono('actualizar', estado.refrescando ? 'girando' : '')} ${estado.refrescando ? 'Actualizando' : 'Actualizar estado'}</button>`;
+}
+
+async function api(ruta, cuerpo) {
+  const r = await fetch(ruta, {
+    method: cuerpo === undefined ? 'GET' : 'POST',
+    headers: { 'X-PW-Token': API.token, 'Content-Type': 'application/json' },
+    body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo),
+  });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`);
+  return r.json();
+}
+
+let sondeo = null;
+async function sondear() {
+  clearTimeout(sondeo);
+  try {
+    const previo = new Map([...estado.trabajos].map(([k, t]) => [k, t.estado]));
+    const eraRefresco = estado.refrescando;
+    const e = await api('/api/estado');
+    estado.trabajos = new Map(e.trabajos.map((t) => [t.id, t]));
+    estado.refrescando = e.refrescando;
+    estado.ultimoRefresco = e.ultimoRefresco;
+    const termino = e.trabajos.some((t) => t.estado === 'terminado' && previo.get(t.id) !== 'terminado') || (eraRefresco && !e.refrescando);
+    if (termino) FOTO = await api('/api/foto');
+    // Si la persona está escribiendo en el detalle, no se repinta: perdería el foco y el texto a medio escribir.
+    pintarTodo({ detalle: !$('detalle').contains(document.activeElement) });
+    const activo = e.refrescando || e.trabajos.some((t) => t.estado === 'en_cola' || t.estado === 'en_curso');
+    if (activo) sondeo = setTimeout(sondear, 3000);
+  } catch (err) {
+    estado.ultimoRefresco = { ok: false, mensaje: `Sin conexión con el servidor local: ${err.message}. Vuelva a abrirlo con tablero_servir.` };
+    pintarBarra();
+  }
+}
+
+async function accionApi(ruta, cuerpo) {
+  try { await api(ruta, cuerpo); } catch (err) { avisar(err.message); }
+  sondear();
+}
+
+function pintarTodo({ detalle = true } = {}) {
+  pintarBarra();
   pintarLateral();
   pintarCola();
-  pintarDetalle();
+  if (detalle) pintarDetalle();
 }
 
 function seleccionar(id, { enfocar = false } = {}) {
@@ -649,6 +767,8 @@ function copiar(boton, texto) {
 }
 
 document.addEventListener('click', (ev) => {
+  const ir = ev.target.closest('a[data-ir]');
+  if (ir) { ev.preventDefault(); return seleccionar(ir.dataset.ir); }
   const t = ev.target.closest('button, a[data-tab-ir]');
   if (!t) return;
   const d = t.dataset;
@@ -677,6 +797,20 @@ document.addEventListener('click', (ev) => {
   if (d.accion === 'exportar') return exportar();
   if (d.accion === 'importar') return $('archivoRevision').click();
   if (d.accion === 'copiarResumen') return copiar(t, resumenTexto());
+  if (d.accion === 'refrescar') { estado.refrescando = true; pintarBarra(); return accionApi('/api/refrescar', {}); }
+  if (d.accion === 'analizar') {
+    const pr = FOTO.prs.find((p) => p.id === estado.seleccion);
+    estado.trabajos.set(pr.id, { id: pr.id, estado: 'en_cola' });
+    pintarTodo();
+    return accionApi('/api/analizar', { prs: [{ repo: pr.repo, numero: pr.numero }] });
+  }
+  if (d.accion === 'pedirConfirmacion') { estado.confirmarPendientes = true; pintarLateral(); setTimeout(() => { estado.confirmarPendientes = false; pintarLateral(); }, 6000); return; }
+  if (d.accion === 'analizarPendientes') {
+    estado.confirmarPendientes = false;
+    const prs = pendientesDeAnalisis().sort((a, b) => Number(b.seguridad) - Number(a.seguridad)).map((p) => ({ repo: p.repo, numero: p.numero }));
+    return accionApi('/api/analizar', { prs });
+  }
+  if (d.accion === 'cancelarCola') return accionApi('/api/cancelar-cola', {});
 });
 
 document.addEventListener('change', (ev) => {
@@ -726,6 +860,7 @@ document.querySelectorAll('[data-rol]').forEach((b) => b.setAttribute('aria-pres
 const inicial = decodeURIComponent(location.hash.slice(1));
 pintarTodo();
 if (FOTO.prs.some((p) => p.id === inicial)) seleccionar(inicial);
+if (API) sondear();
 </script>
 </body>
 </html>

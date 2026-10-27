@@ -1,12 +1,9 @@
 import { execFile } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { writeFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { proyecto as cargarProyecto } from '../lib/config.mjs';
-import { leerJson, rutaExplicacion, rutaInstantanea } from '../lib/cache.mjs';
 import { recolectar } from '../lib/recolectar.mjs';
-
-const PLANTILLA = join(dirname(fileURLToPath(import.meta.url)), '../tablero/plantilla.html');
+import { construirHtml, fotoConExplicaciones } from '../lib/tablero.mjs';
 
 export default {
   name: 'tablero_generar',
@@ -23,14 +20,9 @@ export default {
   },
   async handler({ proyecto, refrescar = false, abrir = true }) {
     const p = cargarProyecto(proyecto);
-    let foto = refrescar ? null : leerJson(rutaInstantanea(p.salida));
-    if (!foto) foto = await recolectar({ proyecto });
-    for (const pr of foto.prs) {
-      const e = leerJson(rutaExplicacion(p.salida, pr.repo, pr.numero));
-      if (e) pr.explicacion = { ...e, desactualizada: e.headSha !== pr.headSha };
-    }
-    const datos = JSON.stringify(foto).replace(/</g, '\\u003c');
-    const html = readFileSync(PLANTILLA, 'utf8').replace('/*DATOS*/null', datos);
+    if (refrescar || !fotoConExplicaciones(p)) await recolectar({ proyecto });
+    const foto = fotoConExplicaciones(p);
+    const html = construirHtml(foto);
     const ruta = join(p.salida, 'tablero.html');
     mkdirSync(p.salida, { recursive: true });
     writeFileSync(ruta, html);

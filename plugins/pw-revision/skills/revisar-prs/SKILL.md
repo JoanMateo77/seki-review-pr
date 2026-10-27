@@ -13,7 +13,8 @@ Herramientas del servidor MCP `pw-revision`:
 | `pr_detalle` | Descripción, commits y diff recortado de una PR, para entenderla |
 | `pr_verificaciones` | Reglas fijas sobre las líneas agregadas de una PR, o de una rama local antes de abrirla (`dir` + `base`) |
 | `pr_guardar_explicacion` | Guarda la explicación de una PR atada a su commit actual |
-| `tablero_generar` | Escribe y abre `revision-prs/tablero.html` (archivo local) |
+| `tablero_generar` | Escribe y abre `revision-prs/tablero.html` (archivo local, sin acciones) |
+| `tablero_servir` | Sirve el tablero en 127.0.0.1 con acciones: actualizar estado y analizar con IA |
 
 Todo queda en archivos locales. No publicar el tablero ni las explicaciones en Artifacts, Claude Docs ni ningún servicio externo.
 
@@ -35,7 +36,12 @@ mirando la línea en contexto y decir si es real o falso positivo. Antes de abri
 arriba, deja su decisión y observaciones por PR y exporta un JSON; el autor lo importa en su tablero. Si piden leer
 esas decisiones, pedir la ruta del JSON exportado y resumirlo.
 
-**"tablero":** `tablero_generar` (con `refrescar: true` si la foto tiene más de un día).
+**"tablero":** `tablero_servir` para trabajar con acciones (la URL trae un token y vive mientras dure la sesión);
+`tablero_generar` cuando se necesita el archivo suelto para enviarlo a quien revisa. Fuera de Claude Code:
+`sh <plugin>/bin/tablero.sh`.
+
+**"qué se mergeó" / "qué cambió":** `prs_pendientes` compara con la foto anterior y abre su salida con
+"Cambios detectados": mergeadas (y en qué rama), cerradas sin mergear, nuevas y las que cambiaron de grupo.
 
 ## Cómo redactar la explicación
 

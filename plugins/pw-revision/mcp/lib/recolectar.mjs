@@ -6,6 +6,7 @@ import { archivosPr, arbolRama, commitsPr, estadoFrentePruebas } from './estado.
 import { buscarGemela } from './gemelas.mjs';
 import { enParalelo, ghJson } from './proceso.mjs';
 import { verificar } from './verificar.mjs';
+import { compararFotos, hayCambios } from './cambios.mjs';
 
 const CAMPOS = 'number,title,url,baseRefName,headRefName,createdAt,updatedAt,additions,deletions,changedFiles,isDraft,headRefOid,author,reviewDecision';
 
@@ -243,6 +244,10 @@ export async function recolectar({ proyecto: clave = 'demo', repos, incluirInact
   const visibles = incluirInactivas ? todas : todas.filter((x) => x.ambiente !== 'inactiva');
   visibles.sort((a, b) => a.repo.localeCompare(b.repo) || b.numero - a.numero);
   const instantanea = { proyecto: p.nombre ?? clave, clave, generado: new Date().toISOString(), owner: p.owner, acciones: ACCIONES, prs: visibles };
+  // Si esta foto no trae cambios se conservan los últimos detectados, para que dos actualizaciones seguidas no los borren.
+  const anterior = repos?.length ? null : leerJson(rutaInstantanea(p.salida));
+  const cambios = await compararFotos(anterior, instantanea, p.owner).catch(() => null);
+  instantanea.cambios = hayCambios(cambios) ? cambios : anterior?.cambios ?? null;
   escribirJson(rutaCacheEstados(p.salida), cacheEstados);
   escribirJson(rutaCacheVerificaciones(p.salida), cacheVerif);
   escribirJson(rutaInstantanea(p.salida), instantanea);
