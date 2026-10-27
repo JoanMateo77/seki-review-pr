@@ -57,6 +57,8 @@ svg.i { width: 14px; height: 14px; flex: none; stroke: currentColor; fill: none;
 /* Estructura: barra superior + lateral + cola + detalle */
 .app { display: grid; grid-template-columns: 232px minmax(360px, 1fr) minmax(460px, 1.35fr); grid-template-rows: 48px 1fr; height: 100vh; }
 .barra { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; padding: 0 16px; border-bottom: 1px solid var(--linea); background: var(--panel); }
+.btn-lateral { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; margin-left: -6px; border: 0; border-radius: 6px; background: none; color: var(--texto-2); cursor: pointer; }
+.btn-lateral:hover { background: var(--hover); color: var(--texto); }
 .barra h1 { font-size: 13px; font-weight: 600; margin: 0; white-space: nowrap; }
 .barra .foto { color: var(--texto-3); white-space: nowrap; }
 .buscar { flex: 1; max-width: 420px; margin-left: auto; position: relative; }
@@ -178,6 +180,9 @@ textarea { width: 100%; min-height: 96px; padding: 8px 10px; border: 1px solid v
 
 /* Diff */
 body[data-enfoque] .app { grid-template-columns: 1fr; }
+body[data-sin-lateral] .app { grid-template-columns: minmax(360px, 1fr) minmax(460px, 1.35fr); }
+body[data-sin-lateral] .lateral { display: none; }
+body[data-enfoque] .btn-lateral { display: none; }
 body[data-enfoque] .lateral, body[data-enfoque] .cola { display: none; }
 .det.ancho { max-width: none; }
 .diff-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 12px; color: var(--texto-2); }
@@ -217,10 +222,13 @@ body[data-enfoque] .lateral, body[data-enfoque] .cola { display: none; }
 
 @media (max-width: 1180px) {
   .app { grid-template-columns: 200px minmax(320px, 1fr) minmax(400px, 1.2fr); }
+  body[data-sin-lateral] .app { grid-template-columns: minmax(320px, 1fr) minmax(400px, 1.2fr); }
   .barra .foto { display: none; }
 }
 @media (max-width: 900px) {
   .app { display: block; height: auto; }
+  .btn-lateral { display: none; }
+  body[data-sin-lateral] .lateral { display: flex; }
   .barra { position: sticky; top: 0; z-index: 3; flex-wrap: wrap; height: auto; padding: 10px 16px; }
   .buscar { order: 3; flex-basis: 100%; max-width: none; margin: 0; }
   .rol { margin-left: auto; }
@@ -273,11 +281,13 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   <symbol id="i-descargar" viewBox="0 0 16 16"><path d="M8 2.5v8M4.8 7.5 8 10.7l3.2-3.2M3 13.5h10"/></symbol>
   <symbol id="i-chispa" viewBox="0 0 16 16"><path d="M8 1.8v3M8 11.2v3M1.8 8h3M11.2 8h3M3.6 3.6l2 2M10.4 10.4l2 2M12.4 3.6l-2 2M5.6 10.4l-2 2"/></symbol>
   <symbol id="i-actualizar" viewBox="0 0 16 16"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></symbol>
+  <symbol id="i-lateral" viewBox="0 0 16 16"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M6 2.5v11"/></symbol>
   <symbol id="i-subir" viewBox="0 0 16 16"><path d="M8 10.5v-8M4.8 5.7 8 2.5l3.2 3.2M3 13.5h10"/></symbol>
 </svg>
 
 <div class="app">
   <header class="barra">
+    <button class="btn-lateral" data-accion="lateral" aria-label="Mostrar u ocultar el menú lateral" aria-pressed="true" title="Menú lateral ( [ )"><svg class="i" aria-hidden="true"><use href="#i-lateral"/></svg></button>
     <h1 id="titulo">Revisión de PRs</h1>
     <span class="foto" id="foto"></span>
     <label class="buscar">
@@ -420,7 +430,7 @@ function pintarLateral() {
       <h2>Revisión</h2>
       <button class="nav" data-accion="exportar">${icono('descargar')} Exportar revisión</button>
       <button class="nav" data-accion="importar">${icono('subir')} Importar revisión</button>
-      <div class="ayuda"><span><kbd>j</kbd> <kbd>k</kbd> moverse en la cola</span><span><kbd>o</kbd> abrir en GitHub</span><span><kbd>/</kbd> buscar</span></div>
+      <div class="ayuda"><span><kbd>j</kbd> <kbd>k</kbd> moverse en la cola</span><span><kbd>o</kbd> abrir en GitHub</span><span><kbd>/</kbd> buscar</span><span><kbd>[</kbd> menú lateral</span></div>
     </div>`;
 }
 
@@ -902,6 +912,17 @@ function importar(archivo) {
   }).catch(() => avisar('El archivo no es una revisión exportada desde este tablero.'));
 }
 
+function aplicarLateral(oculto) {
+  document.body.toggleAttribute('data-sin-lateral', oculto);
+  document.querySelector('[data-accion="lateral"]').setAttribute('aria-pressed', String(!oculto));
+}
+
+function alternarLateral() {
+  const oculto = !document.body.hasAttribute('data-sin-lateral');
+  almacen.escribir('pw-revision:sin-lateral', oculto);
+  aplicarLateral(oculto);
+}
+
 function avisar(texto) {
   const destino = $('guardado') ?? $('foto');
   const previo = destino.textContent;
@@ -949,6 +970,7 @@ document.addEventListener('click', (ev) => {
   if (d.accion === 'importar') return $('archivoRevision').click();
   if (d.accion === 'copiarResumen') return copiar(t, resumenTexto());
   if (d.plegar) return $(d.plegar).toggleAttribute('data-plegado');
+  if (d.accion === 'lateral') return alternarLateral();
   if (d.accion === 'enfoque') { document.body.toggleAttribute('data-enfoque'); return pintarDetalle(); }
   if (d.accion === 'plegarTodo') { document.querySelectorAll('.archivo').forEach((a) => a.setAttribute('data-plegado', '')); return; }
   if (d.accion === 'refrescar') { estado.refrescando = true; pintarBarra(); return accionApi('/api/refrescar', {}); }
@@ -1018,12 +1040,14 @@ document.addEventListener('keydown', (ev) => {
   if (ev.key === 'j' || ev.key === 'ArrowDown') { ev.preventDefault(); ir(filas[i + 1] ?? filas[i]); }
   if (ev.key === 'k' || ev.key === 'ArrowUp') { ev.preventDefault(); ir(filas[Math.max(i - 1, 0)]); }
   if (ev.key === '/') { ev.preventDefault(); $('buscar').focus(); }
+  if (ev.key === '[') { ev.preventDefault(); alternarLateral(); }
   if (ev.key === 'o') { const pr = FOTO.prs.find((p) => p.id === estado.seleccion); if (pr) window.open(pr.url, '_blank', 'noopener'); }
 });
 
 $('titulo').textContent = `Revisión de PRs · ${FOTO.proyecto}`;
 $('foto').textContent = `Datos de GitHub del ${new Date(FOTO.generado).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })}`;
 document.querySelectorAll('[data-rol]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.rol === estado.rol)));
+aplicarLateral(almacen.leer('pw-revision:sin-lateral', false));
 const [inicial, tabInicial] = decodeURIComponent(location.hash.slice(1)).split('/');
 if (CUERPOS[tabInicial]) estado.tab = tabInicial;
 pintarTodo();
