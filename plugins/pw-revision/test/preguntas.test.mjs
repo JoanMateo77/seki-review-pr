@@ -92,7 +92,7 @@ test('la respuesta rápida marca cuando hace falta revisar el código', async ()
   assert.equal(b.necesitaCodigo, undefined);
 });
 
-test('investigar lee el repositorio en una copia de la PR, ve los otros checkouts y no los secretos', async () => {
+test('investigar lee el repositorio en una copia de la PR, nunca el checkout del usuario, y no los secretos', async () => {
   const { repoConPr } = await import('./util/repo.mjs');
   const { mkdirSync, readFileSync } = await import('node:fs');
   const r = repoConPr({ antes: 'a\n', despues: 'b\n' });
@@ -111,7 +111,29 @@ test('investigar lee el repositorio en una copia de la PR, ve los otros checkout
   assert.notEqual(readFileSync(`${rastro}.cwd`, 'utf8').trim(), r.checkout);
   const args = readFileSync(`${rastro}.args`, 'utf8').split('\n');
   assert.equal(args[args.indexOf('--tools') + 1], 'Read,Grep,Glob');
-  assert.ok(args.includes(otro));
+  assert.ok(!args.includes(otro));
   assert.ok(args.some((x) => x.startsWith('Read(/') && x.endsWith('/**/*.env)')));
   assert.ok(!args.includes('--json-schema') || args[args.indexOf('--json-schema') + 1].includes('texto'));
+});
+
+test('investigar lee los otros repos en la rama equivalente y deja registrado qué leyó', async () => {
+  const { repoConPr } = await import('./util/repo.mjs');
+  const { readFileSync } = await import('node:fs');
+  const a = repoConPr({ antes: 'a\n', despues: 'b\n', rama: 'fix/a' });
+  const b = repoConPr({ antes: 'c\n', despues: 'd\n', rama: 'b-pruebas' });
+  const salida = mkdtempSync(join(tmpdir(), 'pw-inv2-'));
+  const p = { salida, copias: join(salida, 'copias'), repos: {
+    a: { checkout: a.checkout, lineas: [{ portal: 'A', prod: 'main', pruebas: 'a-pruebas' }] },
+    b: { checkout: b.checkout, lineas: [{ portal: 'B', prod: 'b-prod', pruebas: 'b-pruebas' }] },
+  } };
+  const prx = { ...pr, id: 'a#7', repo: 'a', numero: 7, base: 'a-pruebas', headSha: a.head };
+  guardarComentarios(p, 'a', 7, [{ id: 'c-0001', tipo: 'pregunta', estado: 'borrador', ambito: 'pr', texto: '¿Quién llama?', headSha: a.head }]);
+  const rastro = join(salida, 'rastro');
+  process.env.PW_CLAUDE = falsoClaude({ ...exito([]), structured_output: { texto: 'Nadie.' } }, 0, `printf '%s\\n' "$@" > "${rastro}.args"`);
+  await investigarPregunta(p, prx, 'c-0001', deps);
+  const [c] = leerComentarios(p, 'a', 7);
+  assert.deepEqual(c.leido, [{ repo: 'a', rama: 'PR #7', sha: a.head }, { repo: 'b', portal: 'B', rama: 'b-pruebas', sha: b.head }]);
+  const args = readFileSync(`${rastro}.args`, 'utf8').split('\n');
+  assert.ok(!args.includes(b.checkout));
+  assert.ok(args.some((x) => x.includes('b-pruebas')));
 });

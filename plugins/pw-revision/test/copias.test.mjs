@@ -74,3 +74,43 @@ test('reiniciarCopia se niega a operar fuera de la raíz de un worktree', async 
   await assert.rejects(() => reiniciarCopia(sub, r.head), /raíz/);
   assert.ok(existsSync(join(r.checkout, 'sin-guardar.txt')));
 });
+
+test('ramasEquivalentes: una PR a pruebas lee los otros repos en sus ramas de pruebas, cada portal del front', async () => {
+  const { ramasEquivalentes } = await import('../mcp/lib/copias.mjs');
+  const p = { repos: {
+    back: { lineas: [{ portal: 'Back', prod: 'demo', pruebas: 'develop' }] },
+    front: { lineas: [{ portal: 'Admin', prod: 'ba', pruebas: 'ba-pruebas' }, { portal: 'Tienda', prod: 'mp', pruebas: 'mp-pruebas' }] },
+  } };
+  assert.deepEqual(ramasEquivalentes(p, { repo: 'back', base: 'develop' }), { ambiente: 'pruebas', ramas: [{ repo: 'front', portal: 'Admin', rama: 'ba-pruebas' }, { repo: 'front', portal: 'Tienda', rama: 'mp-pruebas' }] });
+  assert.equal(ramasEquivalentes(p, { repo: 'front', base: 'mp' }).ramas[0].rama, 'demo');
+});
+
+test('copiaDeRama trae la rama fresca del remoto sin tocar ramas ni refs del checkout', async () => {
+  const { copiaDeRama } = await import('../mcp/lib/copias.mjs');
+  const { r, p } = preparar();
+  const antes = sh(r.checkout, 'for-each-ref', '--format=%(refname)');
+  const ramaActual = sh(r.checkout, 'branch', '--show-current');
+  const c = await copiaDeRama(p, 'x', r.rama);
+  assert.equal(c.sha, r.head);
+  assert.equal(sh(c.dir, 'rev-parse', 'HEAD'), r.head);
+  assert.equal(sh(r.checkout, 'for-each-ref', '--format=%(refname)'), antes);
+  assert.equal(sh(r.checkout, 'branch', '--show-current'), ramaActual);
+  const otra = await copiaDeRama(p, 'x', r.rama);
+  assert.equal(otra.dir, c.dir);
+});
+
+test('limpiarCopias borra las de PRs cerradas y las viejas, y no toca worktrees ajenos', async () => {
+  const { copiaDeRama, limpiarCopias } = await import('../mcp/lib/copias.mjs');
+  const { r, p } = preparar();
+  const abierta = await crearCopia(p, 'x', 7, r.head);
+  const cerrada = await crearCopia(p, 'x', 8, r.head, { sufijo: '-lectura' });
+  const vieja = await copiaDeRama(p, 'x', r.rama);
+  const ajeno = join(r.raiz, 'ajeno');
+  sh(r.checkout, 'worktree', 'add', '-q', '--detach', ajeno);
+  const hace8 = Date.now() - 8 * 24 * 3600 * 1000;
+  const borradas = await limpiarCopias(p, { abiertas: new Set(['x#7']), ahora: Date.now(), usos: { [vieja.dir]: hace8 } });
+  assert.deepEqual(borradas.sort(), [cerrada, vieja.dir].sort());
+  assert.ok(existsSync(abierta));
+  assert.ok(existsSync(ajeno));
+  assert.ok(!existsSync(cerrada));
+});

@@ -1,14 +1,12 @@
 // Respuestas de la IA a las preguntas sobre líneas. Todas las preguntas pendientes de una PR van en una sola
 // llamada; una pregunta igual sobre el mismo commit y las mismas líneas se responde desde la caché.
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
 import { escribirJson, leerJson, rutaRespuesta } from './cache.mjs';
 import { actualizarComentario, leerComentarios, rescatarPendientes } from './comentarios.mjs';
 import { contextoPreguntas } from './contexto.mjs';
 import { argsClaude, dirVacio, ejecutarClaude, elegirModelo, promptSistema, reglasSecretos, registrarCosto, tope, TURNOS } from './ia.mjs';
-import { crearCopia } from './copias.mjs';
-import { expandir } from './config.mjs';
-import { ghJson, git } from './proceso.mjs';
+import { copiaDeRama, crearCopia, ramasEquivalentes } from './copias.mjs';
+import { ghJson } from './proceso.mjs';
 
 const PENDIENTES = new Set(['borrador', 'en_cola', 'en_curso', 'error']);
 const SCHEMA = {
@@ -73,16 +71,14 @@ async function responder(p, pr, sinCache, { contexto, detalle }) {
 
 const SCHEMA_INVESTIGAR = { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] };
 
-async function otrosCheckouts(p, repo) {
+// Copias de solo lectura de los otros repos en la rama equivalente; una rama que no se pudo traer se informa.
+async function otrasRamas(p, pr) {
+  const { ambiente, ramas } = ramasEquivalentes(p, pr);
   const lista = [];
-  for (const [nombre, cfg] of Object.entries(p.repos)) {
-    if (nombre === repo || !cfg.checkout) continue;
-    const dir = expandir(cfg.checkout);
-    if (!existsSync(dir)) continue;
-    const rama = (await git(dir, ['branch', '--show-current']).catch(() => '')).trim();
-    lista.push({ nombre, dir, rama: rama || 'commit suelto' });
+  for (const r of ramas) {
+    try { lista.push({ ...r, ...(await copiaDeRama(p, r.repo, r.rama)) }); } catch (e) { lista.push({ ...r, falla: String(e.stderr || e.message).trim().slice(0, 160) }); }
   }
-  return lista;
+  return { ambiente, lista };
 }
 
 // Pregunta que necesita mirar el código: la IA busca y lee en una copia de solo lectura de la PR (aparte de la que
@@ -95,21 +91,24 @@ export async function investigarPregunta(p, pr, id, { contexto = contextoPregunt
   actualizar({ estado: 'en_curso', motivo: null });
   try {
     const dir = await crearCopia(p, pr.repo, pr.numero, pr.headSha, { sufijo: '-lectura' });
-    const otros = await otrosCheckouts(p, pr.repo);
+    const { ambiente, lista } = await otrasRamas(p, pr);
+    const otros = lista.filter((o) => !o.falla);
     const cuerpo = (await detalle(p, pr))?.body;
     const ctx = await contexto(p, { ...pr, cuerpo }, [c], { todos });
-    const repos = [`- ${pr.repo}: el directorio actual, en el commit ${pr.headSha.slice(0, 7)} de la PR.`,
-      ...otros.map((o) => `- ${o.nombre}: ${o.dir} (rama ${o.rama}; puede no coincidir con lo que está en producción).`)].join('\n');
+    const repos = [`- ${pr.repo}: el directorio actual, en el commit ${pr.headSha.slice(0, 7)} de la PR #${pr.numero}.`,
+      ...otros.map((o) => `- ${o.repo} (${o.portal}): ${o.dir}, rama ${o.rama} de ${ambiente === 'prod' ? 'producción' : 'pruebas'} en ${o.sha.slice(0, 7)}, recién traída de GitHub.`),
+      ...lista.filter((o) => o.falla).map((o) => `- ${o.repo} (${o.portal}), rama ${o.rama}: no disponible (${o.falla}).`)].join('\n');
     const modelo = elegirModelo({ tipo: 'investigar', pr });
     const r = await ejecutarClaude(argsClaude({
       modelo, sistema: promptSistema('base', 'investigar'),
-      prompt: `Investigar en el código la pregunta ${c.id}.\n\nRepositorios disponibles (solo lectura):\n${repos}\n\n${ctx}`,
+      prompt: `Investigar en el código la pregunta ${c.id}. Al citar código de otro repo, decir de qué repo y rama es.\n\nRepositorios disponibles (solo lectura):\n${repos}\n\n${ctx}`,
       schema: SCHEMA_INVESTIGAR, tools: ['Read', 'Grep', 'Glob'], tope: tope('investigar'), turnos: TURNOS.investigar,
       dirs: otros.map((o) => o.dir), prohibidas: reglasSecretos([dir, ...otros.map((o) => o.dir)]),
     }), { cwd: dir });
+    const leido = [{ repo: pr.repo, rama: `PR #${pr.numero}`, sha: pr.headSha }, ...otros.map((o) => ({ repo: o.repo, portal: o.portal, rama: o.rama, sha: o.sha }))];
     const usado = r.modelo ?? modelo;
     registrarCosto(p, { tipo: 'investigar', prId: pr.id, modelo: usado, uso: r.uso, costo: r.costo, ok: r.ok });
-    if (r.ok && r.salida?.texto) actualizar({ estado: 'respondido', respuesta: r.salida.texto, investigado: true, necesitaCodigo: undefined, modelo: usado, costo: r.costo, lote: 1, desdeCache: false });
+    if (r.ok && r.salida?.texto) actualizar({ estado: 'respondido', respuesta: r.salida.texto, investigado: true, leido, necesitaCodigo: undefined, modelo: usado, costo: r.costo, lote: 1, desdeCache: false });
     else actualizar({ estado: 'error', motivo: r.ok ? 'La IA no devolvió respuesta' : r.motivo });
     return { ok: r.ok, motivo: r.motivo, costo: r.costo, modelo: usado };
   } catch (e) {

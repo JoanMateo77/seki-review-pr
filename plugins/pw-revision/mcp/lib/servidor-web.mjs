@@ -13,6 +13,7 @@ import { ajustarPropuesta, aprobar, descartar, leerPropuesta, proponerCambios } 
 import { explicarConIa } from './explicar.mjs';
 import { costosDelDia } from './ia.mjs';
 import { servidorActivo, tokenDe } from './acceso.mjs';
+import { limpiarCopias } from './copias.mjs';
 
 const PUERTO = 4317;
 const MAX_CUERPO = 64 * 1024;
@@ -53,7 +54,11 @@ export async function iniciarServidor({ proyecto = 'demo', puerto = PUERTO, abri
 
   const refrescar = () => {
     refresco ??= recolectar({ proyecto }).then(
-      (f) => { ultimoRefresco = { ok: true, fecha: f.generado }; },
+      (f) => {
+        ultimoRefresco = { ok: true, fecha: f.generado };
+        // Las copias de PRs ya cerradas o sin uso hace una semana se borran; la trazabilidad queda en los comentarios.
+        limpiarCopias(p, { abiertas: new Set(f.prs.filter((x) => x.estadoPr === 'OPEN').map((x) => x.id)) }).catch(() => {});
+      },
       (e) => { ultimoRefresco = { ok: false, fecha: new Date().toISOString(), mensaje: e.message.slice(0, 300) }; },
     ).finally(() => { refresco = null; });
     return refresco;

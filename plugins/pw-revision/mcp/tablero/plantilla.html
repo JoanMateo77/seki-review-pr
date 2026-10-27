@@ -239,6 +239,7 @@ body[data-enfoque] .lateral, body[data-enfoque] .cola { display: none; }
 .hilos-pr { display: grid; gap: 8px; margin-top: 10px; }
 .respuesta-a { border-left: 3px solid var(--linea-fuerte); }
 .respondiendo { margin: 6px 0; padding: 4px 8px; border-radius: 6px; background: var(--sel); color: var(--texto-2); font-size: .92em; }
+.leido { margin: 4px 0 0; font-size: .85em; }
 .aviso-codigo { margin: 0 0 6px; color: var(--ambar); font-size: .92em; }
 .btn-texto.destacado { color: var(--acento); font-weight: 600; }
 .md p { margin: 0 0 8px; }
@@ -841,10 +842,60 @@ function cerrarBarraSel() {
   seleccionResumen = null;
 }
 
+// Texto seleccionado con el mouse dentro del diff: se traduce a las filas que toca para comentar esas líneas.
+function lineasDeSeleccion(rango) {
+  const fila = (n) => (n.nodeType === 1 ? n : n.parentElement)?.closest('tr[data-clave]');
+  const a = fila(rango.startContainer);
+  const b = fila(rango.endContainer);
+  const archivo = a?.closest('.archivo');
+  if (!a || !b || !archivo || archivo !== b.closest('.archivo') || a.closest('tr.hilo, tr.caja')) return null;
+  return { archivo: +archivo.dataset.k, claveA: a.dataset.clave, claveB: b.dataset.clave };
+}
+
+function abrirCajaDeSeleccion(tipo) {
+  const s = seleccionResumen?.lineas;
+  cerrarBarraSel();
+  if (!s) return;
+  window.getSelection()?.removeAllRanges();
+  leerCaja();
+  estado.caja = { ...cajaVacia(tipo), texto: '' };
+  estado.seleccionLineas = s;
+  marcarSeleccion();
+}
+
+function colocarBarra(barra, caja) {
+  document.body.append(barra);
+  const ancho = Math.min(420, window.innerWidth - 24);
+  barra.style.width = `${ancho}px`;
+  barra.style.left = `${Math.max(12, Math.min(caja.left, window.innerWidth - ancho - 12))}px`;
+  const abajo = caja.bottom + 8;
+  barra.style.top = `${abajo + 170 > window.innerHeight ? Math.max(12, caja.top - 8 - barra.offsetHeight) : abajo}px`;
+}
+
 function abrirBarraSel() {
   const sel = window.getSelection();
   const texto = sel?.toString().replace(/\s+/g, ' ').trim();
-  if (!API || !texto || estado.tab !== 'resumen' || sel.rangeCount === 0) return;
+  if (!texto || sel.rangeCount === 0) return;
+  if (estado.tab === 'archivos') {
+    const lineas = lineasDeSeleccion(sel.getRangeAt(0));
+    if (!lineas) return;
+    seleccionResumen = { lineas };
+    $('barraSel')?.remove();
+    const barra = document.createElement('div');
+    barra.id = 'barraSel';
+    barra.className = 'barra-sel';
+    barra.setAttribute('role', 'dialog');
+    barra.setAttribute('aria-label', 'Comentar las líneas seleccionadas');
+    barra.innerHTML = `<div class="barra-sel-botones">
+      ${API ? `<button type="button" class="btn chico primario" data-bsel-lineas="pregunta">${icono('chispa')} Preguntar</button>` : ''}
+      ${API && prSel()?.estadoPr === 'OPEN' ? '<button type="button" class="btn chico" data-bsel-lineas="cambio">Pedir cambio</button>' : ''}
+      <button type="button" class="btn chico${API ? '' : ' primario'}" data-bsel-lineas="nota">Nota</button>
+      <button type="button" class="btn-texto" data-bsel="cerrar" aria-label="Cerrar">Esc</button></div>`;
+    colocarBarra(barra, sel.getRangeAt(0).getBoundingClientRect());
+    barra.style.width = 'auto';
+    return;
+  }
+  if (!API || estado.tab !== 'resumen') return;
   const rango = sel.getRangeAt(0);
   const nodo = rango.commonAncestorContainer.nodeType === 1 ? rango.commonAncestorContainer : rango.commonAncestorContainer.parentElement;
   const seccion = nodo?.closest('[data-seccion]');
@@ -858,22 +909,17 @@ function abrirBarraSel() {
   barra.setAttribute('role', 'dialog');
   barra.setAttribute('aria-label', 'Preguntar sobre el texto seleccionado');
   barra.innerHTML = `<div class="barra-sel-botones">
-      <button type="button" class="btn chico primario" data-sel="preguntar">${icono('chispa')} Preguntar</button>
-      ${RAPIDAS.map(([e], i) => `<button type="button" class="btn chico" data-sel-rapida="${i}">${esc(e)}</button>`).join('')}
-      <button type="button" class="btn-texto" data-sel="cerrar" aria-label="Cerrar">Esc</button>
+      <button type="button" class="btn chico primario" data-bsel="preguntar">${icono('chispa')} Preguntar</button>
+      ${RAPIDAS.map(([e], i) => `<button type="button" class="btn chico" data-bsel-rapida="${i}">${esc(e)}</button>`).join('')}
+      <button type="button" class="btn-texto" data-bsel="cerrar" aria-label="Cerrar">Esc</button>
     </div>
     <div class="barra-sel-caja" hidden>
       <blockquote class="cita">${esc(seleccionResumen.citado.length > 180 ? `${seleccionResumen.citado.slice(0, 180)}…` : seleccionResumen.citado)}</blockquote>
       <textarea id="barraSelTexto" rows="3" placeholder="Pregunta o comentario sobre este fragmento" aria-label="Pregunta sobre el fragmento"></textarea>
       <label class="muy-tenue" style="display:block;margin-bottom:6px"><input type="checkbox" id="barraSelCodigo"> Revisar el código del repositorio</label>
-      <div class="prop-acciones"><button type="button" class="btn chico primario" data-sel="enviar">Enviar ahora</button><button type="button" class="btn chico" data-sel="agregar">Agregar a la revisión</button><span class="muy-tenue">Ctrl + Enter agrega</span></div>
+      <div class="prop-acciones"><button type="button" class="btn chico primario" data-bsel="enviar">Enviar ahora</button><button type="button" class="btn chico" data-bsel="agregar">Agregar a la revisión</button><span class="muy-tenue">Ctrl + Enter agrega</span></div>
     </div>`;
-  document.body.append(barra);
-  const ancho = Math.min(420, window.innerWidth - 24);
-  barra.style.width = `${ancho}px`;
-  barra.style.left = `${Math.max(12, Math.min(caja.left, window.innerWidth - ancho - 12))}px`;
-  const abajo = caja.bottom + 8;
-  barra.style.top = `${abajo + 170 > window.innerHeight ? Math.max(12, caja.top - 8 - barra.offsetHeight) : abajo}px`;
+  colocarBarra(barra, caja);
 }
 
 function accionBarraSel(accion, rapida) {
@@ -1023,6 +1069,7 @@ function respuestaHtml(c) {
     ${c.necesitaCodigo && !c.investigado ? '<p class="aviso-codigo">Para responder con certeza hay que revisar el código del repositorio.</p>' : ''}
     <div class="md${larga && !abierta ? ' plegada' : ''}">${md(c.respuesta)}</div>
     ${larga ? `<button type="button" class="btn-texto" data-ver-mas="${esc(c.id)}">${abierta ? 'Ver menos' : 'Ver más'}</button>` : ''}
+    ${c.leido?.length ? `<p class="leido muy-tenue">Revisado en: ${c.leido.map((x) => `<span class="mono">${esc(x.repo)}${x.portal && x.portal !== x.repo ? ` (${esc(x.portal)})` : ''} ${esc(x.rama)}@${esc(String(x.sha ?? '').slice(0, 7))}</span>`).join(' · ')}</p>` : ''}
     <div class="hilo-pie muy-tenue">${c.investigado ? `${icono('buscar')} Revisado en el código · ` : ''}${costo}<button type="button" class="btn-texto" data-com-repreguntar="${esc(c.id)}">Repreguntar</button>${investigar}</div></div>`;
 }
 
@@ -1425,7 +1472,7 @@ function pintarDetalle() {
   </article>`;
   if (estado.tab === 'archivos') marcarSeleccion();
   if (estado.tab === 'resumen') resaltarCitas(pr);
-  else cerrarBarraSel();
+  if (seleccionResumen && estado.tab !== (seleccionResumen.lineas ? 'archivos' : 'resumen')) cerrarBarraSel();
   pintarDiagramas();
 }
 
@@ -1702,7 +1749,8 @@ document.addEventListener('click', (ev) => {
   if (d.verMas) { estado.expandidas.has(d.verMas) ? estado.expandidas.delete(d.verMas) : estado.expandidas.add(d.verMas); return repintarDetalle(); }
   if (d.comInvestigar) return investigar(prSel(), d.comInvestigar);
   if (d.accion === 'agregarPreguntaPr') return preguntarPr(prSel(), undefined, undefined, { enviar: false });
-  if (d.sel || d.selRapida !== undefined) return accionBarraSel(d.sel, d.selRapida === undefined ? undefined : Number(d.selRapida));
+  if (d.bsel || d.bselRapida !== undefined) return accionBarraSel(d.bsel, d.bselRapida === undefined ? undefined : Number(d.bselRapida));
+  if (d.bselLineas) return abrirCajaDeSeleccion(d.bselLineas);
   if (d.ampliar) return preguntarPr(prSel(), d.ampliar, `Ampliar la sección «${SECCIONES[d.ampliar]}»: más detalle y ejemplos concretos tomados del diff.`);
   if (d.cajaTipo) { leerCaja(); estado.caja.tipo = d.cajaTipo; return marcarSeleccion(); }
   if (d.accion === 'cajaAgregar') return agregarComentario();
