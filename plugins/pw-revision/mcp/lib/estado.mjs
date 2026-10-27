@@ -35,7 +35,7 @@ export const commitsPr = async (owner, repo, numero) =>
 
 // Un fetch a la vez por repo: git no tolera bien fetches concurrentes en el mismo .git.
 const colas = new Map();
-const enCola = (dir, fn) => {
+export const enCola = (dir, fn) => {
   const previa = colas.get(dir) ?? Promise.resolve();
   const actual = previa.then(fn, fn);
   colas.set(dir, actual.catch(() => {}));
