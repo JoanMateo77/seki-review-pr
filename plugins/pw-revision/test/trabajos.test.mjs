@@ -30,3 +30,17 @@ test('cola: resultado ok=false o excepción quedan en error con mensaje', async 
   assert.equal(a.mensaje, 'Se alcanzó el tope de costo del trabajo');
   assert.equal(b.mensaje, 'falló git');
 });
+
+test('cola: vaciar avisa a cada trabajo cancelado', async () => {
+  const cancelados = [];
+  const cola = crearCola();
+  let soltar;
+  const bloqueo = new Promise((ok) => { soltar = ok; });
+  cola.encolar([
+    { id: 'a', tipo: 'x', prId: 'a', ejecutar: () => bloqueo },
+    { id: 'b', tipo: 'x', prId: 'b', ejecutar: async () => ({ ok: true }), alCancelar: () => cancelados.push('b') },
+  ]);
+  assert.equal(cola.vaciar(), 1);
+  assert.deepEqual(cancelados, ['b']);
+  soltar({ ok: true });
+});

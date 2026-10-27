@@ -54,3 +54,23 @@ test('borrarCopia quita el worktree', async () => {
   assert.equal(existsSync(dir), false);
   assert.doesNotMatch(sh(r.checkout, 'worktree', 'list'), /detached/);
 });
+
+test('borrarCopia no poda worktrees ajenos cuyo directorio falta', async () => {
+  const { r, p } = preparar();
+  const ajeno = join(r.raiz, 'ajeno');
+  sh(r.checkout, 'worktree', 'add', '-q', '--detach', ajeno);
+  const { rmSync } = await import('node:fs');
+  rmSync(ajeno, { recursive: true, force: true });
+  await crearCopia(p, 'x', 7, r.head);
+  await borrarCopia(p, 'x', 7);
+  assert.match(sh(r.checkout, 'worktree', 'list', '--porcelain'), /ajeno/);
+});
+
+test('reiniciarCopia se niega a operar fuera de la raíz de un worktree', async () => {
+  const { r } = preparar();
+  const sub = join(r.checkout, 'sub');
+  mkdirSync(sub);
+  writeFileSync(join(r.checkout, 'sin-guardar.txt'), 'x');
+  await assert.rejects(() => reiniciarCopia(sub, r.head), /raíz/);
+  assert.ok(existsSync(join(r.checkout, 'sin-guardar.txt')));
+});

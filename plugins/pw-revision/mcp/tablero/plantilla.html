@@ -427,7 +427,7 @@ const estado = {
   confirmarPendientes: false,
 };
 const trabajo = (pr) => estado.trabajos.get(pr.id);
-const usd = (n) => `USD ${n.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: n < 0.01 ? 4 : 2 })}`;
+const usd = (x) => { const n = Number(x) || 0; return `USD ${n.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: n < 0.01 ? 4 : 2 })}`; };
 const nombreModelo = (m) => (m ?? '').replace(/^claude-/, '').replace(/-\d.*$/, '').replace(/^./, (c) => c.toUpperCase());
 const costoTexto = (t) => `${t.modelo ? ` · ${nombreModelo(t.modelo)}` : ''}${t.costo ? ` · ${usd(t.costo)}` : ''}`;
 const trabajoActivo = (pr) => ['en_cola', 'en_curso'].includes(trabajo(pr)?.estado);
@@ -719,8 +719,10 @@ const claveComentarios = (pr) => `pw-revision:comentarios:${pr.id}`;
 const comentarios = (pr) => almacen.leer(claveComentarios(pr), []);
 const vivos = (pr) => comentarios(pr).filter((c) => c.estado !== 'descartado');
 const borradores = (pr) => comentarios(pr).filter((c) => c.estado === 'borrador');
+// El servidor no envía comentarios hechos sobre otro commit; al editarlos se anclan al commit actual.
+const deOtroCommit = (pr, c) => !!c.headSha && c.headSha !== pr.headSha;
 const nuevoIdComentario = () => `c-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-const rangoTexto = (c) => (c.desde === c.hasta ? `L${c.desde}` : `L${c.desde}–${c.hasta}`);
+const rangoTexto = (c) => esc(c.desde === c.hasta ? `L${c.desde}` : `L${c.desde}–${c.hasta}`);
 const cajaVacia = (tipo) => ({ tipo: tipo ?? (API ? 'pregunta' : 'nota'), texto: '', conSugerido: false, sugerido: null, editando: null });
 
 function escribirComentarios(pr, lista) {
@@ -755,9 +757,13 @@ function fusionarComentarios(actuales, entrantes) {
 async function sincronizarComentarios(pr, cambios = [], borrados = []) {
   if (!API) return;
   try {
-    const delServidor = cambios.length || borrados.length
+    let delServidor = cambios.length || borrados.length
       ? await api('/api/comentarios', { id: pr.id, comentarios: cambios, borrados })
       : await api(`/api/comentarios?id=${encodeURIComponent(pr.id)}`);
+    // Borradores y notas que solo están en este navegador (sin servidor al crearlos, o importados) se suben.
+    const enServidor = new Set(delServidor.map((c) => c.id));
+    const faltan = comentarios(pr).filter((c) => DEL_NAVEGADOR.has(c.estado) && !enServidor.has(c.id) && !borrados.includes(c.id));
+    if (faltan.length) delServidor = await api('/api/comentarios', { id: pr.id, comentarios: faltan });
     const antes = JSON.stringify(comentarios(pr));
     escribirComentarios(pr, fusionarComentarios(comentarios(pr).filter((c) => !borrados.includes(c.id)), delServidor));
     estado.comentariosCargados.add(pr.id);
@@ -800,11 +806,11 @@ function hiloHtml(c) {
   const [txt, cls] = ESTADOS_COMENTARIO[c.estado] ?? [c.estado, ''];
   const editable = c.estado === 'borrador' || c.estado === 'nota';
   return `<tr class="hilo"><td class="n"></td><td class="n"></td><td><div class="hilo-com">
-    <div class="hilo-cab"><strong>${TIPOS_COMENTARIO[c.tipo]?.etiqueta ?? esc(c.tipo)}</strong><span class="mono muy-tenue">${rangoTexto(c)}</span><span class="punto-estado ${cls}">${txt}</span>
+    <div class="hilo-cab"><strong>${TIPOS_COMENTARIO[c.tipo]?.etiqueta ?? esc(c.tipo)}</strong><span class="mono muy-tenue">${rangoTexto(c)}</span><span class="punto-estado ${cls}">${esc(txt)}</span>
       ${editable ? `<span class="der"><button type="button" class="btn-texto" data-com-editar="${esc(c.id)}">Editar</button><button type="button" class="btn-texto" data-com-borrar="${esc(c.id)}">Borrar</button></span>` : ''}</div>
     <div class="hilo-texto">${esc(c.texto)}</div>
     ${c.sugerido !== undefined ? `<pre class="sugerido" aria-label="Código sugerido">${esc(c.sugerido)}</pre>` : ''}
-    ${c.respuesta ? `<div class="hilo-respuesta">${esc(c.respuesta)}<div class="hilo-pie muy-tenue">${c.desdeCache ? 'Respuesta guardada, sin costo' : `${esc(nombreModelo(c.modelo))}${c.costo ? ` · ${usd(c.costo)}${c.lote > 1 ? ` por el lote de ${c.lote}` : ''}` : ''}`}<button type="button" class="btn-texto" data-com-repreguntar="${esc(c.id)}">Repreguntar</button></div></div>` : ''}
+    ${c.respuesta ? `<div class="hilo-respuesta">${esc(c.respuesta)}<div class="hilo-pie muy-tenue">${c.desdeCache ? 'Respuesta guardada, sin costo' : `${esc(nombreModelo(c.modelo))}${c.costo ? ` · ${usd(c.costo)}${Number(c.lote) > 1 ? ` por el lote de ${Number(c.lote)}` : ''}` : ''}`}<button type="button" class="btn-texto" data-com-repreguntar="${esc(c.id)}">Repreguntar</button></div></div>` : ''}
     ${c.propuestaId ? propuestaHtml(c) : ''}
     ${c.estado === 'error' && c.motivo ? `<div class="hilo-motivo">${esc(c.motivo)}${API && c.tipo !== 'nota' ? ` <button type="button" class="btn-texto" data-com-reintentar="${esc(c.id)}">Reintentar</button>` : ''}</div>` : ''}
   </div></td></tr>`;
@@ -1295,7 +1301,7 @@ function importar(archivo) {
       if (!pr) continue;
       const { pasosProbados, comentarios: cs, id, repo, numero, titulo, url, ...decision } = r;
       if (decision.decision) almacen.escribir(claveRevision(pr), decision);
-      if (cs?.length) escribirComentarios(pr, fusionarComentarios(comentarios(pr), cs));
+      if (cs?.length) { escribirComentarios(pr, fusionarComentarios(comentarios(pr), cs)); sincronizarComentarios(pr); }
       if (pasosProbados?.length) almacen.escribir(clavePasos(pr, r.headSha), pasosProbados);
       n++;
     }
@@ -1316,9 +1322,13 @@ function repreguntar(pr, id) {
 }
 
 async function enviarRevision(pr, soloIds) {
-  const ids = soloIds ?? borradores(pr).map((c) => c.id);
+  const pedidos = (soloIds ? comentarios(pr).filter((c) => soloIds.includes(c.id)) : borradores(pr)).filter((c) => c.tipo !== 'nota');
+  const viejos = pedidos.filter((c) => deOtroCommit(pr, c));
+  const ids = pedidos.filter((c) => !deOtroCommit(pr, c)).map((c) => c.id);
+  if (viejos.length) avisar(`Sin enviar por ser de un commit anterior: ${plural(viejos.length, 'comentario', 'comentarios')}. Al editarlos se anclan al commit actual.`);
   if (!ids.length) return;
   try {
+    await sincronizarComentarios(pr);
     await api('/api/enviar-revision', { id: pr.id, ids });
     escribirComentarios(pr, comentarios(pr).map((c) => (ids.includes(c.id) ? { ...c, estado: 'en_cola', actualizado: new Date().toISOString() } : c)));
     repintarDetalle();

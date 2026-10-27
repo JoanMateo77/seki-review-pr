@@ -126,7 +126,13 @@ async function proponerCambiosSinSerie(p, pr, ids, deps = {}) {
     for (const c of lista) actualizar(c.id, { estado: 'error', motivo: 'La PR ya no está abierta' });
     return { ok: false, motivo: 'La PR ya no está abierta' };
   }
-  const ctx = await preparar(p, pr, deps);
+  let ctx;
+  try {
+    ctx = await preparar(p, pr, deps);
+  } catch (e) {
+    for (const c of lista) actualizar(c.id, { estado: 'error', motivo: recortar(e.message) });
+    throw e;
+  }
   let costo = 0;
   let algunaOk = false;
   for (const c of lista) {
@@ -141,9 +147,9 @@ async function proponerCambiosSinSerie(p, pr, ids, deps = {}) {
         algunaOk = true;
       }
     } catch (e) {
-      actualizar(c.id, { estado: 'error', motivo: e.message.slice(0, 400) });
+      actualizar(c.id, { estado: 'error', motivo: recortar(e.message) });
     } finally {
-      await reiniciarCopia(ctx.dir, pr.headSha);
+      await reiniciarCopia(ctx.dir, pr.headSha).catch(() => {});
     }
   }
   return { ok: algunaOk, motivo: algunaOk ? null : 'Ningún pedido generó propuesta', costo };
@@ -154,22 +160,33 @@ export const ajustarPropuesta = (...args) => enSerie(args[1], () => ajustarPropu
 async function ajustarPropuestaSinSerie(p, pr, propuestaId, indicacion, deps = {}) {
   const previa = leerPropuesta(p, pr.repo, pr.numero, propuestaId);
   if (previa.estado !== 'lista') throw new Error('Solo se ajusta una propuesta lista');
+  if (pr.estadoPr !== 'OPEN') throw new Error('La PR ya no está abierta');
   const c = leerComentarios(p, pr.repo, pr.numero).find((x) => x.id === previa.comentarioId);
-  const ctx = await preparar(p, pr, deps);
-  await aplicarParche(ctx.dir, previa.patch, false);
+  const volver = (motivo) => actualizarComentario(p, pr.repo, pr.numero, c.id, { estado: 'propuesta', motivo: `El ajuste no se pudo hacer: ${recortar(motivo)}` });
+  let ctx;
+  try {
+    ctx = await preparar(p, pr, deps);
+    await aplicarParche(ctx.dir, previa.patch, false);
+  } catch (e) {
+    volver(e.message);
+    throw e;
+  }
   actualizarComentario(p, pr.repo, pr.numero, c.id, { estado: 'en_curso' });
   try {
     const g = await generar(p, pr, c, ctx.dir, { ...ctx, previa, indicacion });
     if (g.error) {
-      actualizarComentario(p, pr.repo, pr.numero, c.id, { estado: 'propuesta', motivo: `El ajuste no se pudo hacer: ${g.error}` });
+      volver(g.error);
       return { ok: false, motivo: g.error, costo: g.costo };
     }
     guardar(p, pr.repo, pr.numero, { ...previa, estado: 'descartada', reemplazadaPor: g.propuesta.id });
     guardar(p, pr.repo, pr.numero, g.propuesta);
     actualizarComentario(p, pr.repo, pr.numero, c.id, { estado: 'propuesta', propuestaId: g.propuesta.id, motivo: null });
     return { ok: true, costo: g.costo };
+  } catch (e) {
+    volver(e.message);
+    throw e;
   } finally {
-    await reiniciarCopia(ctx.dir, pr.headSha);
+    await reiniciarCopia(ctx.dir, pr.headSha).catch(() => {});
   }
 }
 
@@ -185,6 +202,19 @@ async function aplicarParche(dir, patch, index) {
 }
 
 const recortar = (s, n = 400) => String(s ?? '').trim().slice(0, n);
+const MENSAJE_POR_DEFECTO = 'Ajuste pedido en la revisión de la PR';
+
+// La rama solo puede haber avanzado con commits que subió el tablero desde el commit de la propuesta.
+function soloCommitsDelTablero(cabeza, desde, cadena) {
+  const base = new Map(cadena.map((x) => [x.commit, x.base]));
+  let actual = cabeza;
+  for (let i = 0; i <= cadena.length; i++) {
+    if (actual === desde) return true;
+    if (!base.has(actual)) return false;
+    actual = base.get(actual);
+  }
+  return false;
+}
 
 export const aprobar = (...args) => enSerie(args[1], () => aprobarSinSerie(...args));
 
@@ -195,10 +225,16 @@ async function aprobarSinSerie(p, pr, propuestaId, { confirmarFallos = false } =
   const marcar = (estado, extra = {}) => guardar(p, pr.repo, pr.numero, { ...prop, estado, ...extra });
   const estadoRuta = join(rutaPropuestas(p.salida, pr.repo, pr.numero), 'estado.json');
   const subido = leerJson(estadoRuta, {});
-  const remoto = await ghJson(['pr', 'view', String(pr.numero), '-R', `${p.owner}/${pr.repo}`, '--json', 'state,headRefName,headRefOid']);
+  const remoto = await ghJson(['pr', 'view', String(pr.numero), '-R', `${p.owner}/${pr.repo}`, '--json', 'state,headRefName,headRefOid,isCrossRepository']);
   if (remoto.state !== 'OPEN') { marcar('conflicto', { motivo: 'La PR ya no está abierta' }); return { ok: false, motivo: 'La PR ya no está abierta' }; }
-  // La rama puede seguir en el commit de la propuesta o en el último que subió el tablero (aprobaciones en serie).
-  if (remoto.headRefOid !== prop.headSha && remoto.headRefOid !== subido.ultimoCommit) {
+  // En una PR desde un fork, origin/<rama> es otra rama del repositorio base.
+  if (remoto.isCrossRepository) {
+    const motivo = 'La PR viene de un fork: el parche se aplica a mano en la rama del fork';
+    marcar('rechazada', { motivo });
+    return { ok: false, motivo, parche: prop.patch };
+  }
+  const cadena = Array.isArray(subido.cadena) ? subido.cadena : [];
+  if (!soloCommitsDelTablero(remoto.headRefOid, prop.headSha, cadena)) {
     marcar('conflicto', { motivo: 'La rama cambió desde que se generó la propuesta' });
     return { ok: false, motivo: 'La rama cambió desde que se generó la propuesta' };
   }
@@ -212,7 +248,7 @@ async function aprobarSinSerie(p, pr, propuestaId, { confirmarFallos = false } =
     return { ok: false, motivo: 'La propuesta no aplica sobre la rama actual' };
   }
   try {
-    await git(dir, ['commit', '-q', '--no-verify', '-m', prop.resumen]);
+    await git(dir, ['commit', '-q', '--no-verify', '-m', recortar(prop.resumen, 200) || MENSAJE_POR_DEFECTO]);
     await git(dir, ['push', '-q', 'origin', `HEAD:refs/heads/${remoto.headRefName}`]);
   } catch (e) {
     await reiniciarCopia(dir, remoto.headRefOid);
@@ -222,7 +258,7 @@ async function aprobarSinSerie(p, pr, propuestaId, { confirmarFallos = false } =
   }
   const commit = (await git(dir, ['rev-parse', 'HEAD'])).trim();
   mkdirSync(rutaPropuestas(p.salida, pr.repo, pr.numero), { recursive: true });
-  escribirJson(estadoRuta, { ultimoCommit: commit, rama: remoto.headRefName });
+  escribirJson(estadoRuta, { rama: remoto.headRefName, cadena: [...cadena, { base: remoto.headRefOid, commit }].slice(-50) });
   marcar('aprobada', { commit, aprobada: new Date().toISOString() });
   actualizarComentario(p, pr.repo, pr.numero, prop.comentarioId, { estado: 'aprobado', commit });
   return { ok: true, commit };
@@ -232,6 +268,7 @@ export const descartar = (...args) => enSerie(args[1], () => descartarSinSerie(.
 
 async function descartarSinSerie(p, pr, propuestaId) {
   const prop = leerPropuesta(p, pr.repo, pr.numero, propuestaId);
+  if (prop.estado === 'aprobada') throw new Error('Una propuesta aprobada ya está en la rama: no se descarta');
   guardar(p, pr.repo, pr.numero, { ...prop, estado: 'descartada' });
   actualizarComentario(p, pr.repo, pr.numero, prop.comentarioId, { estado: 'descartado' });
   if (!leerPropuestas(p, pr.repo, pr.numero).some((x) => x.estado === 'lista')) await borrarCopia(p, pr.repo, pr.numero);

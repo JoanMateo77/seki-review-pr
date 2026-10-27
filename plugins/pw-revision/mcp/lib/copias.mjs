@@ -1,6 +1,6 @@
 // Copia de trabajo por PR: un git worktree desacoplado en el commit de la PR, aparte del checkout principal y de
 // los worktrees del usuario. Ahí trabaja la IA y se prueban los cambios; nada sale de ahí sin Aprobar.
-import { appendFileSync, existsSync, mkdirSync, readFileSync, symlinkSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { rutaCopia } from './cache.mjs';
 import { expandir } from './config.mjs';
@@ -55,6 +55,9 @@ export async function diffCopia(dir) {
 }
 
 export async function reiniciarCopia(dir, headSha) {
+  // reset --hard y clean desde una subcarpeta operarían sobre el repo que la contiene.
+  const raiz = await git(dir, ['rev-parse', '--show-toplevel']).then((x) => realpathSync(x.trim()), () => null);
+  if (raiz !== realpathSync(dir)) throw new Error(`${dir} no es la raíz de una copia de trabajo`);
   await git(dir, ['reset', '-q', '--hard', headSha]);
   await git(dir, ['clean', '-q', '-fd', '-e', 'node_modules']);
 }
@@ -62,6 +65,7 @@ export async function reiniciarCopia(dir, headSha) {
 export async function borrarCopia(p, repo, numero) {
   const checkout = checkoutDe(p, repo);
   const dir = rutaCopia(p, repo, numero);
+  // Sin prune general: podaría también worktrees del usuario cuyo directorio no está montado.
   if (existsSync(dir)) await git(checkout, ['worktree', 'remove', '--force', dir]);
-  await git(checkout, ['worktree', 'prune']);
+  else await git(checkout, ['worktree', 'remove', '--force', dir]).catch(() => {});
 }

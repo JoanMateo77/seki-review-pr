@@ -8,7 +8,7 @@ import { responderPreguntas } from '../mcp/lib/preguntas.mjs';
 import { falsoClaude, llamadas } from './util/claude.mjs';
 
 const pr = { id: 'r#1', repo: 'r', numero: 1, titulo: 'T', headSha: 'abc', adiciones: 10, eliminaciones: 0, esfuerzoTamano: 1 };
-const preg = (id, texto) => ({ id, tipo: 'pregunta', estado: 'en_cola', archivo: 'a.ts', lado: 'nuevo', desde: 1, hasta: 2, textoOriginal: 'x', texto, headSha: 'abc' });
+const preg = (id, texto) => ({ id, tipo: 'pregunta', estado: 'borrador', archivo: 'a.ts', lado: 'nuevo', desde: 1, hasta: 2, textoOriginal: 'x', texto, headSha: 'abc' });
 const deps = { contexto: async () => 'CONTEXTO', detalle: async () => null };
 const exito = (respuestas) => ({ type: 'result', is_error: false, subtype: 'success', structured_output: { respuestas }, total_cost_usd: 0.001, modelUsage: { 'claude-haiku-5-5': { inputTokens: 1, outputTokens: 1 } } });
 
@@ -71,4 +71,14 @@ test('ignora ids que no son preguntas o que ya están respondidos', async () => 
   const r = await responderPreguntas(p, pr, ['c-0004'], deps);
   assert.equal(r.ok, true);
   assert.equal(llamadas(process.env.PW_CLAUDE), 0);
+});
+
+test('si el contexto falla las preguntas quedan en error y no en curso', async () => {
+  const p = preparar();
+  process.env.PW_CLAUDE = falsoClaude(exito([]));
+  await assert.rejects(() => responderPreguntas(p, pr, ['c-0001', 'c-0002'], { ...deps, contexto: async () => { throw new Error('sin red'); } }));
+  for (const c of leerComentarios(p, 'r', 1)) {
+    assert.equal(c.estado, 'error');
+    assert.equal(c.motivo, 'sin red');
+  }
 });

@@ -23,15 +23,20 @@ export function elegirModelo({ tipo, pr, lineasSeleccionadas = 0 }) {
   return 'sonnet';
 }
 
+const ESCRITURA = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+
 const configMcp = () => JSON.stringify({ mcpServers: { 'pw-revision': { command: 'sh', args: [join(RAIZ, 'bin/servidor.sh')] } } });
 
 export function argsClaude({ modelo, sistema, prompt, schema, tools = [], mcp = false, tope: usd, turnos, sesion, persistir = false }) {
   const args = ['-p', prompt, '--model', modelo, '--system-prompt', sistema,
-    '--strict-mcp-config', '--tools', tools.join(','), '--disable-slash-commands', '--setting-sources', 'project',
+    '--strict-mcp-config', '--tools', tools.join(','), '--disable-slash-commands', '--setting-sources', '',
     '--max-budget-usd', String(usd), '--max-turns', String(turnos), '--output-format', 'json'];
   if (mcp) args.push('--mcp-config', configMcp());
-  const permitidas = [...(mcp ? ['mcp__pw-revision'] : []), ...tools];
+  // Edit y Write en --allowedTools escriben en cualquier ruta; acceptEdits solo acepta dentro del cwd.
+  const edita = tools.some((t) => ESCRITURA.has(t));
+  const permitidas = [...(mcp ? ['mcp__pw-revision'] : []), ...tools.filter((t) => !ESCRITURA.has(t))];
   if (permitidas.length) args.push('--allowedTools', permitidas.join(' '));
+  if (edita) args.push('--permission-mode', 'acceptEdits');
   if (schema) args.push('--json-schema', JSON.stringify(schema));
   if (!persistir) args.push('--no-session-persistence');
   if (sesion) args.push('--resume', sesion);
@@ -114,7 +119,8 @@ export function costosDelDia(p, dia = new Date().toISOString().slice(0, 10)) {
   if (!existsSync(ruta)) return r;
   for (const linea of readFileSync(ruta, 'utf8').split('\n')) {
     if (!linea) continue;
-    const x = JSON.parse(linea);
+    let x;
+    try { x = JSON.parse(linea); } catch { continue; }
     if (!x.fecha?.startsWith(dia)) continue;
     r.total += x.costo ?? 0;
     r.trabajos++;

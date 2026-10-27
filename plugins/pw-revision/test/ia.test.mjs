@@ -44,7 +44,7 @@ test('argsClaude: modo mínimo incluye strict-mcp, tools y disable-slash-command
   const a = argsClaude({ tipo: 'explicar', modelo: 'sonnet', sistema: 'S', prompt: 'P', tools: ['Read'], mcp: true, tope: 2, turnos: 30, persistir: false });
   for (const f of ['--strict-mcp-config', '--disable-slash-commands', '--no-session-persistence', '--system-prompt']) assert.ok(a.includes(f), f);
   assert.equal(a[a.indexOf('--tools') + 1], 'Read');
-  assert.equal(a[a.indexOf('--setting-sources') + 1], 'project');
+  assert.equal(a[a.indexOf('--setting-sources') + 1], '');
   assert.equal(a[a.indexOf('--max-budget-usd') + 1], '2');
   assert.ok(!a.includes('--add-dir'));
   const mcp = JSON.parse(a[a.indexOf('--mcp-config') + 1]);
@@ -104,4 +104,11 @@ test('costosDelDia suma solo el día pedido', () => {
   const d = costosDelDia(p, '2026-10-27');
   assert.equal(d.trabajos, 2);
   assert.ok(Math.abs(d.total - 0.3) < 1e-9);
+});
+
+test('argsClaude: edición solo dentro del cwd con acceptEdits, sin Edit ni Write en allowedTools', () => {
+  const a = argsClaude({ modelo: 'sonnet', sistema: 'S', prompt: 'P', tools: ['Read', 'Grep', 'Glob', 'Edit', 'Write'], tope: 1, turnos: 4, persistir: true });
+  assert.equal(a[a.indexOf('--permission-mode') + 1], 'acceptEdits');
+  assert.doesNotMatch(a[a.indexOf('--allowedTools') + 1], /Edit|Write/);
+  assert.equal(a[a.indexOf('--tools') + 1], 'Read,Grep,Glob,Edit,Write');
 });

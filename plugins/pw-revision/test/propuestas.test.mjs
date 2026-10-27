@@ -12,7 +12,7 @@ import { repoConPr, sh } from './util/repo.mjs';
 
 const exito = { type: 'result', is_error: false, subtype: 'success', session_id: 'ses-1', structured_output: { resumen: 'Valida el rango de fechas', hecho: true }, total_cost_usd: 0.02, modelUsage: { 'claude-sonnet-5-5': { inputTokens: 1, outputTokens: 1 } } };
 const deps = { contexto: async () => 'CONTEXTO', detalle: async () => null };
-const pedido = (id) => ({ id, tipo: 'cambio', estado: 'en_cola', archivo: 'a.ts', lado: 'nuevo', desde: 1, hasta: 1, textoOriginal: 'b', texto: 'Debe validar el rango', headSha: '' });
+const pedido = (id) => ({ id, tipo: 'cambio', estado: 'borrador', archivo: 'a.ts', lado: 'nuevo', desde: 1, hasta: 1, textoOriginal: 'b', texto: 'Debe validar el rango', headSha: '' });
 
 let gh;
 function preparar({ script = 'printf "cambio $N\\n" > a.ts', salida = exito, pedidos = ['c-0001'] } = {}) {
@@ -156,4 +156,60 @@ test('descartar la última propuesta borra la copia', async () => {
   assert.equal(leerPropuestas(p, 'x', 7)[0].estado, 'descartada');
   assert.equal(leerComentarios(p, 'x', 7)[0].estado, 'descartado');
   assert.equal(existsSync(rutaCopia(p, 'x', 7)), false);
+});
+
+test('aprobar no acepta una propuesta vieja cuando la rama tiene commits ajenos', async () => {
+  const { r, p, pr } = preparar({ pedidos: ['c-0001', 'c-0002'], script: 'if [ "$N" = 1 ]; then printf "b\\nuno\\n" > a.ts; else printf "cero\\nb\\n" > a.ts; fi' });
+  await proponerCambios(p, pr, ['c-0001', 'c-0002'], deps);
+  const [a, b] = leerPropuestas(p, 'x', 7);
+  assert.equal((await aprobar(p, pr, a.id)).ok, true);
+  const ajeno = join(mkdtempSync(join(tmpdir(), 'pw-ajeno-')), 'w');
+  sh(r.raiz, 'clone', '-q', r.remoto, ajeno);
+  sh(ajeno, 'checkout', '-q', r.rama);
+  writeFileSync(join(ajeno, 'otro.ts'), 'ajeno\n');
+  sh(ajeno, 'add', '.');
+  sh(ajeno, '-c', 'user.name=Otro', '-c', 'user.email=o@x', 'commit', '-qm', 'ajeno');
+  sh(ajeno, 'push', '-q', 'origin', r.rama);
+  const cabeza = sh(r.remoto, 'rev-parse', r.rama);
+  gh.fijar({ state: 'OPEN', headRefName: r.rama, headRefOid: cabeza });
+  const res = await aprobar(p, pr, b.id);
+  assert.equal(res.ok, false);
+  assert.equal(res.motivo, 'La rama cambió desde que se generó la propuesta');
+  assert.equal(sh(r.remoto, 'rev-parse', r.rama), cabeza);
+});
+
+test('aprobar rechaza una PR que viene de un fork', async () => {
+  const { r, p, pr } = preparar();
+  await proponerCambios(p, pr, ['c-0001'], deps);
+  gh.fijar({ state: 'OPEN', headRefName: r.rama, headRefOid: r.head, isCrossRepository: true });
+  const res = await aprobar(p, pr, leerPropuestas(p, 'x', 7)[0].id);
+  assert.equal(res.ok, false);
+  assert.match(res.motivo, /fork/);
+  assert.equal(sh(r.remoto, 'rev-parse', r.rama), r.head);
+});
+
+test('descartar no acepta una propuesta ya aprobada', async () => {
+  const { p, pr } = preparar();
+  await proponerCambios(p, pr, ['c-0001'], deps);
+  const [prop] = leerPropuestas(p, 'x', 7);
+  await aprobar(p, pr, prop.id);
+  await assert.rejects(() => descartar(p, pr, prop.id), /aprobada/);
+  assert.equal(leerComentarios(p, 'x', 7)[0].estado, 'aprobado');
+});
+
+test('aprobar con resumen vacío usa un mensaje por defecto', async () => {
+  const { r, p, pr } = preparar({ salida: { ...exito, structured_output: { resumen: '   ', hecho: true } } });
+  await proponerCambios(p, pr, ['c-0001'], deps);
+  const res = await aprobar(p, pr, leerPropuestas(p, 'x', 7)[0].id);
+  assert.equal(res.ok, true, res.motivo);
+  assert.equal(sh(r.remoto, 'log', '-1', '--format=%s', r.rama), 'Ajuste pedido en la revisión de la PR');
+});
+
+test('si falla la preparación los pedidos quedan en error y no en cola', async () => {
+  const { p, pr } = preparar();
+  p.repos.x.checkout = '/no/existe';
+  await assert.rejects(() => proponerCambios(p, pr, ['c-0001'], deps));
+  const [c] = leerComentarios(p, 'x', 7);
+  assert.equal(c.estado, 'error');
+  assert.ok(c.motivo);
 });

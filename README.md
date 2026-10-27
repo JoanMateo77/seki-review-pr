@@ -94,10 +94,12 @@ líneas y texto, y no se vuelven a pedir.
 
 **Pedidos de cambio.** La IA trabaja en una copia aparte: un worktree desacoplado en el commit de la PR, ubicado en
 `copias` de `proyectos.json` (por defecto `~/.cache/pw-revision/copias/<proyecto>`, fuera del workspace para no heredar
-su CLAUDE.md). Solo tiene Read, Grep, Glob, Edit y Write, sin Bash. Carga los lineamientos de `lineamientos`
+su CLAUDE.md). Solo tiene Read, Grep, Glob, Edit y Write, sin Bash, y solo puede escribir dentro de la copia
+(`--permission-mode acceptEdits`; no carga settings ni hooks del repo). Carga los lineamientos de `lineamientos`
 (`mis-lineamientos`). El servidor comprueba cada propuesta sin IA, con las reglas, `tsc` y los tests
 relacionados según `comprobar` de cada repo; si algo falla, la IA tiene un intento de corrección. Los fallos que ya
-existían en el commit de la PR no cuentan. **Aprobar** confirma con `gh` que la PR sigue abierta y que la rama no se movió,
+existían en el commit de la PR no cuentan. **Aprobar** confirma con `gh` que la PR sigue abierta, que no viene de un fork y que la rama solo avanzó con commits que subió el
+tablero,
 aplica el parche, hace un commit con la identidad git de la máquina (sin trailers) y hace `git push` a la rama de la
 PR. Si GitHub rechaza la subida, la propuesta queda como parche para copiar. Medido el 27-10-2026: un cambio chico en
 api costó USD 0,11 con Sonnet y tardó 72 s, comprobaciones incluidas.

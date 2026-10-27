@@ -8,7 +8,7 @@ import { recolectar } from './recolectar.mjs';
 import { construirHtml, fotoConExplicaciones } from './tablero.mjs';
 import { crearCola } from './trabajos.mjs';
 import { asegurarDiff, diffParaTablero } from './diffs.mjs';
-import { actualizarComentario, guardarComentarios, leerComentarios, marcasComentarios } from './comentarios.mjs';
+import { actualizarComentario, guardarComentarios, leerComentarios, marcasComentarios, recuperarInterrumpidos, rescatarPendientes, separarEnviables } from './comentarios.mjs';
 import { responderPreguntas } from './preguntas.mjs';
 import { ajustarPropuesta, aprobar, descartar, leerPropuesta, proponerCambios } from './propuestas.mjs';
 import { explicarConIa } from './explicar.mjs';
@@ -55,6 +55,14 @@ export async function iniciarServidor({ proyecto = 'demo', puerto = PUERTO, abri
   };
 
   const cola = crearCola();
+  recuperarInterrumpidos(p);
+  // Lo que un trabajo deje en cola o en curso al fallar o al cancelarse vuelve a quedar enviable.
+  const conRescate = (pr, ids, ejecutar) => ({
+    ejecutar: async () => {
+      try { return await ejecutar(); } finally { rescatarPendientes(p, pr.repo, pr.numero, ids, { estado: 'error', motivo: 'El trabajo terminó sin completar este comentario' }); }
+    },
+    alCancelar: () => rescatarPendientes(p, pr.repo, pr.numero, ids, { estado: 'borrador', motivo: null }),
+  });
 
   const servidor = createServer(async (req, res) => {
     const host = req.headers.host ?? '';
@@ -91,16 +99,14 @@ export async function iniciarServidor({ proyecto = 'demo', puerto = PUERTO, abri
       if (req.method === 'POST' && url.pathname === '/api/enviar-revision') {
         const { id, ids = [] } = await leerCuerpo(req);
         const pr = prDeFoto(id);
-        const pedidos = new Set(ids);
-        const enviables = leerComentarios(p, pr.repo, pr.numero).filter((c) => pedidos.has(c.id) && (c.estado === 'borrador' || c.estado === 'error'));
-        const preguntas = enviables.filter((c) => c.tipo === 'pregunta').map((c) => c.id);
-        const cambios = enviables.filter((c) => c.tipo === 'cambio').map((c) => c.id);
+        if (!Array.isArray(ids)) throw new Error('ids debe ser una lista');
+        const { preguntas, cambios, desactualizados } = separarEnviables(leerComentarios(p, pr.repo, pr.numero), ids, pr.headSha);
         if (cambios.length && pr.estadoPr !== 'OPEN') throw new Error('La PR ya no está abierta: no se pueden pedir cambios');
         for (const cid of [...preguntas, ...cambios]) actualizarComentario(p, pr.repo, pr.numero, cid, { estado: 'en_cola', motivo: null });
         const ahora = Date.now();
-        if (preguntas.length) cola.encolar([{ id: `${pr.id}:responder:${ahora}`, tipo: 'responder', prId: pr.id, ejecutar: () => responderPreguntas(p, pr, preguntas) }]);
-        if (cambios.length) cola.encolar([{ id: `${pr.id}:cambiar:${ahora}`, tipo: 'cambiar', prId: pr.id, ejecutar: () => proponerCambios(p, pr, cambios) }]);
-        return responder(res, 202, { preguntas: preguntas.length, cambios: cambios.length });
+        if (preguntas.length) cola.encolar([{ id: `${pr.id}:responder:${ahora}`, tipo: 'responder', prId: pr.id, ...conRescate(pr, preguntas, () => responderPreguntas(p, pr, preguntas)) }]);
+        if (cambios.length) cola.encolar([{ id: `${pr.id}:cambiar:${ahora}`, tipo: 'cambiar', prId: pr.id, ...conRescate(pr, cambios, () => proponerCambios(p, pr, cambios)) }]);
+        return responder(res, 202, { preguntas: preguntas.length, cambios: cambios.length, desactualizados: desactualizados.length });
       }
       if (req.method === 'GET' && url.pathname === '/api/propuesta') {
         const pr = prDeFoto(url.searchParams.get('pr'));
@@ -127,7 +133,7 @@ export async function iniciarServidor({ proyecto = 'demo', puerto = PUERTO, abri
           if (!['conflicto', 'rechazada'].includes(prop.estado)) throw new Error('Solo se regenera una propuesta en conflicto o rechazada');
           if (pr.estadoPr !== 'OPEN') throw new Error('La PR ya no está abierta: no se pueden pedir cambios');
           actualizarComentario(p, pr.repo, pr.numero, prop.comentarioId, { estado: 'en_cola', motivo: null });
-          cola.encolar([{ id: `${pr.id}:cambiar:${Date.now()}`, tipo: 'cambiar', prId: pr.id, ejecutar: () => proponerCambios(p, pr, [prop.comentarioId]) }]);
+          cola.encolar([{ id: `${pr.id}:cambiar:${Date.now()}`, tipo: 'cambiar', prId: pr.id, ...conRescate(pr, [prop.comentarioId], () => proponerCambios(p, pr, [prop.comentarioId])) }]);
           return responder(res, 202, { encolado: true });
         }
         return responder(res, 404, { error: 'No existe' });

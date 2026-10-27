@@ -2,7 +2,7 @@
 // llamada; una pregunta igual sobre el mismo commit y las mismas líneas se responde desde la caché.
 import { createHash } from 'node:crypto';
 import { escribirJson, leerJson, rutaRespuesta } from './cache.mjs';
-import { actualizarComentario, leerComentarios } from './comentarios.mjs';
+import { actualizarComentario, leerComentarios, rescatarPendientes } from './comentarios.mjs';
 import { contextoPreguntas } from './contexto.mjs';
 import { argsClaude, dirVacio, ejecutarClaude, elegirModelo, promptSistema, registrarCosto, tope, TURNOS } from './ia.mjs';
 import { ghJson } from './proceso.mjs';
@@ -31,6 +31,16 @@ export async function responderPreguntas(p, pr, ids, { contexto = contextoPregun
   if (!sinCache.length) return { ok: true, costo: 0, modelo: null };
 
   for (const c of sinCache) actualizar(c.id, { estado: 'en_curso', motivo: null });
+  try {
+    return await responder(p, pr, sinCache, { contexto, detalle });
+  } catch (e) {
+    rescatarPendientes(p, pr.repo, pr.numero, sinCache.map((c) => c.id), { estado: 'error', motivo: String(e.message).slice(0, 400) });
+    throw e;
+  }
+}
+
+async function responder(p, pr, sinCache, { contexto, detalle }) {
+  const actualizar = (id, cambios) => actualizarComentario(p, pr.repo, pr.numero, id, cambios);
   const lineas = Math.max(...sinCache.map((c) => c.hasta - c.desde + 1));
   const modelo = elegirModelo({ tipo: 'responder', pr, lineasSeleccionadas: lineas });
   const cuerpo = (await detalle(p, pr))?.body;

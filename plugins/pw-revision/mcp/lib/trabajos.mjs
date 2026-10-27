@@ -5,6 +5,7 @@ const PARALELO = Math.min(2, Math.max(1, Number(process.env.PW_IA_PARALELO) || 1
 export function crearCola({ alTerminar } = {}) {
   const trabajos = new Map();
   const funciones = new Map();
+  const cancelaciones = new Map();
   let activos = 0;
 
   function siguiente() {
@@ -21,6 +22,7 @@ export function crearCola({ alTerminar } = {}) {
     let r;
     try { r = await funciones.get(t.id)(); } catch (e) { r = { ok: false, motivo: e.message }; }
     funciones.delete(t.id);
+    cancelaciones.delete(t.id);
     activos--;
     Object.assign(t, {
       estado: r?.ok === false ? 'error' : 'terminado',
@@ -36,11 +38,12 @@ export function crearCola({ alTerminar } = {}) {
   return {
     encolar(items) {
       let n = 0;
-      for (const { id, tipo, prId, ejecutar: fn } of items) {
+      for (const { id, tipo, prId, ejecutar: fn, alCancelar } of items) {
         const previo = trabajos.get(id);
         if (previo && (previo.estado === 'en_cola' || previo.estado === 'en_curso')) continue;
         trabajos.set(id, { id, tipo, prId, estado: 'en_cola', encolado: new Date().toISOString() });
         funciones.set(id, fn);
+        if (alCancelar) cancelaciones.set(id, alCancelar);
         n++;
       }
       siguiente();
@@ -48,7 +51,14 @@ export function crearCola({ alTerminar } = {}) {
     },
     vaciar() {
       let n = 0;
-      for (const t of trabajos.values()) if (t.estado === 'en_cola') { t.estado = 'cancelado'; funciones.delete(t.id); n++; }
+      for (const t of trabajos.values()) {
+        if (t.estado !== 'en_cola') continue;
+        t.estado = 'cancelado';
+        funciones.delete(t.id);
+        try { cancelaciones.get(t.id)?.(); } catch { /* el aviso no debe frenar la cancelación */ }
+        cancelaciones.delete(t.id);
+        n++;
+      }
       return n;
     },
     lista: () => [...trabajos.values()],
