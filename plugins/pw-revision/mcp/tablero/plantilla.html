@@ -237,6 +237,16 @@ body[data-enfoque] .lateral, body[data-enfoque] .cola { display: none; }
 .caja-com, .hilo-com { position: sticky; left: 8px; box-sizing: border-box; width: min(720px, calc(100cqw - 110px)); margin: 6px 10px 8px 0; padding: 10px 12px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--panel); }
 .hilo-com { border-color: var(--linea); }
 .hilos-pr { display: grid; gap: 8px; margin-top: 10px; }
+.respuesta-a { border-left: 3px solid var(--linea-fuerte); }
+.respondiendo { margin: 6px 0; padding: 4px 8px; border-radius: 6px; background: var(--sel); color: var(--texto-2); font-size: .92em; }
+.aviso-codigo { margin: 0 0 6px; color: var(--ambar); font-size: .92em; }
+.btn-texto.destacado { color: var(--acento); font-weight: 600; }
+.md p { margin: 0 0 8px; }
+.md ul, .md ol { margin: 0 0 8px; padding-left: 20px; }
+.md li { margin: 2px 0; }
+.md code { padding: 1px 4px; border-radius: 4px; background: var(--gris-bg); font-family: var(--mono); font-size: .9em; }
+.md-codigo { margin: 6px 0 8px; padding: 8px 10px; border-radius: 6px; background: var(--gris-bg); font-family: var(--mono); font-size: .88em; overflow-x: auto; white-space: pre; }
+.md.plegada { max-height: 15em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 70%, transparent); mask-image: linear-gradient(#000 70%, transparent); }
 .barra-sel { position: fixed; z-index: 20; box-sizing: border-box; padding: 8px; border: 1px solid var(--linea-fuerte); border-radius: 8px; background: var(--panel); box-shadow: var(--sombra), 0 8px 24px rgba(0, 0, 0, .25); }
 .barra-sel-botones { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .barra-sel-botones .btn-texto { margin-left: auto; }
@@ -269,7 +279,7 @@ h3.con-accion .btn-texto { display: inline-flex; align-items: center; gap: 4px; 
 .btn-texto:hover { background: var(--hover); color: var(--texto); }
 .hilo-texto { white-space: pre-wrap; overflow-wrap: anywhere; }
 .hilo-com pre.sugerido { margin: 8px 0 0; padding: 7px 9px; border-radius: 6px; background: var(--verde-bg); font: 12px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
-.hilo-respuesta { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--linea); white-space: pre-wrap; overflow-wrap: anywhere; }
+.hilo-respuesta { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--linea); white-space: normal; overflow-wrap: anywhere; }
 .hilo-motivo { margin-top: 6px; color: var(--rojo); }
 .propuesta { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--linea); }
 .prop-cab { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 8px; }
@@ -438,6 +448,8 @@ const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;
 const gh = (repo, n) => `https://github.com/${FOTO.owner}/${repo}/pull/${n}`;
 
 const estado = {
+  expandidas: new Set(),
+  respondeA: null,
   rol: almacen.leer('pw-revision:rol', 'autor'),
   vista: 'cola',
   seleccionLineas: null,
@@ -677,7 +689,7 @@ const sec = (titulo, cuerpo, clave) => {
   const pr = prSel();
   const hilos = pr ? dePr(pr, clave) : [];
   return `<div class="seccion" data-seccion="${clave}"><h3 class="con-accion">${titulo}<button type="button" class="btn-texto" data-ampliar="${clave}" title="La IA amplía esta sección con ejemplos del diff">${icono('chispa')} Ampliar</button></h3>${cuerpo}
-    ${hilos.length ? `<div class="hilos-pr">${hilos.map(hiloCuerpo).join('')}</div>` : ''}</div>`;
+    ${hilos.length ? `<div class="hilos-pr">${hilosDiv(hilos)}</div>` : ''}</div>`;
 };
 
 function preguntaPrHtml(pr) {
@@ -686,9 +698,11 @@ function preguntaPrHtml(pr) {
   const opciones = Object.entries(SECCIONES).filter(([k]) => pr.explicacion?.[k]?.length || k === 'resumen')
     .map(([k, t]) => `<option value="${k}">${esc(t)}</option>`).join('');
   return `<div class="seccion pregunta-pr"><h3>Preguntar sobre esta PR</h3>
-    ${generales.length ? `<div class="hilos-pr">${generales.map(hiloCuerpo).join('')}</div>` : ''}
+    ${generales.length ? `<div class="hilos-pr">${hilosDiv(generales)}</div>` : ''}
+    ${estado.respondeA?.ambito === 'pr' ? `<div class="respondiendo">Sigue la conversación de: «${esc(estado.respondeA.resumen)}» <button type="button" class="btn-texto" data-accion="quitarRespondeA">Quitar</button></div>` : ''}
     <textarea id="preguntaPr" rows="3" placeholder="Por ejemplo: ¿qué pasa con los webhooks que ya estaban configurados en producción?" aria-label="Pregunta sobre la PR"></textarea>
     <div class="prop-acciones"><select id="preguntaPrSeccion" aria-label="Sobre qué parte"><option value="">Toda la PR</option>${opciones}</select>
+      <label class="muy-tenue"><input type="checkbox" id="preguntaPrCodigo"> Revisar el código</label>
       <button type="button" class="btn chico primario" data-accion="preguntarPr">Preguntar</button><button type="button" class="btn chico" data-accion="agregarPreguntaPr">Agregar a la revisión</button><span class="muy-tenue">Ctrl + Enter pregunta · también puede seleccionar texto de la explicación</span></div></div>`;
 }
 
@@ -790,13 +804,25 @@ const SECCIONES = {
 };
 
 // Preguntas sobre la PR o una sección de la explicación: se envían al momento, sin pasar por "Revisión pendiente".
-async function preguntarPr(pr, seccion, textoFijo, { citado, enviar = true } = {}) {
+async function investigar(pr, id) {
+  try {
+    await api('/api/investigar', { id: pr.id, comentario: id });
+    escribirComentarios(pr, comentarios(pr).map((c) => (c.id === id ? { ...c, estado: 'en_cola', investigar: true } : c)));
+    repintarDetalle();
+  } catch (err) { avisar(err.message); }
+  sondear();
+}
+
+async function preguntarPr(pr, seccion, textoFijo, { citado, enviar = true, investigar } = {}) {
   const caja = $('preguntaPr');
   const texto = (textoFijo ?? caja?.value ?? '').trim();
   if (!texto) { avisar('Escriba la pregunta antes de enviarla.'); return caja?.focus(); }
   const sobre = seccion ?? ($('preguntaPrSeccion')?.value || undefined);
-  const c = { id: nuevoIdComentario(), creado: new Date().toISOString(), tipo: 'pregunta', estado: 'borrador', ambito: 'pr', seccion: sobre, citado: citado || undefined, texto, headSha: pr.headSha };
+  const respondeA = !textoFijo && estado.respondeA?.ambito === 'pr' ? estado.respondeA.id : undefined;
+  const conCodigo = investigar ?? (!textoFijo && !!$('preguntaPrCodigo')?.checked);
+  const c = { id: nuevoIdComentario(), creado: new Date().toISOString(), tipo: 'pregunta', estado: 'borrador', ambito: 'pr', seccion: sobre, citado: citado || undefined, respondeA, investigar: conCodigo || undefined, texto, headSha: pr.headSha };
   guardarComentario(pr, c);
+  if (respondeA) estado.respondeA = null;
   if (caja && !textoFijo) caja.value = '';
   if (enviar) await enviarRevision(pr, [c.id]);
   else { repintarDetalle(); pintarCola(); }
@@ -839,6 +865,7 @@ function abrirBarraSel() {
     <div class="barra-sel-caja" hidden>
       <blockquote class="cita">${esc(seleccionResumen.citado.length > 180 ? `${seleccionResumen.citado.slice(0, 180)}…` : seleccionResumen.citado)}</blockquote>
       <textarea id="barraSelTexto" rows="3" placeholder="Pregunta o comentario sobre este fragmento" aria-label="Pregunta sobre el fragmento"></textarea>
+      <label class="muy-tenue" style="display:block;margin-bottom:6px"><input type="checkbox" id="barraSelCodigo"> Revisar el código del repositorio</label>
       <div class="prop-acciones"><button type="button" class="btn chico primario" data-sel="enviar">Enviar ahora</button><button type="button" class="btn chico" data-sel="agregar">Agregar a la revisión</button><span class="muy-tenue">Ctrl + Enter agrega</span></div>
     </div>`;
   document.body.append(barra);
@@ -858,9 +885,10 @@ function accionBarraSel(accion, rapida) {
   if (accion === 'preguntar') { $('barraSel').querySelector('.barra-sel-caja').hidden = false; return $('barraSelTexto').focus(); }
   const texto = $('barraSelTexto')?.value.trim();
   if (!texto) { avisar('Escriba la pregunta antes de agregarla.'); return $('barraSelTexto')?.focus(); }
+  const investigar = !!$('barraSelCodigo')?.checked;
   cerrarBarraSel();
   window.getSelection()?.removeAllRanges();
-  return preguntarPr(pr, s.seccion, texto, { citado: s.citado, enviar: accion === 'enviar' });
+  return preguntarPr(pr, s.seccion, texto, { citado: s.citado, enviar: accion === 'enviar', investigar });
 }
 
 // Resalta en la explicación los fragmentos citados por preguntas (CSS Highlight API; sin ella no se resalta).
@@ -972,6 +1000,7 @@ function cajaHtml(rango) {
     : '';
   return `<tr class="caja"><td class="n"></td><td class="n"></td><td><div class="caja-com" role="group" aria-label="Comentario sobre ${rangoTexto(rango)}">
     <div class="caja-cab"><span class="mono muy-tenue">${rangoTexto(rango)}</span><div class="tabs-caja" role="group" aria-label="Tipo de comentario">${tabs}</div></div>
+    ${c.respondeA ? `<div class="respondiendo">Sigue la conversación de: «${esc(c.resumenRespondeA ?? '')}»</div>` : ''}
     <textarea id="cajaTexto" rows="3" placeholder="${TIPOS_COMENTARIO[c.tipo].ayuda}" aria-label="${TIPOS_COMENTARIO[c.tipo].ayuda}">${esc(c.texto)}</textarea>
     ${sugerido}
     <div class="caja-acciones">
@@ -982,19 +1011,71 @@ function cajaHtml(rango) {
   </div></td></tr>`;
 }
 
-const hiloHtml = (c) => `<tr class="hilo"><td class="n"></td><td class="n"></td><td>${hiloCuerpo(c)}</td></tr>`;
+const hiloHtml = (c, nivel = 0) => `<tr class="hilo"><td class="n"></td><td class="n"></td><td>${hiloCuerpo(c, nivel)}</td></tr>`;
 
-function hiloCuerpo(c) {
-  const [txt, cls] = ESTADOS_COMENTARIO[c.estado] ?? [c.estado, ''];
+function respuestaHtml(c) {
+  const larga = c.respuesta.length > 900 || c.respuesta.split('\n').length > 14;
+  const abierta = estado.expandidas.has(c.id);
+  const costo = c.desdeCache ? 'Respuesta guardada, sin costo' : `${esc(nombreModelo(c.modelo))}${c.costo ? ` · ${usd(c.costo)}${Number(c.lote) > 1 ? ` por el lote de ${Number(c.lote)}` : ''}` : ''}`;
+  const investigar = API && c.tipo === 'pregunta' && !c.investigado && c.estado === 'respondido'
+    ? `<button type="button" class="btn-texto${c.necesitaCodigo ? ' destacado' : ''}" data-com-investigar="${esc(c.id)}" title="La IA busca y lee el código de la PR y de los otros repos (sin secretos)">${icono('buscar')} Investigar en el código</button>` : '';
+  return `<div class="hilo-respuesta">
+    ${c.necesitaCodigo && !c.investigado ? '<p class="aviso-codigo">Para responder con certeza hay que revisar el código del repositorio.</p>' : ''}
+    <div class="md${larga && !abierta ? ' plegada' : ''}">${md(c.respuesta)}</div>
+    ${larga ? `<button type="button" class="btn-texto" data-ver-mas="${esc(c.id)}">${abierta ? 'Ver menos' : 'Ver más'}</button>` : ''}
+    <div class="hilo-pie muy-tenue">${c.investigado ? `${icono('buscar')} Revisado en el código · ` : ''}${costo}<button type="button" class="btn-texto" data-com-repreguntar="${esc(c.id)}">Repreguntar</button>${investigar}</div></div>`;
+}
+
+// Ordena una lista de comentarios como conversación: cada repregunta debajo de la pregunta a la que responde.
+function enHilo(cs) {
+  const ids = new Set(cs.map((c) => c.id));
+  const hijos = new Map();
+  for (const c of cs) if (c.respondeA && ids.has(c.respondeA)) hijos.set(c.respondeA, [...(hijos.get(c.respondeA) ?? []), c]);
+  const salida = [];
+  const poner = (c, n) => { salida.push([c, n]); for (const h of hijos.get(c.id) ?? []) poner(h, n + 1); };
+  for (const c of cs) if (!(c.respondeA && ids.has(c.respondeA))) poner(c, 0);
+  return salida;
+}
+const hilosDiv = (cs) => enHilo(cs).map(([c, n]) => hiloCuerpo(c, n)).join('');
+
+// Formato mínimo de las respuestas de la IA: bloques de código, código en línea, negrita, listas y párrafos.
+function md(texto) {
+  return String(texto ?? '').replace(/\r/g, '').split('```').map((b, i) => (i % 2
+    ? `<pre class="md-codigo">${esc(b.replace(/^[a-zA-Z]*\n/, '').replace(/\n$/, ''))}</pre>`
+    : mdTexto(b))).join('');
+}
+const mdEnLinea = (t) => esc(t).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+function mdTexto(t) {
+  return t.split(/\n\s*\n/).map((par) => {
+    const partes = [];
+    let lista = null;
+    for (const linea of par.split('\n')) {
+      const item = /^\s*(?:[-*•]|(\d+)[.)])\s+(.*)$/.exec(linea);
+      if (item) {
+        const tipo = item[1] ? 'ol' : 'ul';
+        if (!lista || lista.tipo !== tipo) { lista = { tipo, items: [] }; partes.push(lista); }
+        lista.items.push(item[2]);
+      } else if (linea.trim()) {
+        lista = null;
+        partes.push(linea);
+      }
+    }
+    return partes.map((x) => (typeof x === 'string' ? `<p>${mdEnLinea(x)}</p>` : `<${x.tipo}>${x.items.map((i) => `<li>${mdEnLinea(i)}</li>`).join('')}</${x.tipo}>`)).join('');
+  }).join('');
+}
+
+function hiloCuerpo(c, nivel = 0) {
+  const revisando = c.investigar && (c.estado === 'en_cola' || c.estado === 'en_curso');
+  const [txt, cls] = revisando ? ['Revisando el código', 'azul'] : ESTADOS_COMENTARIO[c.estado] ?? [c.estado, ''];
   const editable = (c.estado === 'borrador' || c.estado === 'nota') && !c.ambito;
   const donde = c.ambito === 'pr' ? (c.seccion ? esc(SECCIONES[c.seccion] ?? '') : 'Toda la PR') : rangoTexto(c);
-  return `<div class="hilo-com">
-    <div class="hilo-cab"><strong>${TIPOS_COMENTARIO[c.tipo]?.etiqueta ?? esc(c.tipo)}</strong><span class="mono muy-tenue">${donde}</span><span class="punto-estado ${cls}">${esc(txt)}</span>
+  return `<div class="hilo-com${nivel ? ' respuesta-a' : ''}" style="${nivel ? `margin-left:${Math.min(nivel, 3) * 18}px` : ''}">
+    <div class="hilo-cab">${nivel ? '<span class="muy-tenue">Sigue</span>' : ''}<strong>${TIPOS_COMENTARIO[c.tipo]?.etiqueta ?? esc(c.tipo)}</strong><span class="mono muy-tenue">${donde}</span><span class="punto-estado ${cls}">${esc(txt)}</span>
       ${editable ? `<span class="der"><button type="button" class="btn-texto" data-com-editar="${esc(c.id)}">Editar</button><button type="button" class="btn-texto" data-com-borrar="${esc(c.id)}">Borrar</button></span>` : ''}${c.ambito && c.estado === 'borrador' ? `<span class="der"><button type="button" class="btn-texto" data-com-borrar="${esc(c.id)}">Borrar</button></span>` : ''}</div>
     ${c.citado ? `<blockquote class="cita">${esc(c.citado)}</blockquote>` : ''}
     <div class="hilo-texto">${esc(c.texto)}</div>
     ${c.sugerido !== undefined ? `<pre class="sugerido" aria-label="Código sugerido">${esc(c.sugerido)}</pre>` : ''}
-    ${c.respuesta ? `<div class="hilo-respuesta">${esc(c.respuesta)}<div class="hilo-pie muy-tenue">${c.desdeCache ? 'Respuesta guardada, sin costo' : `${esc(nombreModelo(c.modelo))}${c.costo ? ` · ${usd(c.costo)}${Number(c.lote) > 1 ? ` por el lote de ${Number(c.lote)}` : ''}` : ''}`}<button type="button" class="btn-texto" data-com-repreguntar="${esc(c.id)}">Repreguntar</button></div></div>` : ''}
+    ${c.respuesta ? respuestaHtml(c) : ''}
     ${c.propuestaId ? propuestaHtml(c) : ''}
     ${c.estado === 'error' && c.motivo ? `<div class="hilo-motivo">${esc(c.motivo)}${API && c.tipo !== 'nota' ? ` <button type="button" class="btn-texto" data-com-reintentar="${esc(c.id)}">Reintentar</button>` : ''}</div>` : ''}
   </div>`;
@@ -1109,6 +1190,7 @@ function agregarComentario() {
     texto: c.texto.trim(),
     sugerido: conSugerido ? PWAnclaje.textoSugerido(c.sugerido ?? rango.texto) : undefined,
     headSha: pr.headSha,
+    respondeA: c.tipo === 'pregunta' && !previo ? c.respondeA : previo?.respondeA,
   });
   cerrarCaja(c.tipo);
 }
@@ -1161,7 +1243,7 @@ function filasDiff(lineas, hallazgos, k, hilos = new Map()) {
         filas.push(`<tr class="nota"><td class="n"></td><td class="n"></td><td><span class="estado ${color[x.severidad]}">${esc(x.severidad)}</span> <strong>${esc(x.titulo)}</strong> · <span class="tenue">${esc(x.mensaje)}</span></td></tr>`);
       }
     }
-    for (const c of hilos.get(clave) ?? []) filas.push(hiloHtml(c));
+    for (const [c, n] of enHilo(hilos.get(clave) ?? [])) filas.push(hiloHtml(c, n));
   }
   return filas.join('');
 }
@@ -1256,7 +1338,7 @@ function tabArchivos(pr) {
     if (!anclados[k].has(a.claveFinal)) anclados[k].set(a.claveFinal, []);
     anclados[k].get(a.claveFinal).push(c);
   }
-  const bloqueSuelto = (cs, titulo) => (cs.length ? `<div class="desact"><p class="muy-tenue">${titulo}</p><table>${cs.map(hiloHtml).join('')}</table></div>` : '');
+  const bloqueSuelto = (cs, titulo) => (cs.length ? `<div class="desact"><p class="muy-tenue">${titulo}</p><table>${enHilo(cs).map(([c, n]) => hiloHtml(c, n)).join('')}</table></div>` : '');
   const vistos = new Set(almacen.leer(claveVistos(pr), []));
   const hallazgos = pr.verificaciones?.hallazgos ?? [];
   const ajustar = almacen.leer('pw-revision:ajustar', false);
@@ -1506,18 +1588,20 @@ const prSel = () => FOTO.prs.find((p) => p.id === estado.seleccion);
 function repreguntar(pr, id) {
   const c = comentarios(pr).find((x) => x.id === id);
   if (!c) return;
-  const resumenDe = (t) => { const r = t.replace(/\s+/g, ' '); return r.length > 160 ? `${r.slice(0, 160)}…` : r; };
+  // La IA recibe el hilo completo desde el servidor; aquí solo se muestra un recordatorio corto.
+  const r = c.respuesta.replace(/\s+/g, ' ');
+  const resumen = r.length > 90 ? `${r.slice(0, 90)}…` : r;
   if (c.ambito === 'pr') {
+    estado.respondeA = { id: c.id, ambito: 'pr', resumen };
+    repintarDetalle();
     const caja = $('preguntaPr');
     if (!caja) return;
-    caja.value = `Sobre la respuesta anterior («${resumenDe(c.respuesta)}»): `;
     if ($('preguntaPrSeccion')) $('preguntaPrSeccion').value = c.seccion ?? '';
     caja.scrollIntoView({ block: 'center' });
     return caja.focus();
   }
   editarComentario(pr, id);
-  const resumen = c.respuesta.replace(/\s+/g, ' ');
-  estado.caja = { ...cajaVacia('pregunta'), texto: `Sobre la respuesta anterior («${resumen.length > 160 ? `${resumen.slice(0, 160)}…` : resumen}»): ` };
+  estado.caja = { ...cajaVacia('pregunta'), respondeA: c.id, resumenRespondeA: resumen };
   marcarSeleccion();
 }
 
@@ -1614,6 +1698,9 @@ document.addEventListener('click', (ev) => {
   if (d.accion === 'lateral') return alternarLateral();
   if (d.accion === 'cola') return alternarCola();
   if (d.accion === 'preguntarPr') return preguntarPr(prSel());
+  if (d.accion === 'quitarRespondeA') { estado.respondeA = null; return repintarDetalle(); }
+  if (d.verMas) { estado.expandidas.has(d.verMas) ? estado.expandidas.delete(d.verMas) : estado.expandidas.add(d.verMas); return repintarDetalle(); }
+  if (d.comInvestigar) return investigar(prSel(), d.comInvestigar);
   if (d.accion === 'agregarPreguntaPr') return preguntarPr(prSel(), undefined, undefined, { enviar: false });
   if (d.sel || d.selRapida !== undefined) return accionBarraSel(d.sel, d.selRapida === undefined ? undefined : Number(d.selRapida));
   if (d.ampliar) return preguntarPr(prSel(), d.ampliar, `Ampliar la sección «${SECCIONES[d.ampliar]}»: más detalle y ejemplos concretos tomados del diff.`);

@@ -1,15 +1,24 @@
 // Trabajos de IA que lanza el tablero: `claude -p` en modo mínimo (sin CLAUDE.md, memoria, skills ni MCP ajenos)
 // y con el modelo según la dificultad. No afecta las sesiones normales de Claude Code.
 import { spawn } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rutaCostos } from './cache.mjs';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../..');
 
-export const TOPES = { responder: 0.5, explicar: 2, cambiar: 1.5 };
-export const TURNOS = { responder: 4, explicar: 30, cambiar: 40 };
+export const TOPES = { responder: 0.5, explicar: 2, cambiar: 1.5, investigar: 1 };
+export const TURNOS = { responder: 4, explicar: 30, cambiar: 40, investigar: 25 };
+
+// Archivos que la IA no puede leer en ningún directorio que se le abra. Las reglas de Read también rigen Grep y Glob;
+// van con la ruta absoluta de cada directorio porque las relativas solo cubren el directorio de trabajo.
+const SECRETOS = ['*.env', '.env*', 'claves.txt', '*.pem', '*.key', '*.p12', '.npmrc', 'credentials*'];
+export const reglasSecretos = (dirs) => dirs.flatMap((d) => {
+  let real = d;
+  try { real = realpathSync(d); } catch { /* aún no existe */ }
+  return SECRETOS.map((s) => `Read(/${real}/**/${s})`);
+});
 
 export const tope = (tipo) => Number(process.env[`PW_IA_TOPE_${tipo.toUpperCase()}`]) || TOPES[tipo];
 
@@ -27,7 +36,7 @@ const ESCRITURA = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 
 const configMcp = () => JSON.stringify({ mcpServers: { 'pw-revision': { command: 'sh', args: [join(RAIZ, 'bin/servidor.sh')] } } });
 
-export function argsClaude({ modelo, sistema, prompt, schema, tools = [], mcp = false, tope: usd, turnos, sesion, persistir = false }) {
+export function argsClaude({ modelo, sistema, prompt, schema, tools = [], mcp = false, tope: usd, turnos, sesion, persistir = false, dirs = [], prohibidas = [] }) {
   const args = ['-p', prompt, '--model', modelo, '--system-prompt', sistema,
     '--strict-mcp-config', '--tools', tools.join(','), '--disable-slash-commands', '--setting-sources', '',
     '--max-budget-usd', String(usd), '--max-turns', String(turnos), '--output-format', 'json'];
@@ -37,6 +46,8 @@ export function argsClaude({ modelo, sistema, prompt, schema, tools = [], mcp = 
   const permitidas = [...(mcp ? ['mcp__pw-revision'] : []), ...tools.filter((t) => !ESCRITURA.has(t))];
   if (permitidas.length) args.push('--allowedTools', permitidas.join(' '));
   if (edita) args.push('--permission-mode', 'acceptEdits');
+  for (const d of dirs) args.push('--add-dir', d);
+  if (prohibidas.length) args.push('--disallowedTools', ...prohibidas);
   if (schema) args.push('--json-schema', JSON.stringify(schema));
   if (!persistir) args.push('--no-session-persistence');
   if (sesion) args.push('--resume', sesion);

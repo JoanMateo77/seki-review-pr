@@ -64,13 +64,22 @@ function contextoDePr(pr, archivos) {
   return [explicacion ? `## Explicación actual de la PR\n${explicacion}` : '## La PR aún no tiene explicación', `## Diff de la PR\n${diff}`].join('\n\n');
 }
 
-export async function contextoPreguntas(p, pr, comentarios, { archivos } = {}) {
+// Preguntas y respuestas anteriores de una repregunta, de la más vieja a la más nueva, completas.
+function hilo(c, todos) {
+  const porId = new Map(todos.map((x) => [x.id, x]));
+  const previos = [];
+  for (let x = porId.get(c.respondeA); x && previos.length < 6; x = porId.get(x.respondeA)) previos.unshift(x);
+  if (!previos.length) return '';
+  return `Conversación previa:\n${previos.map((x) => `- Pregunta: ${x.texto}\n  Respuesta: ${x.respuesta ?? '(sin respuesta)'}`).join('\n')}`;
+}
+
+export async function contextoPreguntas(p, pr, comentarios, { archivos, todos = [] } = {}) {
   archivos ??= await asegurarDiff(p, pr.repo, pr.numero, pr.headSha);
   const contenidos = new Map();
   const bloques = [];
   const dePr = comentarios.filter((c) => c.ambito === 'pr');
   for (const c of dePr) {
-    bloques.push([`### Pregunta ${c.id} sobre la PR${c.seccion ? ` (sección «${SECCIONES[c.seccion]}»)` : ''}`, c.citado ? `Texto citado de la explicación: «${c.citado}»` : '', `Texto: ${c.texto}`].filter(Boolean).join('\n'));
+    bloques.push([`### Pregunta ${c.id} sobre la PR${c.seccion ? ` (sección «${SECCIONES[c.seccion]}»)` : ''}`, c.citado ? `Texto citado de la explicación: «${c.citado}»` : '', hilo(c, todos), `Texto: ${c.texto}`].filter(Boolean).join('\n'));
   }
   if (dePr.length) bloques.push(contextoDePr(pr, archivos));
   for (const c of comentarios.filter((x) => x.ambito !== 'pr')) {
@@ -90,6 +99,7 @@ export async function contextoPreguntas(p, pr, comentarios, { archivos } = {}) {
     const rango = c.desde === c.hasta ? `L${c.desde}` : `L${c.desde}–${c.hasta}`;
     bloques.push([
       `### Comentario ${c.id} · ${c.archivo} ${rango}${lado === 'viejo' ? ' (líneas borradas)' : ''}`,
+      hilo(c, todos),
       `Texto: ${c.texto}`,
       diff ? `Diff:\n${diff}` : 'Diff: no disponible para estas líneas.',
       archivo,

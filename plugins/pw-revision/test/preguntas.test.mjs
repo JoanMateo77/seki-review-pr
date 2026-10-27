@@ -4,7 +4,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { guardarComentarios, leerComentarios } from '../mcp/lib/comentarios.mjs';
-import { responderPreguntas } from '../mcp/lib/preguntas.mjs';
+import { investigarPregunta, responderPreguntas } from '../mcp/lib/preguntas.mjs';
 import { falsoClaude, llamadas } from './util/claude.mjs';
 
 const pr = { id: 'r#1', repo: 'r', numero: 1, titulo: 'T', headSha: 'abc', adiciones: 10, eliminaciones: 0, esfuerzoTamano: 1 };
@@ -81,4 +81,37 @@ test('si el contexto falla las preguntas quedan en error y no en curso', async (
     assert.equal(c.estado, 'error');
     assert.equal(c.motivo, 'sin red');
   }
+});
+
+test('la respuesta rápida marca cuando hace falta revisar el código', async () => {
+  const p = preparar();
+  process.env.PW_CLAUDE = falsoClaude(exito([{ id: 'c-0001', texto: 'No se puede con el diff.', necesitaCodigo: true }, { id: 'c-0002', texto: 'Por B.' }]));
+  await responderPreguntas(p, pr, ['c-0001', 'c-0002'], deps);
+  const [a, b] = leerComentarios(p, 'r', 1);
+  assert.equal(a.necesitaCodigo, true);
+  assert.equal(b.necesitaCodigo, undefined);
+});
+
+test('investigar lee el repositorio en una copia de la PR, ve los otros checkouts y no los secretos', async () => {
+  const { repoConPr } = await import('./util/repo.mjs');
+  const { mkdirSync, readFileSync } = await import('node:fs');
+  const r = repoConPr({ antes: 'a\n', despues: 'b\n' });
+  const otro = mkdtempSync(join(tmpdir(), 'pw-otro-'));
+  const salida = mkdtempSync(join(tmpdir(), 'pw-inv-'));
+  const p = { salida, copias: join(salida, 'copias'), repos: { x: { checkout: r.checkout }, y: { checkout: otro } } };
+  const prx = { ...pr, id: 'x#7', repo: 'x', numero: 7, headSha: r.head, seguridad: false };
+  guardarComentarios(p, 'x', 7, [{ id: 'c-0001', tipo: 'pregunta', estado: 'borrador', ambito: 'pr', texto: '¿Quién llama esta ruta?', headSha: r.head }]);
+  const rastro = join(salida, 'rastro');
+  process.env.PW_CLAUDE = falsoClaude({ ...exito([]), structured_output: { texto: 'La llama X en y/z.ts L4.' } }, 0, `pwd > "${rastro}.cwd"; git rev-parse HEAD > "${rastro}.head"; printf '%s\\n' "$@" > "${rastro}.args"`);
+  const res = await investigarPregunta(p, prx, 'c-0001', deps);
+  assert.equal(res.ok, true);
+  const [c] = leerComentarios(p, 'x', 7);
+  assert.deepEqual([c.estado, c.respuesta, c.investigado], ['respondido', 'La llama X en y/z.ts L4.', true]);
+  assert.equal(readFileSync(`${rastro}.head`, 'utf8').trim(), r.head);
+  assert.notEqual(readFileSync(`${rastro}.cwd`, 'utf8').trim(), r.checkout);
+  const args = readFileSync(`${rastro}.args`, 'utf8').split('\n');
+  assert.equal(args[args.indexOf('--tools') + 1], 'Read,Grep,Glob');
+  assert.ok(args.includes(otro));
+  assert.ok(args.some((x) => x.startsWith('Read(/') && x.endsWith('/**/*.env)')));
+  assert.ok(!args.includes('--json-schema') || args[args.indexOf('--json-schema') + 1].includes('texto'));
 });

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { argsClaude, costosDelDia, ejecutarClaude, elegirModelo, registrarCosto } from '../mcp/lib/ia.mjs';
+import { argsClaude, costosDelDia, ejecutarClaude, elegirModelo, reglasSecretos, registrarCosto } from '../mcp/lib/ia.mjs';
 
 import { falsoClaude } from './util/claude.mjs';
 
@@ -111,4 +111,13 @@ test('argsClaude: edición solo dentro del cwd con acceptEdits, sin Edit ni Writ
   assert.equal(a[a.indexOf('--permission-mode') + 1], 'acceptEdits');
   assert.doesNotMatch(a[a.indexOf('--allowedTools') + 1], /Edit|Write/);
   assert.equal(a[a.indexOf('--tools') + 1], 'Read,Grep,Glob,Edit,Write');
+});
+
+test('argsClaude: directorios extra y reglas que niegan archivos de secretos', () => {
+  const a = argsClaude({ modelo: 'sonnet', sistema: 'S', prompt: 'P', tools: ['Read', 'Grep', 'Glob'], tope: 1, turnos: 4, dirs: ['/a/b'], prohibidas: reglasSecretos(['/a/b']) });
+  assert.equal(a[a.indexOf('--add-dir') + 1], '/a/b');
+  const negadas = a.slice(a.indexOf('--disallowedTools') + 1);
+  assert.ok(negadas.includes('Read(//a/b/**/*.env)'));
+  assert.ok(negadas.includes('Read(//a/b/**/.env*)'));
+  assert.ok(negadas.includes('Read(//a/b/**/claves.txt)'));
 });

@@ -78,3 +78,17 @@ test('contextoPreguntas: la pregunta sobre la PR incluye el texto citado', async
   const ctx = await contextoPreguntas({}, pr, [{ id: 'c-0001', ambito: 'pr', seccion: 'resumen', citado: 'apaga los webhooks', texto: '¿Cuáles?' }], { archivos: [] });
   assert.match(ctx, /Texto citado de la explicación: «apaga los webhooks»/);
 });
+
+test('contextoPreguntas: una repregunta lleva el hilo completo, sin recortar la respuesta anterior', async () => {
+  const larga = `Primera respuesta ${'detalle '.repeat(60)}FIN-1`;
+  const todos = [
+    { id: 'c-0001', ambito: 'pr', texto: '¿Validó en el código?', respuesta: larga },
+    { id: 'c-0002', ambito: 'pr', respondeA: 'c-0001', texto: 'Valide a nivel de código', respuesta: 'Segunda FIN-2' },
+    { id: 'c-0003', ambito: 'pr', respondeA: 'c-0002', texto: '¿Y el otro proveedor?' },
+  ];
+  const ctx = await contextoPreguntas({}, { id: 'x#7', titulo: 'T' }, [todos[2]], { archivos: [], todos });
+  assert.match(ctx, /Conversación previa/);
+  assert.ok(ctx.indexOf('¿Validó en el código?') < ctx.indexOf('Valide a nivel de código'));
+  assert.match(ctx, /FIN-1/);
+  assert.match(ctx, /FIN-2/);
+});

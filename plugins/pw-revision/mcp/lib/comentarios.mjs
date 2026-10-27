@@ -17,7 +17,7 @@ export const SECCIONES = {
 };
 const PENDIENTES = new Set(['en_cola', 'en_curso']);
 // Lo que el navegador puede escribir; respuesta, costo, propuesta y demás los pone solo el servidor.
-const CAMPOS = ['id', 'tipo', 'estado', 'ambito', 'seccion', 'citado', 'archivo', 'lado', 'desde', 'hasta', 'claves', 'textoOriginal', 'texto', 'sugerido', 'headSha', 'creado', 'actualizado'];
+const CAMPOS = ['id', 'tipo', 'estado', 'ambito', 'seccion', 'citado', 'respondeA', 'investigar', 'archivo', 'lado', 'desde', 'hasta', 'claves', 'textoOriginal', 'texto', 'sugerido', 'headSha', 'creado', 'actualizado'];
 
 // Última escritura por PR, para que el tablero sepa cuándo recargar sin leer todos los archivos.
 const marcas = new Map();
@@ -37,6 +37,8 @@ function validar(c) {
   if (c.sugerido !== undefined && (typeof c.sugerido !== 'string' || c.sugerido.length > MAX_SUGERIDO)) throw new Error(`Comentario ${c.id}: código sugerido de más de ${MAX_SUGERIDO} caracteres`);
   if (!DEL_NAVEGADOR.has(c.estado)) throw new Error(`Comentario ${c.id}: estado no permitido`);
   if (c.headSha !== undefined && (typeof c.headSha !== 'string' || !/^[0-9a-z]{0,64}$/i.test(c.headSha))) throw new Error(`Comentario ${c.id}: commit inválido`);
+  if (c.respondeA !== undefined && (typeof c.respondeA !== 'string' || !/^c-[a-z0-9]{4,32}$/.test(c.respondeA))) throw new Error(`Comentario ${c.id}: responde a un comentario inválido`);
+  if (c.investigar !== undefined && typeof c.investigar !== 'boolean') throw new Error(`Comentario ${c.id}: investigar debe ser verdadero o falso`);
   if (c.ambito !== undefined) return validarDePr(c);
   if (!LADOS.has(c.lado)) throw new Error(`Comentario ${c.id}: lado desconocido`);
   if (!Number.isInteger(c.desde) || !Number.isInteger(c.hasta) || c.desde < 1 || c.hasta < c.desde) throw new Error(`Comentario ${c.id}: rango de líneas inválido`);

@@ -30,9 +30,9 @@ async function traerSha(checkout, numero, headSha) {
   });
 }
 
-export async function crearCopia(p, repo, numero, headSha) {
+export async function crearCopia(p, repo, numero, headSha, { sufijo = '' } = {}) {
   const checkout = checkoutDe(p, repo);
-  const dir = rutaCopia(p, repo, numero);
+  const dir = rutaCopia(p, repo, numero, sufijo);
   if (existsSync(join(dir, '.git'))) {
     const actual = (await git(dir, ['rev-parse', 'HEAD'])).trim();
     if (actual === headSha) return dir;

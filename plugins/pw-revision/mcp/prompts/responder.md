@@ -7,3 +7,4 @@ Tarea: responder preguntas de quien revisa una PR. Hay dos clases de pregunta:
 - Basarse solo en el material entregado. Si no alcanza, responder "No se puede determinar con el material disponible" y decir qué faltaría ver.
 - No proponer código salvo que la pregunta lo pida; si lo pide, un bloque corto.
 - Devolver una respuesta por id, en el formato pedido.
+- Si la pregunta pide validar en el código o la respuesta depende de código que no está en el material, marcar `necesitaCodigo: true` y responder lo que sí se puede con el material.

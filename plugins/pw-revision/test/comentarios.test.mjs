@@ -129,3 +129,11 @@ test('una pregunta sobre la PR guarda el texto citado y lo limita', () => {
   assert.equal(c.citado, 'Webhook PostPaymentInfo apagado.');
   assert.throws(() => guardarComentarios(p(), 'r', 1, [{ id: 'c-0002', tipo: 'pregunta', estado: 'borrador', ambito: 'pr', citado: 'x'.repeat(2001), texto: 'x' }]), /citado/);
 });
+
+test('una pregunta puede responder a otra y pedir revisar el código', () => {
+  const [c] = guardarComentarios(p(), 'r', 1, [{ id: 'c-0002', tipo: 'pregunta', estado: 'borrador', ambito: 'pr', respondeA: 'c-0001', investigar: true, texto: '¿Y en el código?' }]);
+  assert.equal(c.respondeA, 'c-0001');
+  assert.equal(c.investigar, true);
+  assert.throws(() => guardarComentarios(p(), 'r', 1, [{ id: 'c-0003', tipo: 'pregunta', estado: 'borrador', ambito: 'pr', respondeA: '../x', texto: 'x' }]), /responde/);
+  assert.throws(() => guardarComentarios(p(), 'r', 1, [{ id: 'c-0003', tipo: 'pregunta', estado: 'borrador', ambito: 'pr', investigar: 'si', texto: 'x' }]), /investigar/);
+});
