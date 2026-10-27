@@ -1,7 +1,6 @@
 // Sirve el tablero en 127.0.0.1 con acciones: actualizar el estado (GitHub + git, sin IA) y
 // analizar PRs con IA. Solo atiende a este equipo y exige el token de la URL en cada llamada.
 import { execFile } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import { proyecto as cargarProyecto } from './config.mjs';
 import { recolectar } from './recolectar.mjs';
@@ -13,6 +12,7 @@ import { responderPreguntas } from './preguntas.mjs';
 import { ajustarPropuesta, aprobar, descartar, leerPropuesta, proponerCambios } from './propuestas.mjs';
 import { explicarConIa } from './explicar.mjs';
 import { costosDelDia } from './ia.mjs';
+import { servidorActivo, tokenDe } from './acceso.mjs';
 
 const PUERTO = 4317;
 const MAX_CUERPO = 64 * 1024;
@@ -42,7 +42,12 @@ export async function iniciarServidor({ proyecto = 'demo', puerto = PUERTO, abri
     return { url: s.url, yaEstaba: true };
   }
   const p = cargarProyecto(proyecto);
-  const token = randomBytes(18).toString('base64url');
+  const token = tokenDe(p);
+  if (await servidorActivo(puerto, token)) {
+    const url = `http://127.0.0.1:${puerto}/?t=${token}`;
+    if (abrir && process.platform === 'darwin') execFile('open', [url]);
+    return { url, yaEstaba: true };
+  }
   let refresco = null;
   let ultimoRefresco = null;
 

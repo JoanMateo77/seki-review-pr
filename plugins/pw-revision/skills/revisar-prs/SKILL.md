@@ -1,6 +1,6 @@
 ---
 name: revisar-prs
-description: Usar cuando se pide revisar qué PRs están pendientes de pasar a pruebas o a producción, entender o explicar una PR (qué cambia, tecnologías, por qué, alternativas, cómo probar), o abrir el tablero local de revisión de PRs de el equipo. Argumentos opcionales - "explicar <repo>#<n>", "explicar pendientes", "tablero".
+description: Usar cuando se pide revisar qué PRs están pendientes de pasar a pruebas o a producción, entender o explicar una PR (qué cambia, tecnologías, por qué, alternativas, cómo probar), o abrir el tablero local de revisión de PRs de el equipo. Sin argumento abre el tablero servido. Argumentos opcionales - "pendientes", "explicar <repo>#<n>", "explicar pendientes", "verificar <repo>#<n>", "archivo".
 ---
 
 # Revisar PRs (pw-revision)
@@ -20,7 +20,11 @@ Todo queda en archivos locales. No publicar el tablero ni las explicaciones en A
 
 ## Flujo según el argumento
 
-**Sin argumento o "pendientes":** llamar `prs_pendientes` y resumir por grupo. Señalar primero lo que exige acción:
+**Sin argumento o "tablero":** llamar `tablero_servir` primero (abre el navegador con el tablero servido) y responder
+en una línea con el enlace. Desde el tablero, los botones lanzan la IA por su cuenta: no proponer comandos para copiar.
+No llamar `prs_pendientes` salvo que la persona pida el resumen.
+
+**"pendientes":** llamar `prs_pendientes` y resumir por grupo. Señalar primero lo que exige acción:
 "En pruebas sin PR hacia producción" (código validado que nunca salió), PRs de seguridad sin
 pasar a producción, verificaciones bloqueantes o altas, "sin equivalente en <portal>" cuando el arreglo aplica a los
 dos portales, "otra versión en pruebas" y PRs viejas con conflicto. No repetir la lista entera si la persona solo pidió un resumen.
@@ -28,9 +32,9 @@ dos portales, "otra versión en pruebas" y PRs viejas con conflicto. No repetir 
 **"verificar <repo>#<n>"** o **"verificar <ruta> <base>"**: `pr_verificaciones`; explicar cada hallazgo bloqueante o alto
 mirando la línea en contexto y decir si es real o falso positivo. Antes de abrir una PR propia, correrlo sobre la rama local.
 
-**"explicar <repo>#<n>":** `pr_detalle` → leer descripción, commits y diff → revisar los hallazgos de `pr_verificaciones` → si el diff viene recortado y hace falta, leer el archivo en el checkout local con lectura acotada (grep + rango) → `pr_guardar_explicacion` → `tablero_generar`.
+**"explicar <repo>#<n>":** `pr_detalle` → leer descripción, commits y diff → revisar los hallazgos de `pr_verificaciones` → si el diff viene recortado y hace falta, leer el archivo en el checkout local con lectura acotada (grep + rango) → `pr_guardar_explicacion` → `tablero_servir`.
 
-**"explicar pendientes":** tomar de `prs_pendientes` las PRs sin explicación o con explicación desactualizada, sin las de ramas inactivas. Priorizar seguridad y las que van a producción. Más de 5 PRs → repartir en subagentes con `model: "sonnet"`, cada uno con 3 a 5 PRs, y pedirles que llamen ellos mismos `pr_guardar_explicacion`. Al final, `tablero_generar`.
+**"explicar pendientes":** tomar de `prs_pendientes` las PRs sin explicación o con explicación desactualizada, sin las de ramas inactivas. Priorizar seguridad y las que van a producción. Más de 5 PRs → repartir en subagentes con `model: "sonnet"`, cada uno con 3 a 5 PRs, y pedirles que llamen ellos mismos `pr_guardar_explicacion`. Al final, `tablero_servir`.
 
 **Revisión por otra persona:** el tablero es un archivo local que se puede enviar. Quien revisa elige "Revisor"
 arriba, deja su decisión y observaciones por PR y exporta un JSON; el autor lo importa en su tablero. Si piden leer
@@ -43,8 +47,8 @@ y "Enviar revisión" las manda juntas (todas las preguntas de una PR en una sola
 queda en `revision-prs/datos/costos.jsonl`. Un pedido de cambio genera una propuesta en una copia aparte de la rama (con
 comprobaciones de reglas, tipos y tests). Solo el botón Aprobar la sube a la rama de la PR, y nunca hace merge.
 
-**"tablero":** `tablero_servir` para trabajar con acciones (la URL trae un token y vive mientras dure la sesión);
-`tablero_generar` cuando se necesita el archivo suelto para enviarlo a quien revisa. Fuera de Claude Code:
+**"archivo":** `tablero_generar` solo cuando se necesita el archivo suelto (sin acciones) para enviarlo a quien
+revisa. El tablero servido vive mientras dure la sesión de Claude Code; su enlace es fijo por máquina. Fuera de Claude Code:
 `sh <plugin>/bin/tablero.sh`.
 
 **"qué se mergeó" / "qué cambió":** `prs_pendientes` compara con la foto anterior y abre su salida con
