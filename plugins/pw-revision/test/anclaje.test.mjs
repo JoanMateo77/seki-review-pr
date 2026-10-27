@@ -69,3 +69,7 @@ test('anclar: rango mixto ancla con su texto completo', () => {
   const r = A.normalizarRango(l, 'v11', 'n12');
   assert.equal(A.anclar({ lado: r.lado, desde: r.desde, hasta: r.hasta, claves: r.claves, textoOriginal: r.texto }, l).claveFinal, 'n12');
 });
+
+test('textoSugerido: normaliza saltos', () => {
+  assert.equal(A.textoSugerido('a\r\nb\n'), 'a\nb');
+});

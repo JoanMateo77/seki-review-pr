@@ -36,6 +36,10 @@ mirando la línea en contexto y decir si es real o falso positivo. Antes de abri
 arriba, deja su decisión y observaciones por PR y exporta un JSON; el autor lo importa en su tablero. Si piden leer
 esas decisiones, pedir la ruta del JSON exportado y resumirlo.
 
+**Comentarios sobre líneas:** en la pestaña Archivos se seleccionan líneas (clic en el número, Shift + clic para un
+rango) y se deja una nota manual, opcionalmente con código sugerido; las notas salen en la revisión exportada y en
+"Copiar resumen". Preguntar y Pedir cambio solo funcionan con el tablero servido.
+
 **"tablero":** `tablero_servir` para trabajar con acciones (la URL trae un token y vive mientras dure la sesión);
 `tablero_generar` cuando se necesita el archivo suelto para enviarlo a quien revisa. Fuera de Claude Code:
 `sh <plugin>/bin/tablero.sh`.

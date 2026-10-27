@@ -218,6 +218,35 @@ body[data-enfoque] .lateral, body[data-enfoque] .cola { display: none; }
 .codigo-diff tr.sel td { background: var(--sel); }
 .codigo-diff tr.sel td.n { box-shadow: inset 2px 0 0 var(--acento); }
 .codigo-diff tr.sel td.n + td.n { box-shadow: none; }
+.codigo-diff tr.caja td, .codigo-diff tr.hilo td { padding: 0; background: var(--panel); font-family: var(--sans); white-space: normal; }
+.codigo-diff { container-type: inline-size; }
+.caja-com, .hilo-com { position: sticky; left: 8px; box-sizing: border-box; width: min(720px, calc(100cqw - 110px)); margin: 6px 10px 8px 0; padding: 10px 12px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--panel); }
+.hilo-com { border-color: var(--linea); }
+.caja-cab, .hilo-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 8px; }
+.tabs-caja { display: inline-flex; border: 1px solid var(--linea-fuerte); border-radius: 6px; overflow: hidden; }
+.tabs-caja button { height: 24px; padding: 0 10px; border: 0; border-right: 1px solid var(--linea-fuerte); background: none; color: var(--texto-2); font-size: 12px; cursor: pointer; }
+.tabs-caja button:last-child { border-right: 0; }
+.tabs-caja button[aria-pressed="true"] { background: var(--sel); color: var(--texto); font-weight: 500; }
+.tabs-caja button:disabled { color: var(--texto-3); cursor: not-allowed; }
+.caja-com textarea { display: block; width: 100%; min-height: 64px; padding: 7px 9px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--bg); color: var(--texto); font: 13px/1.5 var(--sans); resize: vertical; }
+.caja-com textarea.mono { font: 12px/1.55 var(--mono); white-space: pre; margin-top: 8px; }
+.caja-com label { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; cursor: pointer; }
+.caja-acciones { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.punto-estado { display: inline-flex; align-items: center; gap: 5px; color: var(--texto-2); font-size: 12px; }
+.punto-estado::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--linea-fuerte); }
+.punto-estado.azul::before { background: var(--acento); } .punto-estado.verde::before { background: var(--verde); }
+.punto-estado.ambar::before { background: var(--ambar); } .punto-estado.rojo::before { background: var(--rojo); } .punto-estado.violeta::before { background: var(--violeta); }
+.hilo-cab .der { margin-left: auto; display: inline-flex; gap: 4px; }
+.btn-texto { border: 0; background: none; padding: 2px 6px; border-radius: 4px; color: var(--texto-2); font-size: 12px; cursor: pointer; }
+.btn-texto:hover { background: var(--hover); color: var(--texto); }
+.hilo-texto { white-space: pre-wrap; overflow-wrap: anywhere; }
+.hilo-com pre.sugerido { margin: 8px 0 0; padding: 7px 9px; border-radius: 6px; background: var(--verde-bg); font: 12px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.hilo-respuesta { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--linea); white-space: pre-wrap; overflow-wrap: anywhere; }
+.hilo-motivo { margin-top: 6px; color: var(--rojo); }
+.desact { padding: 8px 14px 4px; border-bottom: 1px solid var(--linea); }
+.desact table { width: 100%; border-collapse: collapse; }
+.barra-pendiente { position: sticky; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 12px; padding: 10px 14px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--panel); box-shadow: 0 -4px 12px rgb(0 0 0 / .06); }
+.barra-pendiente .der { margin-left: auto; display: inline-flex; gap: 8px; }
 .codigo-diff tr.hunk td { background: var(--sel); color: var(--texto-2); padding-top: 3px; padding-bottom: 3px; }
 .codigo-diff td.c::before { display: inline-block; width: 1.2ch; color: var(--texto-3); }
 .codigo-diff tr.add td.c::before { content: '+'; color: var(--verde); }
@@ -288,6 +317,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   <symbol id="i-chispa" viewBox="0 0 16 16"><path d="M8 1.8v3M8 11.2v3M1.8 8h3M11.2 8h3M3.6 3.6l2 2M10.4 10.4l2 2M12.4 3.6l-2 2M5.6 10.4l-2 2"/></symbol>
   <symbol id="i-actualizar" viewBox="0 0 16 16"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></symbol>
   <symbol id="i-lateral" viewBox="0 0 16 16"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M6 2.5v11"/></symbol>
+  <symbol id="i-comentario" viewBox="0 0 16 16"><path d="M2.5 3.5h11v7.5h-6l-3 2.5V11h-2V3.5Z"/></symbol>
   <symbol id="i-subir" viewBox="0 0 16 16"><path d="M8 10.5v-8M4.8 5.7 8 2.5l3.2 3.2M3 13.5h10"/></symbol>
 </svg>
 
@@ -367,6 +397,9 @@ const estado = {
   vista: 'cola',
   seleccionLineas: null,
   lineasArchivo: [],
+  archivosTab: [],
+  caja: null,
+  confirmarDescarte: false,
   portal: null,
   filtros: new Set(),
   cerrados: new Set(almacen.leer('pw-revision:cerrados', ['pruebas_automaticas'])),
@@ -457,6 +490,8 @@ function senales(pr) {
   if (t?.estado === 'en_curso') s.push(`<span class="senal azul" title="Analizando con IA">${icono('actualizar', 'girando')}</span>`);
   else if (t?.estado === 'en_cola') s.push(`<span class="senal azul" title="En cola para analizar">${icono('reloj')}</span>`);
   else if (t?.estado === 'error') s.push(`<span class="senal rojo" title="El análisis falló">${icono('bloqueo')}</span>`);
+  const cs = vivos(pr).length;
+  if (cs) s.push(`<span class="senal" title="${plural(cs, 'comentario', 'comentarios')} en el diff">${icono('comentario')}${cs}</span>`);
   if (pr.seguridad) s.push(`<span class="senal" title="Seguridad">${icono('escudo')}</span>`);
   const esfuerzo = pr.explicacion?.esfuerzo ?? pr.esfuerzoTamano;
   if (esfuerzo) s.push(`<span title="Esfuerzo de revisión, de 1 a 5">E${esfuerzo}</span>`);
@@ -649,9 +684,142 @@ function barrita(a, d) {
   return `<span class="barrita" aria-hidden="true">${[0, 1, 2, 3, 4].map((i) => `<i class="${i < verdes ? 'a' : 'd'}"></i>`).join('')}</span>`;
 }
 
+// Comentarios sobre líneas del diff. Preguntas y pedidos de cambio nacen como borradores y se envían
+// juntos; las notas manuales se guardan al agregarlas y viajan en la revisión exportada.
+const TIPOS_COMENTARIO = {
+  pregunta: { nombre: 'Preguntar', etiqueta: 'Pregunta', ayuda: 'Qué se quiere entender de estas líneas' },
+  cambio: { nombre: 'Pedir cambio', etiqueta: 'Pedido de cambio', ayuda: 'Cómo debe quedar este código' },
+  nota: { nombre: 'Nota', etiqueta: 'Nota', ayuda: 'Comentario para el autor' },
+};
+const ESTADOS_COMENTARIO = {
+  borrador: ['Borrador', ''], nota: ['Nota guardada', ''], en_cola: ['En cola', 'azul'], en_curso: ['En curso', 'azul'],
+  respondido: ['Respondido', 'verde'], propuesta: ['Propuesta lista', 'ambar'], aprobado: ['Aprobado', 'violeta'],
+  descartado: ['Descartado', ''], error: ['Error', 'rojo'],
+};
+const claveComentarios = (pr) => `pw-revision:comentarios:${pr.id}`;
+const comentarios = (pr) => almacen.leer(claveComentarios(pr), []);
+const vivos = (pr) => comentarios(pr).filter((c) => c.estado !== 'descartado');
+const borradores = (pr) => comentarios(pr).filter((c) => c.estado === 'borrador');
+const nuevoIdComentario = () => `c-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+const rangoTexto = (c) => (c.desde === c.hasta ? `L${c.desde}` : `L${c.desde}–${c.hasta}`);
+const cajaVacia = (tipo) => ({ tipo: tipo ?? (API ? 'pregunta' : 'nota'), texto: '', conSugerido: false, sugerido: null, editando: null });
+
+function escribirComentarios(pr, lista) {
+  if (!almacen.escribir(claveComentarios(pr), lista)) avisar('No se pudo guardar: el navegador bloquea el almacenamiento local.');
+}
+
+function guardarComentario(pr, c) {
+  const lista = comentarios(pr).filter((x) => x.id !== c.id);
+  lista.push({ ...c, actualizado: new Date().toISOString() });
+  escribirComentarios(pr, lista);
+}
+
+const borrarComentario = (pr, id) => escribirComentarios(pr, comentarios(pr).filter((x) => x.id !== id));
+
+// Junta comentarios por id; gana el de actualización más reciente.
+function fusionarComentarios(actuales, entrantes) {
+  const porId = new Map(actuales.map((c) => [c.id, c]));
+  for (const c of entrantes) {
+    const previo = porId.get(c.id);
+    if (!previo || (c.actualizado ?? '') > (previo.actualizado ?? '')) porId.set(c.id, c);
+  }
+  return [...porId.values()];
+}
+
+function leerCaja() {
+  const t = $('cajaTexto');
+  if (t) estado.caja.texto = t.value;
+  const s = $('cajaSugerido');
+  if (s) estado.caja.sugerido = s.value;
+}
+
+function cajaHtml(rango) {
+  const c = estado.caja;
+  const pr = FOTO.prs.find((p) => p.id === estado.seleccion);
+  const abierta = pr?.estadoPr === 'OPEN';
+  const motivo = (k) => (k === 'nota' ? '' : !API ? 'Disponible con el tablero abierto desde Claude Code (tablero_servir)' : k === 'cambio' && !abierta ? 'La PR ya no está abierta' : '');
+  const tabs = Object.entries(TIPOS_COMENTARIO).map(([k, t]) => `<button type="button" data-caja-tipo="${k}" aria-pressed="${c.tipo === k}" ${motivo(k) ? `disabled title="${motivo(k)}"` : ''}>${t.nombre}</button>`).join('');
+  const sugerible = rango.lado === 'nuevo';
+  const sugerido = c.tipo === 'nota'
+    ? `<label><input type="checkbox" data-caja-sugerido ${c.conSugerido && sugerible ? 'checked' : ''} ${sugerible ? '' : 'disabled'}> Incluir código sugerido</label>
+       ${sugerible ? '' : ' <span class="muy-tenue">El código sugerido solo aplica a líneas nuevas o sin cambios</span>'}
+       ${c.conSugerido && sugerible ? `<textarea id="cajaSugerido" class="mono" rows="${Math.min(14, rango.claves.length + 1)}" spellcheck="false" aria-label="Código sugerido">${esc(c.sugerido ?? rango.texto)}</textarea>` : ''}`
+    : '';
+  return `<tr class="caja"><td class="n"></td><td class="n"></td><td><div class="caja-com" role="group" aria-label="Comentario sobre ${rangoTexto(rango)}">
+    <div class="caja-cab"><span class="mono muy-tenue">${rangoTexto(rango)}</span><div class="tabs-caja" role="group" aria-label="Tipo de comentario">${tabs}</div></div>
+    <textarea id="cajaTexto" rows="3" placeholder="${TIPOS_COMENTARIO[c.tipo].ayuda}" aria-label="${TIPOS_COMENTARIO[c.tipo].ayuda}">${esc(c.texto)}</textarea>
+    ${sugerido}
+    <div class="caja-acciones">
+      <button type="button" class="btn chico primario" data-accion="cajaAgregar">${c.editando ? 'Guardar cambios' : c.tipo === 'nota' ? 'Guardar nota' : 'Agregar a la revisión'}</button>
+      <button type="button" class="btn chico" data-accion="cajaCancelar">Cancelar</button>
+      <span class="muy-tenue">Ctrl + Enter</span>
+    </div>
+  </div></td></tr>`;
+}
+
+function hiloHtml(c) {
+  const [txt, cls] = ESTADOS_COMENTARIO[c.estado] ?? [c.estado, ''];
+  const editable = c.estado === 'borrador' || c.estado === 'nota';
+  return `<tr class="hilo"><td class="n"></td><td class="n"></td><td><div class="hilo-com">
+    <div class="hilo-cab"><strong>${TIPOS_COMENTARIO[c.tipo]?.etiqueta ?? esc(c.tipo)}</strong><span class="mono muy-tenue">${rangoTexto(c)}</span><span class="punto-estado ${cls}">${txt}</span>
+      ${editable ? `<span class="der"><button type="button" class="btn-texto" data-com-editar="${esc(c.id)}">Editar</button><button type="button" class="btn-texto" data-com-borrar="${esc(c.id)}">Borrar</button></span>` : ''}</div>
+    <div class="hilo-texto">${esc(c.texto)}</div>
+    ${c.sugerido !== undefined ? `<pre class="sugerido" aria-label="Código sugerido">${esc(c.sugerido)}</pre>` : ''}
+    ${c.respuesta ? `<div class="hilo-respuesta">${esc(c.respuesta)}</div>` : ''}
+    ${c.estado === 'error' && c.motivo ? `<div class="hilo-motivo">${esc(c.motivo)}</div>` : ''}
+  </div></td></tr>`;
+}
+
+function agregarComentario() {
+  leerCaja();
+  const pr = FOTO.prs.find((p) => p.id === estado.seleccion);
+  const rango = rangoSeleccion();
+  const c = estado.caja;
+  if (!pr || !rango) return;
+  if (!c.texto.trim()) { avisar('Escriba el comentario antes de agregarlo.'); return $('cajaTexto')?.focus(); }
+  const previo = c.editando ? comentarios(pr).find((x) => x.id === c.editando) : null;
+  const conSugerido = c.tipo === 'nota' && c.conSugerido && rango.lado === 'nuevo';
+  guardarComentario(pr, {
+    ...(previo ?? { id: nuevoIdComentario(), creado: new Date().toISOString() }),
+    tipo: c.tipo,
+    estado: c.tipo === 'nota' ? 'nota' : 'borrador',
+    archivo: estado.archivosTab[estado.seleccionLineas.archivo],
+    lado: rango.lado, desde: rango.desde, hasta: rango.hasta, claves: rango.claves,
+    textoOriginal: rango.texto,
+    texto: c.texto.trim(),
+    sugerido: conSugerido ? PWAnclaje.textoSugerido(c.sugerido ?? rango.texto) : undefined,
+    headSha: pr.headSha,
+  });
+  cerrarCaja(c.tipo);
+}
+
+function cerrarCaja(tipo) {
+  document.querySelectorAll('.codigo-diff tr.caja').forEach((f) => f.remove());
+  estado.seleccionLineas = null;
+  estado.caja = cajaVacia(tipo ?? estado.caja.tipo);
+  repintarDetalle();
+  pintarCola();
+}
+
+function repintarDetalle() {
+  const y = $('detalle').scrollTop;
+  pintarDetalle();
+  $('detalle').scrollTop = y;
+}
+
+function editarComentario(pr, id) {
+  const c = comentarios(pr).find((x) => x.id === id);
+  const k = estado.archivosTab.indexOf(c?.archivo);
+  if (!c || k < 0) return;
+  const claves = c.claves?.length ? c.claves : [`${c.lado === 'viejo' ? 'v' : 'n'}${c.desde}`, `${c.lado === 'viejo' ? 'v' : 'n'}${c.hasta}`];
+  estado.seleccionLineas = { archivo: k, claveA: claves[0], claveB: claves[claves.length - 1] };
+  estado.caja = { tipo: c.tipo, texto: c.texto, conSugerido: c.sugerido !== undefined, sugerido: c.sugerido ?? null, editando: c.id };
+  marcarSeleccion();
+}
+
 // Filas de un parche unificado con número de línea viejo y nuevo; los hallazgos se cuelgan bajo su línea nueva.
 // k: índice del archivo en la pestaña, para ubicar la selección de líneas.
-function filasDiff(lineas, hallazgos, k) {
+function filasDiff(lineas, hallazgos, k, hilos = new Map()) {
   const filas = [];
   const porLinea = new Map();
   for (const h of hallazgos) {
@@ -673,6 +841,7 @@ function filasDiff(lineas, hallazgos, k) {
         filas.push(`<tr class="nota"><td class="n"></td><td class="n"></td><td><span class="estado ${color[x.severidad]}">${esc(x.severidad)}</span> <strong>${esc(x.titulo)}</strong> · <span class="tenue">${esc(x.mensaje)}</span></td></tr>`);
       }
     }
+    for (const c of hilos.get(clave) ?? []) filas.push(hiloHtml(c));
   }
   return filas.join('');
 }
@@ -687,19 +856,49 @@ function rangoSeleccion() {
 const clavesSeleccion = () => new Set(rangoSeleccion()?.claves ?? []);
 
 function marcarSeleccion() {
+  leerCaja();
   document.querySelectorAll('.codigo-diff tr.sel').forEach((f) => f.classList.remove('sel'));
+  document.querySelectorAll('.codigo-diff tr.caja').forEach((f) => f.remove());
   const s = estado.seleccionLineas;
-  if (!s) return;
+  const rango = rangoSeleccion();
+  if (!s || !rango) return;
   const tabla = document.querySelector(`#${idArchivo(s.archivo)} .codigo-diff`);
-  for (const clave of clavesSeleccion()) tabla?.querySelector(`tr[data-clave="${clave}"]`)?.classList.add('sel');
+  if (!tabla) return;
+  tabla.closest('.archivo').removeAttribute('data-plegado');
+  let ultima = null;
+  for (const clave of rango.claves) {
+    const fila = tabla.querySelector(`tr[data-clave="${clave}"]`);
+    fila?.classList.add('sel');
+    ultima = fila ?? ultima;
+  }
+  ultima?.insertAdjacentHTML('afterend', cajaHtml(rango));
+  const t = $('cajaTexto');
+  if (t && document.activeElement?.id !== 'cajaSugerido') { t.focus({ preventScroll: true }); t.setSelectionRange(t.value.length, t.value.length); }
 }
 
 function seleccionarLinea(boton, extender) {
   const k = +boton.closest('.archivo').dataset.k;
   const clave = boton.dataset.sel;
   const previa = estado.seleccionLineas;
-  estado.seleccionLineas = extender && previa?.archivo === k ? { ...previa, claveB: clave } : { archivo: k, claveA: clave, claveB: clave };
+  const extiende = extender && previa?.archivo === k;
+  if (!extiende && !estado.caja.editando) { leerCaja(); estado.caja = { ...cajaVacia(estado.caja.tipo), texto: estado.caja.texto }; }
+  estado.seleccionLineas = extiende ? { ...previa, claveB: clave } : { archivo: k, claveA: clave, claveB: clave };
   marcarSeleccion();
+}
+
+function barraPendiente(pr) {
+  const bs = borradores(pr);
+  if (!bs.length) return '';
+  const preguntas = bs.filter((c) => c.tipo === 'pregunta').length;
+  const cambios = bs.filter((c) => c.tipo === 'cambio').length;
+  const partes = [preguntas && plural(preguntas, 'pregunta', 'preguntas'), cambios && plural(cambios, 'pedido de cambio', 'pedidos de cambio')].filter(Boolean).join(' · ');
+  return `<div class="barra-pendiente" role="region" aria-label="Revisión pendiente">
+    <span><strong>Revisión pendiente (${bs.length})</strong> <span class="tenue">${partes}</span></span>
+    <span class="der">
+      <button type="button" class="btn chico primario" data-accion="enviarRevision" ${API ? '' : 'disabled title="Disponible con el tablero abierto desde Claude Code (tablero_servir)"'}>${icono('chispa')} Enviar revisión</button>
+      <button type="button" class="btn chico" data-accion="descartarBorradores">${estado.confirmarDescarte ? `Confirmar: descartar ${plural(bs.length, 'borrador', 'borradores')}` : 'Descartar borradores'}</button>
+    </span>
+  </div>`;
 }
 
 function ordenarArchivos(pr, archivos) {
@@ -723,6 +922,20 @@ function tabArchivos(pr) {
   }
   archivos = ordenarArchivos(pr, archivos);
   estado.lineasArchivo = archivos.map((a) => (a.patch !== undefined ? PWAnclaje.lineasDePatch(a.patch) : []));
+  estado.archivosTab = archivos.map((a) => a.filename);
+  const lista = vivos(pr);
+  const anclados = archivos.map((_, k) => new Map());
+  const sueltos = archivos.map(() => []);
+  const fuera = [];
+  for (const c of lista) {
+    const k = estado.archivosTab.indexOf(c.archivo);
+    if (k < 0) { fuera.push(c); continue; }
+    const a = PWAnclaje.anclar(c, estado.lineasArchivo[k]);
+    if (a.desactualizado) { sueltos[k].push(c); continue; }
+    if (!anclados[k].has(a.claveFinal)) anclados[k].set(a.claveFinal, []);
+    anclados[k].get(a.claveFinal).push(c);
+  }
+  const bloqueSuelto = (cs, titulo) => (cs.length ? `<div class="desact"><p class="muy-tenue">${titulo}</p><table>${cs.map(hiloHtml).join('')}</table></div>` : '');
   const vistos = new Set(almacen.leer(claveVistos(pr), []));
   const hallazgos = pr.verificaciones?.hallazgos ?? [];
   const ajustar = almacen.leer('pw-revision:ajustar', false);
@@ -741,12 +954,13 @@ function tabArchivos(pr) {
         <a class="btn chico" href="${esc(pr.url)}/files" target="_blank" rel="noopener">Ver en GitHub ${icono('externo')}</a>
       </span>
     </div>
+    ${bloqueSuelto(fuera, 'Comentarios sobre archivos que ya no están en la PR')}
     <nav class="indice" aria-label="Archivos de la PR">${archivos.map((a, k) => `<a href="#${idArchivo(k)}" data-saltar="${idArchivo(k)}"><span class="mono muy-tenue">${k + 1}</span><span class="ruta mono ${vistos.has(a.filename) ? 'visto' : ''}" title="${esc(a.filename)}"><bdi>${esc(a.filename)}</bdi></span><span class="mono"><span class="mas">+${a.additions}</span> <span class="menos">−${a.deletions}</span>${barrita(a.additions, a.deletions)}</span></a>`).join('')}</nav>
     ${archivos.map((a, k) => {
       const plegado = vistos.has(a.filename) || k >= plegarDesde;
       const propios = hallazgos.filter((h) => h.archivo === a.filename && h.linea);
       const cuerpo = a.patch !== undefined
-        ? `<div class="codigo-diff"><table>${filasDiff(estado.lineasArchivo[k], propios, k)}</table></div>${a.recortado ? `<div class="aviso-diff">El resto de este archivo no viene en el tablero. <a href="${esc(pr.url)}/files" target="_blank" rel="noopener">Ver completo en GitHub</a>.</div>` : ''}`
+        ? `<div class="codigo-diff"><table>${filasDiff(estado.lineasArchivo[k], propios, k, anclados[k])}</table></div>${a.recortado ? `<div class="aviso-diff">El resto de este archivo no viene en el tablero. <a href="${esc(pr.url)}/files" target="_blank" rel="noopener">Ver completo en GitHub</a>.</div>` : ''}`
         : `<div class="aviso-diff">${a.recortado ? 'La PR supera el tope de líneas que trae el tablero.' : 'GitHub no muestra el diff de este archivo (binario o demasiado grande).'} <a href="${esc(pr.url)}/files" target="_blank" rel="noopener">Ver en GitHub</a>.</div>`;
       return `<section class="archivo" id="${idArchivo(k)}" data-k="${k}" ${plegado ? 'data-plegado' : ''}>
         <div class="archivo-cab">
@@ -757,9 +971,11 @@ function tabArchivos(pr) {
           <span class="mono"><span class="mas">+${a.additions}</span> <span class="menos">−${a.deletions}</span></span>
           <label><input type="checkbox" data-visto="${esc(a.filename)}" ${vistos.has(a.filename) ? 'checked' : ''}> Visto</label>
         </div>
+        ${bloqueSuelto(sueltos[k], 'Comentarios sobre líneas que cambiaron')}
         ${cuerpo}
       </section>`;
     }).join('')}
+    ${barraPendiente(pr)}
   </div>`;
 }
 
@@ -773,6 +989,7 @@ const TABS = [
 const CUERPOS = { resumen: tabResumen, archivos: tabArchivos, verificaciones: tabVerificaciones, probar: tabProbar, revision: tabRevision };
 
 function pintarDetalle() {
+  leerCaja();
   const pr = FOTO.prs.find((p) => p.id === estado.seleccion);
   if (!pr) {
     $('detalle').innerHTML = `<div class="vacio"><p>Seleccione una PR de la cola para ver dónde está, qué cambia y cómo probarla.</p></div>`;
@@ -803,6 +1020,7 @@ function pintarDetalle() {
     <div class="tabs" role="tablist">${TABS.map(([k, nombre, n]) => { const c = n(pr); return `<button class="tab" role="tab" data-tab="${k}" aria-selected="${estado.tab === k}">${nombre}${c ? `<span class="n">${c}</span>` : ''}</button>`; }).join('')}</div>
     <div role="tabpanel">${CUERPOS[estado.tab](pr)}</div>
   </article>`;
+  if (estado.tab === 'archivos') marcarSeleccion();
   pintarDiagramas();
 }
 
@@ -902,14 +1120,15 @@ function revisionesExportables() {
   return FOTO.prs.map((pr) => {
     const r = revision(pr);
     const pasos = almacen.leer(clavePasos(pr), []);
-    if (!r && !pasos.length) return null;
-    return { id: pr.id, repo: pr.repo, numero: pr.numero, titulo: pr.titulo, url: pr.url, headSha: pr.headSha, ...r, pasosProbados: pasos };
+    const cs = comentarios(pr);
+    if (!r && !pasos.length && !cs.length) return null;
+    return { id: pr.id, repo: pr.repo, numero: pr.numero, titulo: pr.titulo, url: pr.url, headSha: pr.headSha, ...r, pasosProbados: pasos, comentarios: cs };
   }).filter(Boolean);
 }
 
 function exportar() {
   const datos = { proyecto: FOTO.proyecto, exportado: new Date().toISOString(), revisiones: revisionesExportables() };
-  if (!datos.revisiones.length) return avisar('Todavía no hay decisiones ni pasos marcados para exportar.');
+  if (!datos.revisiones.length) return avisar('Todavía no hay decisiones, pasos marcados ni comentarios para exportar.');
   const blob = new Blob([JSON.stringify(datos, null, 2)], { type: 'application/json' });
   const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `revision-prs-${datos.exportado.slice(0, 10)}.json` });
   a.click();
@@ -918,9 +1137,14 @@ function exportar() {
 }
 
 function resumenTexto() {
-  const rs = revisionesExportables().filter((r) => r.decision);
-  if (!rs.length) return 'Sin decisiones de revisión registradas.';
-  return rs.map((r) => `- ${r.repo}#${r.numero} ${r.titulo}: ${(DECISIONES[r.decision] ?? [r.decision])[0]}${r.nota ? `. ${r.nota.replace(/\s+/g, ' ')}` : ''}\n  ${r.url}`).join('\n');
+  const notasDe = (r) => (r.comentarios ?? []).filter((c) => c.tipo === 'nota' && c.estado !== 'descartado');
+  const rs = revisionesExportables().filter((r) => r.decision || notasDe(r).length);
+  if (!rs.length) return 'Sin decisiones de revisión ni notas registradas.';
+  const nota = (c) => `  · ${c.archivo}:${rangoTexto(c)} · ${c.texto.replace(/\s+/g, ' ')}${c.sugerido !== undefined ? `\n    Código sugerido:\n${c.sugerido.split('\n').map((l) => `      ${l}`).join('\n')}` : ''}`;
+  return rs.map((r) => {
+    const cab = `- ${r.repo}#${r.numero} ${r.titulo}${r.decision ? `: ${(DECISIONES[r.decision] ?? [r.decision])[0]}${r.nota ? `. ${r.nota.replace(/\s+/g, ' ')}` : ''}` : ''}\n  ${r.url}`;
+    return [cab, ...notasDe(r).map(nota)].join('\n');
+  }).join('\n');
 }
 
 function importar(archivo) {
@@ -930,14 +1154,29 @@ function importar(archivo) {
     for (const r of datos.revisiones ?? []) {
       const pr = FOTO.prs.find((p) => p.id === r.id);
       if (!pr) continue;
-      const { pasosProbados, id, repo, numero, titulo, url, ...decision } = r;
+      const { pasosProbados, comentarios: cs, id, repo, numero, titulo, url, ...decision } = r;
       if (decision.decision) almacen.escribir(claveRevision(pr), decision);
+      if (cs?.length) escribirComentarios(pr, fusionarComentarios(comentarios(pr), cs));
       if (pasosProbados?.length) almacen.escribir(clavePasos(pr, r.headSha), pasosProbados);
       n++;
     }
     pintarTodo();
     avisar(`${plural(n, 'revisión importada', 'revisiones importadas')}.`);
   }).catch(() => avisar('El archivo no es una revisión exportada desde este tablero.'));
+}
+
+const prSel = () => FOTO.prs.find((p) => p.id === estado.seleccion);
+
+async function enviarRevision(pr) {
+  const ids = borradores(pr).map((c) => c.id);
+  if (!ids.length) return;
+  try {
+    await api('/api/enviar-revision', { id: pr.id, ids });
+    escribirComentarios(pr, comentarios(pr).map((c) => (ids.includes(c.id) ? { ...c, estado: 'en_cola', actualizado: new Date().toISOString() } : c)));
+    repintarDetalle();
+    pintarCola();
+  } catch (err) { avisar(err.message); }
+  sondear();
 }
 
 function aplicarLateral(oculto) {
@@ -969,6 +1208,8 @@ document.addEventListener('click', (ev) => {
   if (salto) { ev.preventDefault(); const a = $(salto.dataset.saltar); a.removeAttribute('data-plegado'); a.scrollIntoView({ block: 'start' }); return; }
   const ir = ev.target.closest('a[data-ir]');
   if (ir) { ev.preventDefault(); return seleccionar(ir.dataset.ir); }
+  const casilla = ev.target.closest('[data-caja-sugerido]');
+  if (casilla) { leerCaja(); estado.caja.conSugerido = casilla.checked; return marcarSeleccion(); }
   const nSel = ev.target.closest('.n-sel');
   if (nSel) return seleccionarLinea(nSel, ev.shiftKey);
   const t = ev.target.closest('button, a[data-tab-ir]');
@@ -1001,6 +1242,20 @@ document.addEventListener('click', (ev) => {
   if (d.accion === 'copiarResumen') return copiar(t, resumenTexto());
   if (d.plegar) return $(d.plegar).toggleAttribute('data-plegado');
   if (d.accion === 'lateral') return alternarLateral();
+  if (d.cajaTipo) { leerCaja(); estado.caja.tipo = d.cajaTipo; return marcarSeleccion(); }
+  if (d.accion === 'cajaAgregar') return agregarComentario();
+  if (d.accion === 'cajaCancelar') return cerrarCaja();
+  if (d.comEditar) return editarComentario(prSel(), d.comEditar);
+  if (d.comBorrar) { borrarComentario(prSel(), d.comBorrar); repintarDetalle(); return pintarCola(); }
+  if (d.accion === 'descartarBorradores') {
+    if (!estado.confirmarDescarte) { estado.confirmarDescarte = true; return repintarDetalle(); }
+    estado.confirmarDescarte = false;
+    const pr = prSel();
+    escribirComentarios(pr, comentarios(pr).filter((c) => c.estado !== 'borrador'));
+    repintarDetalle();
+    return pintarCola();
+  }
+  if (d.accion === 'enviarRevision') return enviarRevision(prSel());
   if (d.accion === 'enfoque') { document.body.toggleAttribute('data-enfoque'); return pintarDetalle(); }
   if (d.accion === 'plegarTodo') { document.querySelectorAll('.archivo').forEach((a) => a.setAttribute('data-plegado', '')); return; }
   if (d.accion === 'refrescar') { estado.refrescando = true; pintarBarra(); return accionApi('/api/refrescar', {}); }
@@ -1058,6 +1313,7 @@ document.addEventListener('input', (ev) => {
 });
 
 document.addEventListener('keydown', (ev) => {
+  if ((ev.target.id === 'cajaTexto' || ev.target.id === 'cajaSugerido') && ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); return agregarComentario(); }
   if (ev.target.matches('input, textarea, select')) {
     if (ev.key === 'Escape') ev.target.blur();
     return;
@@ -1079,6 +1335,7 @@ $('titulo').textContent = `Revisión de PRs · ${FOTO.proyecto}`;
 $('foto').textContent = `Datos de GitHub del ${new Date(FOTO.generado).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })}`;
 document.querySelectorAll('[data-rol]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.rol === estado.rol)));
 aplicarLateral(almacen.leer('pw-revision:sin-lateral', false));
+estado.caja = cajaVacia();
 const [inicial, tabInicial] = decodeURIComponent(location.hash.slice(1)).split('/');
 if (CUERPOS[tabInicial]) estado.tab = tabInicial;
 pintarTodo();

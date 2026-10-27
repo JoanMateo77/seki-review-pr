@@ -58,5 +58,7 @@
     return { claveFinal: claves[claves.length - 1] };
   }
 
-  globalThis.PWAnclaje = { lineasDePatch, claveLinea, normalizarRango, anclar };
+  const textoSugerido = (t) => t.replace(/\r\n/g, '\n').replace(/\n$/, '');
+
+  globalThis.PWAnclaje = { lineasDePatch, claveLinea, normalizarRango, anclar, textoSugerido };
 })();
