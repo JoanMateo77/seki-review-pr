@@ -243,6 +243,16 @@ body[data-enfoque] .lateral, body[data-enfoque] .cola { display: none; }
 .hilo-com pre.sugerido { margin: 8px 0 0; padding: 7px 9px; border-radius: 6px; background: var(--verde-bg); font: 12px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .hilo-respuesta { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--linea); white-space: pre-wrap; overflow-wrap: anywhere; }
 .hilo-motivo { margin-top: 6px; color: var(--rojo); }
+.propuesta { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--linea); }
+.prop-cab { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 8px; }
+.prop-archivo { margin-top: 8px; border: 1px solid var(--linea); border-radius: 6px; overflow: hidden; }
+.prop-archivo .ruta { display: flex; gap: 8px; padding: 5px 10px; background: var(--lateral); font: 12px var(--mono); }
+.prop-archivo .codigo-diff td.n { min-width: 36px; }
+.prop-checks { margin-top: 8px; border: 1px solid var(--linea); border-radius: 6px; }
+.prop-checks .check { padding: 6px 10px; grid-template-columns: 16px 64px minmax(0, 1fr); }
+.prop-checks .check:last-child { border-bottom: 0; }
+.prop-acciones { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.prop-ajuste textarea { display: block; width: 100%; min-height: 56px; margin-top: 8px; padding: 7px 9px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--bg); color: var(--texto); font: 13px/1.5 var(--sans); }
 .hilo-pie { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; }
 .desact { padding: 8px 14px 4px; border-bottom: 1px solid var(--linea); }
 .desact table { width: 100%; border-collapse: collapse; }
@@ -402,6 +412,9 @@ const estado = {
   caja: null,
   confirmarDescarte: false,
   comentariosCargados: new Set(),
+  propuestas: new Map(),
+  confirmarAprobar: null,
+  ajustando: null,
   marcasComentarios: {},
   portal: null,
   filtros: new Set(),
@@ -792,8 +805,99 @@ function hiloHtml(c) {
     <div class="hilo-texto">${esc(c.texto)}</div>
     ${c.sugerido !== undefined ? `<pre class="sugerido" aria-label="Código sugerido">${esc(c.sugerido)}</pre>` : ''}
     ${c.respuesta ? `<div class="hilo-respuesta">${esc(c.respuesta)}<div class="hilo-pie muy-tenue">${c.desdeCache ? 'Respuesta guardada, sin costo' : `${esc(nombreModelo(c.modelo))}${c.costo ? ` · ${usd(c.costo)}${c.lote > 1 ? ` por el lote de ${c.lote}` : ''}` : ''}`}<button type="button" class="btn-texto" data-com-repreguntar="${esc(c.id)}">Repreguntar</button></div></div>` : ''}
+    ${c.propuestaId ? propuestaHtml(c) : ''}
     ${c.estado === 'error' && c.motivo ? `<div class="hilo-motivo">${esc(c.motivo)}${API && c.tipo !== 'nota' ? ` <button type="button" class="btn-texto" data-com-reintentar="${esc(c.id)}">Reintentar</button>` : ''}</div>` : ''}
   </div></td></tr>`;
+}
+
+// Propuestas de cambio de la IA, pedidas al servidor bajo demanda.
+const propuestasPedidas = new Set();
+function propuestaDe(c) {
+  const prop = estado.propuestas.get(c.propuestaId);
+  if (prop || !API || propuestasPedidas.has(c.propuestaId)) return prop;
+  propuestasPedidas.add(c.propuestaId);
+  api(`/api/propuesta?pr=${encodeURIComponent(estado.seleccion)}&id=${encodeURIComponent(c.propuestaId)}`)
+    .then((x) => { estado.propuestas.set(x.id, x); repintarDetalle(); }, (e) => avisar(e.message))
+    .finally(() => propuestasPedidas.delete(c.propuestaId));
+  return null;
+}
+
+function diffPropuesta(prop) {
+  return prop.patch.split(/^diff --git /m).slice(1).map((bloque) => {
+    const archivo = /^\+\+\+ (?:b\/)?(.+)$/m.exec(bloque)?.[1] ?? bloque.split(' ')[0].replace(/^a\//, '');
+    const inicio = bloque.indexOf('\n@@');
+    const lineas = inicio >= 0 ? PWAnclaje.lineasDePatch(bloque.slice(inicio + 1).replace(/\n$/, '')) : [];
+    const filas = lineas.map((l) => (l.tipo === 'hunk'
+      ? `<tr class="hunk"><td class="n"></td><td class="n"></td><td class="c">${esc(l.texto)}</td></tr>`
+      : `<tr class="${l.tipo}"><td class="n">${l.viejo ?? ''}</td><td class="n">${l.nuevo ?? ''}</td><td class="c">${esc(l.texto)}</td></tr>`)).join('');
+    const fuera = prop.fueraDelComentario.includes(archivo);
+    return `<div class="prop-archivo"><div class="ruta"><span>${esc(archivo)}</span>${fuera ? '<span class="estado ambar">Fuera del comentario</span>' : ''}</div><div class="codigo-diff"><table>${filas}</table></div></div>`;
+  }).join('');
+}
+
+function checksPropuesta(prop) {
+  const c = prop.comprobaciones;
+  const fila = (nombre, r, configurado = true) => {
+    if (!configurado || !r) return check('circulo', '', nombre, 'No se comprobó', configurado ? 'Sin archivos que comprobar' : 'No configurado para este repo');
+    if (r.omitido) return check('alerta', 'ambar', nombre, 'Se superó el tiempo máximo', '');
+    if (r.ok) return check('ok', 'verde', nombre, 'Sin fallos nuevos', r.sinBaseline ? 'Sin baseline: no se comparó con el estado previo' : '');
+    return check('bloqueo', 'rojo', nombre, plural(r.nuevosFallos.length, 'fallo nuevo', 'fallos nuevos'), `${esc(r.nuevosFallos.slice(0, 6).join(' · '))}${r.sinBaseline ? ' · Sin baseline: puede incluir fallos que ya existían' : ''}`);
+  };
+  const reglas = c.reglas.bloqueantes
+    ? check('bloqueo', 'rojo', 'Reglas', plural(c.reglas.bloqueantes, 'bloqueante', 'bloqueantes'), esc(c.reglas.hallazgos.filter((h) => h.severidad === 'bloqueante').map((h) => `${h.archivo}:${h.linea} ${h.titulo}`).join(' · ')))
+    : c.reglas.resumen?.alto ? check('alerta', 'ambar', 'Reglas', plural(c.reglas.resumen.alto, 'hallazgo alto', 'hallazgos altos'), esc(c.reglas.hallazgos.filter((h) => h.severidad === 'alto').map((h) => h.titulo).join(' · ')))
+    : check('ok', 'verde', 'Reglas', 'Sin hallazgos', '');
+  return `<div class="prop-checks">${reglas}${fila('Tipos', c.tipos, c.tipos !== null)}${fila('Tests', c.tests, c.tests !== null)}</div>
+    ${(c.avisos ?? []).map((a) => `<p class="muy-tenue" style="margin:6px 0 0">${esc(a)}</p>`).join('')}`;
+}
+
+function propuestaHtml(c) {
+  const prop = propuestaDe(c);
+  if (!prop) return `<div class="propuesta tenue">${API ? 'Cargando la propuesta.' : 'La propuesta solo se ve con el tablero abierto desde Claude Code.'}</div>`;
+  const pr = prSel();
+  const pie = `<span class="muy-tenue">${esc(nombreModelo(prop.modelo))}${prop.costo ? ` · ${usd(prop.costo)}` : ''}</span>`;
+  let acciones = '';
+  if (prop.estado === 'lista') {
+    const confirmar = estado.confirmarAprobar === prop.id;
+    acciones = `<div class="prop-acciones">
+      <button type="button" class="btn chico primario" data-prop-aprobar="${esc(prop.id)}">${prop.conFallos ? (confirmar ? 'Confirmar: aprobar con fallos' : 'Aprobar con fallos') : 'Aprobar y subir a la rama'}</button>
+      <button type="button" class="btn chico" data-prop-ajustar="${esc(prop.id)}" aria-expanded="${estado.ajustando === prop.id}">Pedir ajuste</button>
+      <button type="button" class="btn chico" data-prop-descartar="${esc(prop.id)}">Descartar</button>${pie}
+    </div>
+    ${confirmar ? '<p class="hilo-motivo">La propuesta tiene fallos en las comprobaciones. El segundo clic la sube igual a la rama.</p>' : ''}
+    ${estado.ajustando === prop.id ? `<div class="prop-ajuste"><textarea id="ajusteTexto" placeholder="Qué cambiar de esta propuesta" aria-label="Qué cambiar de esta propuesta"></textarea>
+      <div class="prop-acciones"><button type="button" class="btn chico primario" data-prop-enviar-ajuste="${esc(prop.id)}">Enviar ajuste</button></div></div>` : ''}`;
+  } else if (prop.estado === 'conflicto' || prop.estado === 'rechazada') {
+    acciones = `<p class="hilo-motivo">${esc(prop.motivo ?? '')}</p><div class="prop-acciones">
+      <button type="button" class="btn chico" data-prop-regenerar="${esc(prop.id)}" ${pr?.estadoPr === 'OPEN' ? '' : 'disabled title="La PR ya no está abierta"'}>Regenerar</button>
+      ${prop.estado === 'rechazada' ? `<button type="button" class="btn chico" data-prop-copiar="${esc(prop.id)}">${icono('copiar')} Copiar parche</button>` : ''}${pie}</div>`;
+  } else if (prop.estado === 'aprobada') {
+    acciones = `<div class="prop-acciones"><span class="punto-estado violeta">Subida a la rama</span><a href="${esc(pr?.url ?? '')}/commits/${esc(prop.commit)}" target="_blank" rel="noopener" class="mono">${esc(prop.commit.slice(0, 7))} ${icono('externo')}</a>${pie}</div>`;
+  }
+  return `<div class="propuesta">
+    <div class="prop-cab"><strong>Propuesta</strong><span>${esc(prop.resumen)}</span></div>
+    ${diffPropuesta(prop)}
+    ${checksPropuesta(prop)}
+    ${acciones}
+  </div>`;
+}
+
+async function accionPropuesta(accion, id, extra = {}) {
+  const pr = prSel();
+  try {
+    const r = await api(`/api/propuesta/${accion}`, { pr: pr.id, id, ...extra });
+    estado.propuestas.delete(id);
+    if (accion === 'aprobar' && !r.ok) {
+      if (r.motivo === 'requiere_confirmacion') { estado.confirmarAprobar = id; return repintarDetalle(); }
+      avisar(r.motivo);
+    }
+    if (accion === 'aprobar' && r.ok) avisar(`Cambio subido a la rama (${r.commit.slice(0, 7)}).`);
+    estado.confirmarAprobar = null;
+    estado.ajustando = null;
+    await sincronizarComentarios(pr);
+    repintarDetalle();
+  } catch (err) { avisar(err.message); }
+  sondear();
 }
 
 function agregarComentario() {
@@ -1302,6 +1406,20 @@ document.addEventListener('click', (ev) => {
   if (d.accion === 'enviarRevision') return enviarRevision(prSel());
   if (d.comReintentar) return enviarRevision(prSel(), [d.comReintentar]);
   if (d.comRepreguntar) return repreguntar(prSel(), d.comRepreguntar);
+  if (d.propAprobar) {
+    if (estado.propuestas.get(d.propAprobar)?.conFallos && estado.confirmarAprobar !== d.propAprobar) { estado.confirmarAprobar = d.propAprobar; return repintarDetalle(); }
+    t.disabled = true;
+    return accionPropuesta('aprobar', d.propAprobar, { confirmarFallos: estado.confirmarAprobar === d.propAprobar });
+  }
+  if (d.propAjustar) { estado.ajustando = estado.ajustando === d.propAjustar ? null : d.propAjustar; repintarDetalle(); return $('ajusteTexto')?.focus({ preventScroll: true }); }
+  if (d.propEnviarAjuste) {
+    const indicacion = $('ajusteTexto')?.value.trim();
+    if (!indicacion) return avisar('Escriba qué cambiar de la propuesta.');
+    return accionPropuesta('ajustar', d.propEnviarAjuste, { indicacion });
+  }
+  if (d.propDescartar) return accionPropuesta('descartar', d.propDescartar);
+  if (d.propRegenerar) return accionPropuesta('regenerar', d.propRegenerar);
+  if (d.propCopiar) return copiar(t, estado.propuestas.get(d.propCopiar)?.patch ?? '');
   if (d.accion === 'enfoque') { document.body.toggleAttribute('data-enfoque'); return pintarDetalle(); }
   if (d.accion === 'plegarTodo') { document.querySelectorAll('.archivo').forEach((a) => a.setAttribute('data-plegado', '')); return; }
   if (d.accion === 'refrescar') { estado.refrescando = true; pintarBarra(); return accionApi('/api/refrescar', {}); }

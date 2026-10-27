@@ -5,7 +5,7 @@ const exec = promisify(execFile);
 const OPCIONES = { maxBuffer: 64 * 1024 * 1024, env: { ...process.env, GH_PAGER: '', GIT_PAGER: '' } };
 
 export async function gh(args) {
-  const { stdout } = await exec('gh', args, OPCIONES);
+  const { stdout } = await exec(process.env.PW_GH ?? 'gh', args, OPCIONES);
   return stdout;
 }
 

@@ -10,6 +10,7 @@ import { crearCola } from './trabajos.mjs';
 import { asegurarDiff, diffParaTablero } from './diffs.mjs';
 import { actualizarComentario, guardarComentarios, leerComentarios, marcasComentarios } from './comentarios.mjs';
 import { responderPreguntas } from './preguntas.mjs';
+import { ajustarPropuesta, aprobar, descartar, leerPropuesta, proponerCambios } from './propuestas.mjs';
 import { explicarConIa } from './explicar.mjs';
 import { costosDelDia } from './ia.mjs';
 
@@ -94,10 +95,42 @@ export async function iniciarServidor({ proyecto = 'demo', puerto = PUERTO, abri
         const enviables = leerComentarios(p, pr.repo, pr.numero).filter((c) => pedidos.has(c.id) && (c.estado === 'borrador' || c.estado === 'error'));
         const preguntas = enviables.filter((c) => c.tipo === 'pregunta').map((c) => c.id);
         const cambios = enviables.filter((c) => c.tipo === 'cambio').map((c) => c.id);
-        if (cambios.length) throw new Error('Pedir cambio todavía no está disponible');
-        for (const cid of preguntas) actualizarComentario(p, pr.repo, pr.numero, cid, { estado: 'en_cola', motivo: null });
-        if (preguntas.length) cola.encolar([{ id: `${pr.id}:responder:${Date.now()}`, tipo: 'responder', prId: pr.id, ejecutar: () => responderPreguntas(p, pr, preguntas) }]);
+        if (cambios.length && pr.estadoPr !== 'OPEN') throw new Error('La PR ya no está abierta: no se pueden pedir cambios');
+        for (const cid of [...preguntas, ...cambios]) actualizarComentario(p, pr.repo, pr.numero, cid, { estado: 'en_cola', motivo: null });
+        const ahora = Date.now();
+        if (preguntas.length) cola.encolar([{ id: `${pr.id}:responder:${ahora}`, tipo: 'responder', prId: pr.id, ejecutar: () => responderPreguntas(p, pr, preguntas) }]);
+        if (cambios.length) cola.encolar([{ id: `${pr.id}:cambiar:${ahora}`, tipo: 'cambiar', prId: pr.id, ejecutar: () => proponerCambios(p, pr, cambios) }]);
         return responder(res, 202, { preguntas: preguntas.length, cambios: cambios.length });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/propuesta') {
+        const pr = prDeFoto(url.searchParams.get('pr'));
+        return responder(res, 200, leerPropuesta(p, pr.repo, pr.numero, url.searchParams.get('id')));
+      }
+      if (req.method === 'POST' && url.pathname.startsWith('/api/propuesta/')) {
+        const { pr: prId, id, indicacion, confirmarFallos } = await leerCuerpo(req);
+        const pr = prDeFoto(prId);
+        leerPropuesta(p, pr.repo, pr.numero, id);
+        const accion = url.pathname.slice('/api/propuesta/'.length);
+        if (accion === 'ajustar') {
+          if (typeof indicacion !== 'string' || !indicacion.trim() || indicacion.length > 4000) throw new Error('Indicación vacía o de más de 4000 caracteres');
+          cola.encolar([{ id: `${pr.id}:ajustar:${Date.now()}`, tipo: 'cambiar', prId: pr.id, ejecutar: () => ajustarPropuesta(p, pr, id, indicacion.trim()) }]);
+          return responder(res, 202, { encolado: true });
+        }
+        if (accion === 'aprobar') {
+          const r = await aprobar(p, pr, id, { confirmarFallos: confirmarFallos === true });
+          if (r.ok) refrescar();
+          return responder(res, 200, r);
+        }
+        if (accion === 'descartar') return responder(res, 200, await descartar(p, pr, id));
+        if (accion === 'regenerar') {
+          const prop = leerPropuesta(p, pr.repo, pr.numero, id);
+          if (!['conflicto', 'rechazada'].includes(prop.estado)) throw new Error('Solo se regenera una propuesta en conflicto o rechazada');
+          if (pr.estadoPr !== 'OPEN') throw new Error('La PR ya no está abierta: no se pueden pedir cambios');
+          actualizarComentario(p, pr.repo, pr.numero, prop.comentarioId, { estado: 'en_cola', motivo: null });
+          cola.encolar([{ id: `${pr.id}:cambiar:${Date.now()}`, tipo: 'cambiar', prId: pr.id, ejecutar: () => proponerCambios(p, pr, [prop.comentarioId]) }]);
+          return responder(res, 202, { encolado: true });
+        }
+        return responder(res, 404, { error: 'No existe' });
       }
       if (req.method === 'GET' && url.pathname === '/api/foto') return responder(res, 200, fotoConExplicaciones(p));
       if (req.method === 'GET' && url.pathname === '/api/diff') {

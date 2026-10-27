@@ -40,7 +40,8 @@ esas decisiones, pedir la ruta del JSON exportado y resumirlo.
 rango) y se deja una nota manual, opcionalmente con código sugerido; las notas salen en la revisión exportada y en
 "Copiar resumen". Preguntar y Pedir cambio solo funcionan con el tablero servido: se acumulan en "Revisión pendiente"
 y "Enviar revisión" las manda juntas (todas las preguntas de una PR en una sola llamada). El costo de cada trabajo
-queda en `revision-prs/datos/costos.jsonl`.
+queda en `revision-prs/datos/costos.jsonl`. Un pedido de cambio genera una propuesta en una copia aparte de la rama (con
+comprobaciones de reglas, tipos y tests). Solo el botón Aprobar la sube a la rama de la PR, y nunca hace merge.
 
 **"tablero":** `tablero_servir` para trabajar con acciones (la URL trae un token y vive mientras dure la sesión);
 `tablero_generar` cuando se necesita el archivo suelto para enviarlo a quien revisa. Fuera de Claude Code:

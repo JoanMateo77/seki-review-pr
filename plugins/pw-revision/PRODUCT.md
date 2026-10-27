@@ -29,6 +29,7 @@ A diferencia de la lista de PRs de GitHub, comprueba con git si el código ya es
 
 - HTML autocontenido, sin build ni dependencias; solo Mermaid se carga del CDN, y sin red se ve el texto.
 - Lo que el revisor marca vive en su navegador; para devolverlo al autor se exporta e importa como archivo.
+- Con el tablero servido, Aprobar una propuesta de cambio hace commit y push a la rama de la PR: es la única escritura hacia GitHub. Nunca hace merge ni publica comentarios.
 - Textos en español formal e impersonal; "cliente", nunca "comercio"; sin emojis.
 
 ## Product Principles

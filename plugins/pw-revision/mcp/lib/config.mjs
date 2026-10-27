@@ -18,7 +18,7 @@ export function proyecto(clave = 'demo') {
   const { proyectos, ruta } = cargarProyectos();
   const p = proyectos[clave];
   if (!p) throw new Error(`Proyecto "${clave}" no está en ${ruta}. Disponibles: ${Object.keys(proyectos).join(', ')}`);
-  return { clave, ...p, salida: expandir(p.salida) };
+  return { clave, ...p, salida: expandir(p.salida), ...(p.copias ? { copias: expandir(p.copias) } : {}) };
 }
 
 // Ubica una rama base dentro de las líneas de despliegue del repo.
