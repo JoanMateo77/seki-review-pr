@@ -169,6 +169,18 @@ textarea { width: 100%; min-height: 96px; padding: 8px 10px; border: 1px solid v
 
 .girando { animation: girar 1s linear infinite; }
 @keyframes girar { to { transform: rotate(360deg); } }
+/* Trabajo de IA en curso: barra indeterminada, tiempo transcurrido y esqueleto de la explicación */
+.progreso { position: relative; height: 3px; margin-top: 8px; border-radius: 2px; background: var(--sel); overflow: hidden; }
+.progreso::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 35%; border-radius: 2px; background: var(--acento); animation: progreso 1.6s cubic-bezier(.4, 0, .2, 1) infinite; }
+@keyframes progreso { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+.transcurrido { font-variant-numeric: tabular-nums; color: var(--texto-2); }
+.esqueleto { display: grid; gap: 10px; margin-top: 14px; }
+.esqueleto span { display: block; height: 11px; border-radius: 4px; background: linear-gradient(90deg, var(--gris-bg) 0%, var(--hover) 40%, var(--sel) 50%, var(--hover) 60%, var(--gris-bg) 100%); background-size: 300% 100%; animation: brillo 1.8s ease-in-out infinite; }
+.esqueleto span:nth-child(1) { width: 92%; } .esqueleto span:nth-child(2) { width: 78%; } .esqueleto span:nth-child(3) { width: 85%; }
+.esqueleto span:nth-child(4) { width: 55%; margin-top: 8px; } .esqueleto span:nth-child(5) { width: 70%; }
+@keyframes brillo { from { background-position: 100% 0; } to { background-position: 0 0; } }
+.trabajando { display: flex; align-items: center; gap: 8px; color: var(--texto-2); }
+.trabajando .i { color: var(--acento); }
 .senal.azul { color: var(--acento); }
 .barra .acciones-barra { display: flex; align-items: center; gap: 8px; }
 .barra .acciones-barra .estado-texto { color: var(--texto-3); white-space: nowrap; }
@@ -298,7 +310,11 @@ body[data-enfoque] .lateral, body[data-enfoque] .cola { display: none; }
   .fila .titulo { white-space: normal; }
   .ayuda { display: none; }
 }
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+  .girando, .progreso::after, .esqueleto span { animation: none !important; }
+  .progreso::after { width: 100%; opacity: .5; }
+}
 </style>
 </head>
 <body>
@@ -571,6 +587,11 @@ function seccionCambios() {
   </section>`;
 }
 
+// Tiempo transcurrido que se actualiza cada segundo sin repintar la vista.
+const reloj = (desde) => { const s = Math.max(0, Math.floor((Date.now() - new Date(desde)) / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+const transcurrido = (desde) => (desde ? `<span class="transcurrido" data-desde="${esc(desde)}">${reloj(desde)}</span>` : '');
+setInterval(() => { for (const el of document.querySelectorAll('[data-desde]')) el.textContent = reloj(el.dataset.desde); }, 1000);
+
 function check(icon, color, nombre, valor, detalle = '') {
   return `<div class="check"><span class="icono ${color}">${icono(icon)}</span><span class="nombre">${nombre}</span><span class="valor">${valor}${detalle ? `<small>${detalle}</small>` : ''}</span></div>`;
 }
@@ -613,7 +634,7 @@ function pilaEstados(pr) {
     const hora = (f) => (f ? new Date(f).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) : '');
     const mapa = {
       en_cola: ['reloj', '', 'En cola para analizar', ''],
-      en_curso: ['actualizar', '', 'Analizando la PR', `Desde las ${hora(tr.inicio)}. Suele tardar entre uno y tres minutos.`],
+      en_curso: ['actualizar', '', 'Analizando la PR', `${transcurrido(tr.inicio)} · desde las ${hora(tr.inicio)} · suele tardar entre uno y tres minutos<div class="progreso" role="progressbar" aria-label="Análisis en curso"></div>`],
       terminado: ['ok', 'verde', 'Explicación generada', `A las ${hora(tr.fin)}${costoTexto(tr)}`],
       error: ['bloqueo', 'rojo', 'El análisis no se completó', esc(tr.mensaje ?? '')],
       cancelado: ['circulo', '', 'Análisis cancelado', ''],
@@ -638,8 +659,12 @@ const sec = (titulo, cuerpo) => `<div class="seccion"><h3>${titulo}</h3>${cuerpo
 function tabResumen(pr) {
   const e = pr.explicacion;
   if (!e) {
+    const tr = trabajo(pr);
+    if (API && tr?.estado === 'en_curso') return `<div class="seccion" aria-live="polite"><p class="trabajando">${icono('actualizar', 'girando')} La IA está leyendo el diff y el código relacionado · ${transcurrido(tr.inicio)}</p>
+      <div class="esqueleto" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div></div>`;
+    if (API && tr?.estado === 'en_cola') return `<div class="seccion"><p class="trabajando">${icono('reloj')} En cola: empieza cuando termine el análisis en curso.</p></div>`;
     if (API) return `<div class="seccion"><p class="tenue">Esta PR todavía no tiene explicación.</p>
-      <p style="margin-top:12px"><button class="btn chico" data-accion="analizar" ${trabajoActivo(pr) ? 'disabled' : ''}>${icono('chispa')} ${trabajoActivo(pr) ? 'Analizando' : 'Analizar con IA'}</button></p></div>`;
+      <p style="margin-top:12px"><button class="btn chico" data-accion="analizar" ${trabajoActivo(pr) ? 'disabled' : ''}>${trabajoActivo(pr) ? `${icono('actualizar', 'girando')} Analizando` : `${icono('chispa')} Analizar con IA`}</button></p></div>`;
     return `<div class="seccion"><p class="tenue">Esta PR todavía no tiene explicación. Se genera desde Claude Code y aparece aquí al regenerar el tablero.</p>
       <p style="margin-top:12px"><button class="btn chico" data-copiar="/pw-revision:revisar-prs explicar ${esc(pr.repo)}#${pr.numero}">${icono('copiar')} Copiar el comando</button></p></div>`;
   }
@@ -1150,7 +1175,7 @@ function pintarDetalle() {
       <a class="btn primario" href="${esc(pr.url)}" target="_blank" rel="noopener">Abrir en GitHub ${icono('externo')}</a>
       <button class="btn" data-copiar="/plannotator-review ${esc(pr.url)}">${icono('copiar')} Revisar línea por línea</button>
       ${API
-        ? `<button class="btn" data-accion="analizar" ${trabajoActivo(pr) ? 'disabled' : ''}>${icono('chispa')} ${trabajoActivo(pr) ? 'Analizando' : pr.explicacion ? 'Volver a analizar con IA' : 'Analizar con IA'}</button>`
+        ? `<button class="btn" data-accion="analizar" ${trabajoActivo(pr) ? 'disabled' : ''}>${trabajoActivo(pr) ? `${icono('actualizar', 'girando')} Analizando` : `${icono('chispa')} ${pr.explicacion ? 'Volver a analizar con IA' : 'Analizar con IA'}`}</button>`
         : `<button class="btn" data-copiar="/pw-revision:revisar-prs explicar ${esc(pr.repo)}#${pr.numero}">${icono('copiar')} ${pr.explicacion ? 'Regenerar explicación' : 'Explicar'}</button>`}
     </div>
     ${pilaEstados(pr)}
