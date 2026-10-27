@@ -5,6 +5,7 @@ import { leerJson, rutaExplicacion, rutaInstantanea } from './cache.mjs';
 import { diffsDeFoto } from './diffs.mjs';
 
 const PLANTILLA = join(dirname(fileURLToPath(import.meta.url)), '../tablero/plantilla.html');
+const ANCLAJE = join(dirname(fileURLToPath(import.meta.url)), '../tablero/anclaje.js');
 
 // La foto con las explicaciones vigentes al momento de servirla (pueden haberse escrito después de la foto).
 export function fotoConExplicaciones(p) {
@@ -23,6 +24,7 @@ const incrustar = (v) => JSON.stringify(v).replace(/</g, '\\u003c');
 // p: proyecto, para incrustar los diffs guardados.
 export const construirHtml = (p, foto, api = null) =>
   readFileSync(PLANTILLA, 'utf8')
+    .replace('/*ANCLAJE*/', () => readFileSync(ANCLAJE, 'utf8'))
     .replace('/*DATOS*/null', () => incrustar(foto))
     .replace('/*API*/null', () => incrustar(api))
     .replace('/*DIFFS*/null', () => incrustar(diffsDeFoto(p, foto)));

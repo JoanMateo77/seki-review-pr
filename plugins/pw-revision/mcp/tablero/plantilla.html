@@ -212,6 +212,12 @@ body[data-enfoque] .lateral, body[data-enfoque] .cola { display: none; }
 .ajustar .codigo-diff td.c { white-space: pre-wrap; overflow-wrap: anywhere; }
 .codigo-diff tr.add td { background: var(--verde-bg); } .codigo-diff tr.add td.n { color: var(--verde); }
 .codigo-diff tr.del td { background: var(--rojo-bg); } .codigo-diff tr.del td.n { color: var(--rojo); }
+.n-sel { all: unset; display: block; width: 100%; cursor: pointer; text-align: right; }
+.n-sel:hover { color: var(--acento); }
+.n-sel:focus-visible { outline: 2px solid var(--acento); outline-offset: -2px; }
+.codigo-diff tr.sel td { background: var(--sel); }
+.codigo-diff tr.sel td.n { box-shadow: inset 2px 0 0 var(--acento); }
+.codigo-diff tr.sel td.n + td.n { box-shadow: none; }
 .codigo-diff tr.hunk td { background: var(--sel); color: var(--texto-2); padding-top: 3px; padding-bottom: 3px; }
 .codigo-diff td.c::before { display: inline-block; width: 1.2ch; color: var(--texto-3); }
 .codigo-diff tr.add td.c::before { content: '+'; color: var(--verde); }
@@ -310,6 +316,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 </div>
 <input type="file" id="archivoRevision" accept="application/json,.json" hidden>
 
+<script>/*ANCLAJE*/</script>
 <script>
 let FOTO = /*DATOS*/null;
 // Con el servidor local (tablero_servir) llega { token } y aparecen las acciones; como archivo suelto es null.
@@ -358,6 +365,8 @@ const gh = (repo, n) => `https://github.com/${FOTO.owner}/${repo}/pull/${n}`;
 const estado = {
   rol: almacen.leer('pw-revision:rol', 'autor'),
   vista: 'cola',
+  seleccionLineas: null,
+  lineasArchivo: [],
   portal: null,
   filtros: new Set(),
   cerrados: new Set(almacen.leer('pw-revision:cerrados', ['pruebas_automaticas'])),
@@ -641,39 +650,56 @@ function barrita(a, d) {
 }
 
 // Filas de un parche unificado con número de línea viejo y nuevo; los hallazgos se cuelgan bajo su línea nueva.
-function filasDiff(patch, hallazgos) {
+// k: índice del archivo en la pestaña, para ubicar la selección de líneas.
+function filasDiff(lineas, hallazgos, k) {
   const filas = [];
-  let viejo = 0;
-  let nuevo = 0;
   const porLinea = new Map();
   for (const h of hallazgos) {
     if (!porLinea.has(h.linea)) porLinea.set(h.linea, []);
     porLinea.get(h.linea).push(h);
   }
   const color = { bloqueante: 'rojo', alto: 'ambar', medio: '', aviso: '' };
-  for (const l of patch.split('\n')) {
-    const h = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/.exec(l);
-    if (h) {
-      viejo = +h[1]; nuevo = +h[2];
-      filas.push(`<tr class="hunk"><td class="n"></td><td class="n"></td><td class="c">${esc(l)}</td></tr>`);
+  const sel = estado.seleccionLineas?.archivo === k ? clavesSeleccion() : new Set();
+  const num = (n, clave) => (n === null ? '<td class="n"></td>' : `<td class="n"><button class="n-sel" data-sel="${clave}" aria-label="Seleccionar línea ${n}">${n}</button></td>`);
+  for (const l of lineas) {
+    if (l.tipo === 'hunk') {
+      filas.push(`<tr class="hunk"><td class="n"></td><td class="n"></td><td class="c">${esc(l.texto)}</td></tr>`);
       continue;
     }
-    if (l.startsWith('\\')) continue;
-    const tipo = l[0] === '+' ? 'add' : l[0] === '-' ? 'del' : 'ctx';
-    const texto = esc(l.slice(1));
-    if (tipo === 'add') filas.push(`<tr class="add"><td class="n"></td><td class="n">${nuevo}</td><td class="c">${texto}</td></tr>`);
-    else if (tipo === 'del') filas.push(`<tr class="del"><td class="n">${viejo}</td><td class="n"></td><td class="c">${texto}</td></tr>`);
-    else filas.push(`<tr class="ctx"><td class="n">${viejo}</td><td class="n">${nuevo}</td><td class="c">${texto}</td></tr>`);
-    if (tipo !== 'del' && porLinea.has(nuevo)) {
-      for (const x of porLinea.get(nuevo)) {
+    const clave = PWAnclaje.claveLinea(l);
+    filas.push(`<tr class="${l.tipo}${sel.has(clave) ? ' sel' : ''}" data-clave="${clave}">${num(l.viejo, clave)}${num(l.nuevo, clave)}<td class="c">${esc(l.texto)}</td></tr>`);
+    if (l.tipo !== 'del' && porLinea.has(l.nuevo)) {
+      for (const x of porLinea.get(l.nuevo)) {
         filas.push(`<tr class="nota"><td class="n"></td><td class="n"></td><td><span class="estado ${color[x.severidad]}">${esc(x.severidad)}</span> <strong>${esc(x.titulo)}</strong> · <span class="tenue">${esc(x.mensaje)}</span></td></tr>`);
       }
     }
-    if (tipo === 'add') nuevo++;
-    else if (tipo === 'del') viejo++;
-    else { viejo++; nuevo++; }
   }
   return filas.join('');
+}
+
+// Selección de líneas del diff: clic marca una línea, Shift + clic extiende el rango dentro del mismo archivo.
+function rangoSeleccion() {
+  const s = estado.seleccionLineas;
+  if (!s) return null;
+  return PWAnclaje.normalizarRango(estado.lineasArchivo[s.archivo] ?? [], s.claveA, s.claveB);
+}
+
+const clavesSeleccion = () => new Set(rangoSeleccion()?.claves ?? []);
+
+function marcarSeleccion() {
+  document.querySelectorAll('.codigo-diff tr.sel').forEach((f) => f.classList.remove('sel'));
+  const s = estado.seleccionLineas;
+  if (!s) return;
+  const tabla = document.querySelector(`#${idArchivo(s.archivo)} .codigo-diff`);
+  for (const clave of clavesSeleccion()) tabla?.querySelector(`tr[data-clave="${clave}"]`)?.classList.add('sel');
+}
+
+function seleccionarLinea(boton, extender) {
+  const k = +boton.closest('.archivo').dataset.k;
+  const clave = boton.dataset.sel;
+  const previa = estado.seleccionLineas;
+  estado.seleccionLineas = extender && previa?.archivo === k ? { ...previa, claveB: clave } : { archivo: k, claveA: clave, claveB: clave };
+  marcarSeleccion();
 }
 
 function ordenarArchivos(pr, archivos) {
@@ -696,6 +722,7 @@ function tabArchivos(pr) {
     return `<p class="tenue">Este tablero no trae el diff de esta PR. Véalo en <a href="${esc(pr.url)}/files" target="_blank" rel="noopener">GitHub</a> o regenere el tablero.</p>`;
   }
   archivos = ordenarArchivos(pr, archivos);
+  estado.lineasArchivo = archivos.map((a) => (a.patch !== undefined ? PWAnclaje.lineasDePatch(a.patch) : []));
   const vistos = new Set(almacen.leer(claveVistos(pr), []));
   const hallazgos = pr.verificaciones?.hallazgos ?? [];
   const ajustar = almacen.leer('pw-revision:ajustar', false);
@@ -719,9 +746,9 @@ function tabArchivos(pr) {
       const plegado = vistos.has(a.filename) || k >= plegarDesde;
       const propios = hallazgos.filter((h) => h.archivo === a.filename && h.linea);
       const cuerpo = a.patch !== undefined
-        ? `<div class="codigo-diff"><table>${filasDiff(a.patch, propios)}</table></div>${a.recortado ? `<div class="aviso-diff">El resto de este archivo no viene en el tablero. <a href="${esc(pr.url)}/files" target="_blank" rel="noopener">Ver completo en GitHub</a>.</div>` : ''}`
+        ? `<div class="codigo-diff"><table>${filasDiff(estado.lineasArchivo[k], propios, k)}</table></div>${a.recortado ? `<div class="aviso-diff">El resto de este archivo no viene en el tablero. <a href="${esc(pr.url)}/files" target="_blank" rel="noopener">Ver completo en GitHub</a>.</div>` : ''}`
         : `<div class="aviso-diff">${a.recortado ? 'La PR supera el tope de líneas que trae el tablero.' : 'GitHub no muestra el diff de este archivo (binario o demasiado grande).'} <a href="${esc(pr.url)}/files" target="_blank" rel="noopener">Ver en GitHub</a>.</div>`;
-      return `<section class="archivo" id="${idArchivo(k)}" ${plegado ? 'data-plegado' : ''}>
+      return `<section class="archivo" id="${idArchivo(k)}" data-k="${k}" ${plegado ? 'data-plegado' : ''}>
         <div class="archivo-cab">
           <button class="plegar" data-plegar="${idArchivo(k)}" aria-label="Plegar o desplegar">${icono('chevron')}</button>
           <span class="estado">${ESTADO_ARCHIVO[a.status] ?? esc(a.status)}</span>
@@ -851,6 +878,7 @@ function pintarTodo({ detalle = true } = {}) {
 }
 
 function seleccionar(id, { enfocar = false } = {}) {
+  if (estado.seleccion !== id) estado.seleccionLineas = null;
   estado.seleccion = id;
   history.replaceState(null, '', `#${encodeURIComponent(id)}/${estado.tab}`);
   document.body.dataset.vista = 'detalle';
@@ -941,6 +969,8 @@ document.addEventListener('click', (ev) => {
   if (salto) { ev.preventDefault(); const a = $(salto.dataset.saltar); a.removeAttribute('data-plegado'); a.scrollIntoView({ block: 'start' }); return; }
   const ir = ev.target.closest('a[data-ir]');
   if (ir) { ev.preventDefault(); return seleccionar(ir.dataset.ir); }
+  const nSel = ev.target.closest('.n-sel');
+  if (nSel) return seleccionarLinea(nSel, ev.shiftKey);
   const t = ev.target.closest('button, a[data-tab-ir]');
   if (!t) return;
   const d = t.dataset;
@@ -1032,6 +1062,7 @@ document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape') ev.target.blur();
     return;
   }
+  if (ev.key === 'Escape' && estado.seleccionLineas) { estado.seleccionLineas = null; return marcarSeleccion(); }
   if (ev.key === 'Escape' && document.body.hasAttribute('data-enfoque')) { document.body.removeAttribute('data-enfoque'); return pintarDetalle(); }
   if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
   const filas = [...document.querySelectorAll('.grupo:not([data-cerrado]) .fila')];
