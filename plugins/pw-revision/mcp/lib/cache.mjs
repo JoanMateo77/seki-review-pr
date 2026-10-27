@@ -17,3 +17,6 @@ export const rutaDiff = (salida, repo, numero) => join(salida, 'diffs', `${repo}
 export const rutaComentarios = (salida, repo, numero) => join(salida, 'comentarios', `${repo}-${numero}.json`);
 export const rutaCostos = (salida) => join(salida, 'datos', 'costos.jsonl');
 export const rutaRespuesta = (salida, clave) => join(salida, 'respuestas', `${clave}.json`);
+export const rutaCopia = (salida, repo, numero) => join(salida, 'copias', `${repo}-${numero}`);
+export const rutaBaseline = (salida, repo, sha) => join(salida, 'datos', 'baseline', `${repo}-${sha}.json`);
+export const rutaPropuestas = (salida, repo, numero) => join(salida, 'propuestas', `${repo}-${numero}`);
