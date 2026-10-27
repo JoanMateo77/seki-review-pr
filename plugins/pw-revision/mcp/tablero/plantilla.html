@@ -400,6 +400,8 @@ const estado = {
   archivosTab: [],
   caja: null,
   confirmarDescarte: false,
+  comentariosCargados: new Set(),
+  marcasComentarios: {},
   portal: null,
   filtros: new Set(),
   cerrados: new Set(almacen.leer('pw-revision:cerrados', ['pruebas_automaticas'])),
@@ -709,21 +711,41 @@ function escribirComentarios(pr, lista) {
 }
 
 function guardarComentario(pr, c) {
-  const lista = comentarios(pr).filter((x) => x.id !== c.id);
-  lista.push({ ...c, actualizado: new Date().toISOString() });
-  escribirComentarios(pr, lista);
+  const nuevo = { ...c, actualizado: new Date().toISOString() };
+  escribirComentarios(pr, [...comentarios(pr).filter((x) => x.id !== c.id), nuevo]);
+  sincronizarComentarios(pr, [nuevo]);
 }
 
-const borrarComentario = (pr, id) => escribirComentarios(pr, comentarios(pr).filter((x) => x.id !== id));
+function borrarComentarios(pr, ids) {
+  escribirComentarios(pr, comentarios(pr).filter((x) => !ids.includes(x.id)));
+  sincronizarComentarios(pr, [], ids);
+}
 
-// Junta comentarios por id; gana el de actualización más reciente.
+// Junta comentarios por id; gana el de actualización más reciente, salvo que el servidor ya lo haya sacado
+// de borrador o nota: eso no se revierte desde el navegador.
+const DEL_NAVEGADOR = new Set(['borrador', 'nota']);
 function fusionarComentarios(actuales, entrantes) {
   const porId = new Map(actuales.map((c) => [c.id, c]));
   for (const c of entrantes) {
     const previo = porId.get(c.id);
+    if (previo && !DEL_NAVEGADOR.has(previo.estado) && DEL_NAVEGADOR.has(c.estado)) continue;
     if (!previo || (c.actualizado ?? '') > (previo.actualizado ?? '')) porId.set(c.id, c);
   }
   return [...porId.values()];
+}
+
+// Con el tablero servido, los comentarios también viven en disco: no se pierden y la IA los lee.
+async function sincronizarComentarios(pr, cambios = [], borrados = []) {
+  if (!API) return;
+  try {
+    const delServidor = cambios.length || borrados.length
+      ? await api('/api/comentarios', { id: pr.id, comentarios: cambios, borrados })
+      : await api(`/api/comentarios?id=${encodeURIComponent(pr.id)}`);
+    const antes = JSON.stringify(comentarios(pr));
+    escribirComentarios(pr, fusionarComentarios(comentarios(pr).filter((c) => !borrados.includes(c.id)), delServidor));
+    estado.comentariosCargados.add(pr.id);
+    if (JSON.stringify(comentarios(pr)) !== antes && estado.seleccion === pr.id && !$('detalle').contains(document.activeElement)) { repintarDetalle(); pintarCola(); }
+  } catch (err) { avisar(`Los comentarios quedaron solo en este navegador: ${err.message}`); }
 }
 
 function leerCaja() {
@@ -923,6 +945,7 @@ function tabArchivos(pr) {
   archivos = ordenarArchivos(pr, archivos);
   estado.lineasArchivo = archivos.map((a) => (a.patch !== undefined ? PWAnclaje.lineasDePatch(a.patch) : []));
   estado.archivosTab = archivos.map((a) => a.filename);
+  if (API && !estado.comentariosCargados.has(pr.id)) { estado.comentariosCargados.add(pr.id); sincronizarComentarios(pr); }
   const lista = vivos(pr);
   const anclados = archivos.map((_, k) => new Map());
   const sueltos = archivos.map(() => []);
@@ -1071,6 +1094,12 @@ async function sondear() {
     estado.trabajos = new Map(e.trabajos.map((t) => [t.id, t]));
     estado.refrescando = e.refrescando;
     estado.ultimoRefresco = e.ultimoRefresco;
+    const marcas = e.comentarios ?? {};
+    for (const [id, marca] of Object.entries(marcas)) {
+      const pr = FOTO.prs.find((x) => x.id === id);
+      if (pr && estado.marcasComentarios[id] !== marca && estado.comentariosCargados.has(id)) sincronizarComentarios(pr);
+    }
+    estado.marcasComentarios = marcas;
     const termino = e.trabajos.some((t) => t.estado === 'terminado' && previo.get(t.id) !== 'terminado') || (eraRefresco && !e.refrescando);
     if (termino) FOTO = await api('/api/foto');
     // Si la persona está escribiendo en el detalle, no se repinta: perdería el foco y el texto a medio escribir.
@@ -1246,12 +1275,12 @@ document.addEventListener('click', (ev) => {
   if (d.accion === 'cajaAgregar') return agregarComentario();
   if (d.accion === 'cajaCancelar') return cerrarCaja();
   if (d.comEditar) return editarComentario(prSel(), d.comEditar);
-  if (d.comBorrar) { borrarComentario(prSel(), d.comBorrar); repintarDetalle(); return pintarCola(); }
+  if (d.comBorrar) { borrarComentarios(prSel(), [d.comBorrar]); repintarDetalle(); return pintarCola(); }
   if (d.accion === 'descartarBorradores') {
     if (!estado.confirmarDescarte) { estado.confirmarDescarte = true; return repintarDetalle(); }
     estado.confirmarDescarte = false;
     const pr = prSel();
-    escribirComentarios(pr, comentarios(pr).filter((c) => c.estado !== 'borrador'));
+    borrarComentarios(pr, borradores(pr).map((c) => c.id));
     repintarDetalle();
     return pintarCola();
   }

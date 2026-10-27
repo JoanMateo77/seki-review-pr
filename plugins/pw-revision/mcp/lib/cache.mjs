@@ -14,3 +14,4 @@ export const rutaCacheEstados = (salida) => join(salida, 'datos', 'estados-cache
 export const rutaVerificacion = (salida, repo, numero) => join(salida, 'verificaciones', `${repo}-${numero}.json`);
 export const rutaCacheVerificaciones = (salida) => join(salida, 'datos', 'verificaciones-cache.json');
 export const rutaDiff = (salida, repo, numero) => join(salida, 'diffs', `${repo}-${numero}.json`);
+export const rutaComentarios = (salida, repo, numero) => join(salida, 'comentarios', `${repo}-${numero}.json`);

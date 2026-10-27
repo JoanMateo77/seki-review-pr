@@ -9,6 +9,7 @@ import { recolectar } from './recolectar.mjs';
 import { construirHtml, fotoConExplicaciones } from './tablero.mjs';
 import { crearCola } from './trabajos.mjs';
 import { asegurarDiff, diffParaTablero } from './diffs.mjs';
+import { guardarComentarios, leerComentarios, marcasComentarios } from './comentarios.mjs';
 
 const PUERTO = 4317;
 const MAX_CUERPO = 64 * 1024;
@@ -68,7 +69,23 @@ export async function iniciarServidor({ proyecto = 'demo', puerto = PUERTO, abri
     if (!url.pathname.startsWith('/api/')) return responder(res, 404, { error: 'No existe' });
     if (req.headers['x-pw-token'] !== token) return responder(res, 403, { error: 'Token inválido' });
 
+    const prDeFoto = (id) => {
+      const pr = fotoConExplicaciones(p)?.prs.find((x) => x.id === id);
+      if (!pr) throw Object.assign(new Error('PR fuera de la foto'), { codigo: 404 });
+      return pr;
+    };
+
     try {
+      if (req.method === 'GET' && url.pathname === '/api/comentarios') {
+        const pr = prDeFoto(url.searchParams.get('id'));
+        return responder(res, 200, leerComentarios(p, pr.repo, pr.numero));
+      }
+      if (req.method === 'POST' && url.pathname === '/api/comentarios') {
+        const { id, comentarios = [], borrados = [] } = await leerCuerpo(req);
+        const pr = prDeFoto(id);
+        if (!Array.isArray(comentarios) || !Array.isArray(borrados)) throw new Error('comentarios y borrados deben ser listas');
+        return responder(res, 200, guardarComentarios(p, pr.repo, pr.numero, comentarios, borrados));
+      }
       if (req.method === 'GET' && url.pathname === '/api/foto') return responder(res, 200, fotoConExplicaciones(p));
       if (req.method === 'GET' && url.pathname === '/api/diff') {
         const pr = fotoConExplicaciones(p).prs.find((x) => x.id === url.searchParams.get('id'));
@@ -76,7 +93,7 @@ export async function iniciarServidor({ proyecto = 'demo', puerto = PUERTO, abri
         return responder(res, 200, diffParaTablero(await asegurarDiff(p, pr.repo, pr.numero, pr.headSha)));
       }
       if (req.method === 'GET' && url.pathname === '/api/estado') {
-        return responder(res, 200, { refrescando: !!refresco, ultimoRefresco, trabajos: cola.lista() });
+        return responder(res, 200, { refrescando: !!refresco, ultimoRefresco, trabajos: cola.lista(), comentarios: marcasComentarios() });
       }
       if (req.method === 'POST' && url.pathname === '/api/refrescar') {
         refrescar();
@@ -93,7 +110,7 @@ export async function iniciarServidor({ proyecto = 'demo', puerto = PUERTO, abri
       if (req.method === 'POST' && url.pathname === '/api/cancelar-cola') return responder(res, 200, { cancelados: cola.vaciar() });
       return responder(res, 404, { error: 'No existe' });
     } catch (e) {
-      return responder(res, 400, { error: e.message });
+      return responder(res, e.codigo ?? 400, { error: e.message });
     }
   });
 
