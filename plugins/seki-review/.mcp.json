@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "seki-review": {
+      "command": "sh",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/bin/servidor.sh"]
+    }
+  }
+}

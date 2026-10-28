@@ -1,0 +1,63 @@
+{
+  "demo": {
+    "nombre": "Demo",
+    "owner": "mi-organizacion",
+    "autor": "@me",
+    "salida": "~/seki-review/demo",
+    "contexto": "Describir aquí el proyecto (stack, repos) y las reglas de texto o de código que la IA debe respetar.",
+    "lineamientos": "~/.claude/skills/mis-lineamientos",
+    "reglas": [
+      {
+        "id": "ejemplo-todo",
+        "titulo": "TODO nuevo",
+        "severidad": "aviso",
+        "archivos": "\\.(ts|js)$",
+        "patron": "\\bTODO\\b",
+        "mensaje": "Dejar un ticket en lugar de un TODO.",
+        "origen": "Ejemplo de regla propia del proyecto."
+      }
+    ],
+    "repos": {
+      "api": {
+        "etiqueta": "Back",
+        "checkout": "~/codigo/api",
+        "lineas": [
+          {
+            "portal": "Back",
+            "prod": "main",
+            "pruebas": "develop"
+          }
+        ],
+        "inactivas": {
+          "legacy": "Rama antigua sin despliegue"
+        },
+        "comprobar": {
+          "node": "node",
+          "tipos": [
+            "node_modules/.bin/tsc",
+            "--noEmit",
+            "-p",
+            "tsconfig.json"
+          ],
+          "tests": [
+            "node_modules/.bin/jest",
+            "--findRelatedTests",
+            "<archivos>",
+            "--passWithNoTests"
+          ]
+        }
+      },
+      "web": {
+        "etiqueta": "Front",
+        "checkout": "~/codigo/web",
+        "lineas": [
+          {
+            "portal": "Web",
+            "prod": "main",
+            "pruebas": "develop"
+          }
+        ]
+      }
+    }
+  }
+}

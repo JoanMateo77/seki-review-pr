@@ -1,0 +1,1977 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Revisión de PRs</title>
+<style>
+:root {
+  --bg: #fbfbfa; --panel: #ffffff; --lateral: #f4f4f2; --hover: #efefec; --sel: #e9eef8;
+  --linea: #e4e4e0; --linea-fuerte: #d3d3ce;
+  --texto: #1d1f22; --texto-2: #5b5f66; --texto-3: #80848b;
+  --acento: #2f5bd3; --acento-texto: #ffffff;
+  --verde: #1f7a4a; --verde-bg: #e6f2eb; --ambar: #8f5b00; --ambar-bg: #f8eedb;
+  --rojo: #b42318; --rojo-bg: #fbe9e7; --violeta: #6941c6; --violeta-bg: #efeafb; --gris-bg: #efefec;
+  --sombra: 0 1px 2px rgba(20, 22, 26, .06), 0 4px 12px rgba(20, 22, 26, .04);
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141517; --panel: #1a1b1e; --lateral: #17181a; --hover: #222327; --sel: #1f2a40;
+    --linea: #2a2b30; --linea-fuerte: #36383e;
+    --texto: #e7e8ea; --texto-2: #a3a7ae; --texto-3: #7d818a;
+    --acento: #7a9cff; --acento-texto: #0d1530;
+    --verde: #5cc68c; --verde-bg: #15291e; --ambar: #e0b25c; --ambar-bg: #2e2412;
+    --rojo: #ff8a7a; --rojo-bg: #351816; --violeta: #b49cff; --violeta-bg: #261e3d; --gris-bg: #232428;
+    --sombra: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 12px rgba(0, 0, 0, .2);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141517; --panel: #1a1b1e; --lateral: #17181a; --hover: #222327; --sel: #1f2a40;
+  --linea: #2a2b30; --linea-fuerte: #36383e;
+  --texto: #e7e8ea; --texto-2: #a3a7ae; --texto-3: #7d818a;
+  --acento: #7a9cff; --acento-texto: #0d1530;
+  --verde: #5cc68c; --verde-bg: #15291e; --ambar: #e0b25c; --ambar-bg: #2e2412;
+  --rojo: #ff8a7a; --rojo-bg: #351816; --violeta: #b49cff; --violeta-bg: #261e3d; --gris-bg: #232428;
+  --sombra: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 12px rgba(0, 0, 0, .2);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--texto); font: 13px/1.5 var(--sans); -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums; }
+::selection { background: var(--sel); color: var(--texto); }
+* { scrollbar-width: thin; scrollbar-color: var(--linea-fuerte) transparent; }
+a { color: var(--acento); text-underline-offset: 2px; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; border-radius: 4px; }
+input[type=checkbox], input[type=radio] { accent-color: var(--acento); }
+.mono { font-family: var(--mono); font-size: 12px; }
+.tenue { color: var(--texto-2); }
+.muy-tenue { color: var(--texto-3); }
+svg.i { width: 14px; height: 14px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; vertical-align: -2px; }
+
+/* Estructura: barra superior + lateral + cola + detalle */
+.app { --ancho-lateral: 232px; --ancho-cola: clamp(300px, 27vw, 440px); display: grid; grid-template-columns: var(--ancho-lateral) var(--ancho-cola) minmax(0, 1fr); grid-template-rows: 48px 1fr; height: 100vh; }
+.barra { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; padding: 0 16px; border-bottom: 1px solid var(--linea); background: var(--panel); }
+.btn-lateral { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; margin-left: -6px; border: 0; border-radius: 6px; background: none; color: var(--texto-2); cursor: pointer; }
+.btn-lateral:hover { background: var(--hover); color: var(--texto); }
+.barra h1 { font-size: 13px; font-weight: 600; margin: 0; white-space: nowrap; }
+.barra .foto { color: var(--texto-3); white-space: nowrap; }
+.buscar { flex: 1; max-width: 420px; margin-left: auto; position: relative; }
+.buscar input { width: 100%; height: 30px; padding: 0 30px; border: 1px solid var(--linea); border-radius: 6px; background: var(--bg); }
+.buscar input:hover { border-color: var(--linea-fuerte); }
+.buscar svg { position: absolute; left: 9px; top: 8px; color: var(--texto-3); }
+.buscar kbd { position: absolute; right: 8px; top: 6px; }
+kbd { font: 12px/1.2 var(--mono); padding: 1px 5px; border: 1px solid var(--linea-fuerte); border-bottom-width: 2px; border-radius: 4px; color: var(--texto-2); background: var(--panel); }
+.rol { display: inline-flex; border: 1px solid var(--linea); border-radius: 6px; padding: 2px; background: var(--bg); }
+.rol button { border: 0; background: none; padding: 3px 10px; border-radius: 4px; cursor: pointer; color: var(--texto-2); }
+.rol button:hover { color: var(--texto); }
+.rol button[aria-pressed="true"] { background: var(--panel); color: var(--texto); box-shadow: var(--sombra); }
+
+.lateral { background: var(--lateral); border-right: 1px solid var(--linea); overflow: auto; padding: 12px 8px 24px; }
+.lateral h2 { font-size: 12px; font-weight: 600; color: var(--texto-3); margin: 18px 8px 4px; }
+.lateral h2:first-child { margin-top: 4px; }
+.nav { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: none; padding: 5px 8px; border-radius: 5px; cursor: pointer; text-align: left; color: var(--texto-2); }
+.nav:hover { background: var(--hover); color: var(--texto); }
+.nav[aria-pressed="true"] { background: var(--panel); color: var(--texto); box-shadow: var(--sombra); font-weight: 500; }
+.nav .n { margin-left: auto; color: var(--texto-3); font-size: 12px; font-weight: 400; }
+.punto { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--linea-fuerte); }
+.punto.rojo { background: var(--rojo); } .punto.ambar { background: var(--ambar); } .punto.verde { background: var(--verde); } .punto.violeta { background: var(--violeta); }
+
+/* Cola */
+.cola { overflow: auto; border-right: 1px solid var(--linea); background: var(--panel); }
+.grupo-cab { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 14px; background: var(--lateral); border: 0; border-bottom: 1px solid var(--linea); cursor: pointer; text-align: left; font-weight: 600; }
+.grupo-cab:hover { background: var(--hover); }
+.grupo-cab > span:nth-of-type(1) { white-space: nowrap; }
+.grupo-cab .n { color: var(--texto-3); font-weight: 400; }
+.grupo-cab .desc { flex: 1; color: var(--texto-3); font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.grupo-cab svg { color: var(--texto-3); transition: transform .15s ease-out; }
+.grupo[data-cerrado] .grupo-cab svg { transform: rotate(-90deg); }
+.grupo[data-cerrado] .filas { display: none; }
+.fila { display: grid; grid-template-columns: 8px 92px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; min-height: 38px; padding: 6px 14px; border: 0; border-bottom: 1px solid var(--linea); background: none; cursor: pointer; text-align: left; }
+.fila:hover { background: var(--hover); }
+.fila[aria-current="true"] { background: var(--sel); }
+.fila .id { color: var(--texto-3); white-space: nowrap; }
+.fila .titulo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fila .senales { display: flex; align-items: center; gap: 10px; color: var(--texto-3); font-size: 12px; white-space: nowrap; }
+.senal { display: inline-flex; align-items: center; gap: 3px; }
+.senal.rojo { color: var(--rojo); } .senal.ambar { color: var(--ambar); } .senal.verde { color: var(--verde); }
+.vacio { padding: 48px 24px; text-align: center; color: var(--texto-2); }
+.vacio p { max-width: 40ch; margin: 0 auto; }
+.vacio button { margin-top: 12px; }
+
+/* Detalle */
+.detalle { overflow: auto; background: var(--bg); }
+.det { max-width: 820px; padding: 20px 28px 56px; }
+.det-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; color: var(--texto-2); }
+.det h2 { font-size: 20px; line-height: 1.35; font-weight: 600; margin: 10px 0 8px; text-wrap: balance; }
+.mas { color: var(--verde); } .menos { color: var(--rojo); }
+.acciones { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 18px; }
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--panel); cursor: pointer; text-decoration: none; color: var(--texto); white-space: nowrap; transition: background-color .15s ease-out; }
+.btn:hover { background: var(--hover); }
+.btn:active { transform: translateY(1px); }
+.btn.primario { background: var(--acento); border-color: var(--acento); color: var(--acento-texto); }
+.btn.primario:hover { filter: brightness(1.08); background: var(--acento); }
+.btn.chico { height: 26px; padding: 0 9px; font-size: 12px; }
+.estado { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; background: var(--gris-bg); color: var(--texto-2); }
+.estado.verde { background: var(--verde-bg); color: var(--verde); } .estado.ambar { background: var(--ambar-bg); color: var(--ambar); }
+.estado.rojo { background: var(--rojo-bg); color: var(--rojo); } .estado.violeta { background: var(--violeta-bg); color: var(--violeta); }
+
+.checks { border: 1px solid var(--linea); border-radius: 8px; background: var(--panel); overflow: hidden; }
+.check { display: grid; grid-template-columns: 16px 132px minmax(0, 1fr); gap: 10px; align-items: start; padding: 9px 14px; border-bottom: 1px solid var(--linea); }
+.check:last-child { border-bottom: 0; }
+.check .icono { padding-top: 1px; color: var(--texto-3); }
+.check .icono.verde { color: var(--verde); } .check .icono.ambar { color: var(--ambar); } .check .icono.rojo { color: var(--rojo); }
+.check .nombre { color: var(--texto-2); }
+.check .valor small { display: block; color: var(--texto-3); font-size: 12px; }
+
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--linea); margin: 24px 0 18px; overflow-x: auto; }
+.tab { border: 0; background: none; padding: 8px 12px; cursor: pointer; color: var(--texto-2); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+.tab:hover { color: var(--texto); }
+.tab[aria-selected="true"] { color: var(--texto); border-bottom-color: var(--acento); font-weight: 500; }
+.tab .n { color: var(--texto-3); margin-left: 5px; font-weight: 400; }
+
+.seccion { margin: 0 0 24px; }
+.seccion h3 { font-size: 13px; font-weight: 600; margin: 0 0 6px; }
+.seccion p { margin: 0; max-width: 72ch; }
+.seccion ul, .seccion ol { margin: 0; padding-left: 20px; max-width: 72ch; }
+.seccion li + li { margin-top: 4px; }
+.lectura .mono { color: var(--texto); }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--linea); }
+th { font-weight: 500; color: var(--texto-3); font-size: 12px; }
+.tabla { border: 1px solid var(--linea); border-radius: 8px; background: var(--panel); overflow: auto; }
+.tabla tr:last-child td { border-bottom: 0; }
+.codigo { display: block; margin-top: 4px; padding: 4px 6px; border-radius: 4px; background: var(--bg); font: 12px/1.4 var(--mono); color: var(--texto-2); overflow-wrap: anywhere; }
+pre.mermaid { margin: 0; padding: 16px; border: 1px solid var(--linea); border-radius: 8px; background: var(--panel); overflow: auto; font: 12px var(--mono); color: var(--texto-2); }
+.sin-dato { color: var(--texto-3); }
+.nota-pie { margin-top: 28px; padding-top: 12px; border-top: 1px solid var(--linea); color: var(--texto-3); font-size: 12px; }
+
+.pasos { list-style: none; padding: 0; margin: 0; border: 1px solid var(--linea); border-radius: 8px; background: var(--panel); }
+.pasos li { display: flex; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--linea); }
+.pasos li:last-child { border-bottom: 0; }
+.pasos input { margin-top: 3px; }
+.pasos input:checked + label { color: var(--texto-3); text-decoration: line-through; }
+
+.decision { display: flex; flex-wrap: wrap; gap: 8px; }
+.decision label { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--panel); cursor: pointer; }
+.decision label:hover { background: var(--hover); }
+.decision label:has(input:checked) { border-color: var(--acento); background: var(--sel); }
+textarea { width: 100%; min-height: 96px; padding: 8px 10px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--panel); color: var(--texto); font: inherit; resize: vertical; }
+.guardado { color: var(--texto-3); font-size: 12px; margin-top: 6px; min-height: 18px; }
+
+.ayuda { margin: 22px 8px 0; color: var(--texto-3); font-size: 12px; display: grid; gap: 6px; }
+.volver { display: none; }
+
+.girando { animation: girar 1s linear infinite; }
+@keyframes girar { to { transform: rotate(360deg); } }
+/* Trabajo de IA en curso: barra indeterminada, tiempo transcurrido y esqueleto de la explicación */
+.progreso { position: relative; height: 3px; margin-top: 8px; border-radius: 2px; background: var(--sel); overflow: hidden; }
+.progreso::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 35%; border-radius: 2px; background: var(--acento); animation: progreso 1.6s cubic-bezier(.4, 0, .2, 1) infinite; }
+@keyframes progreso { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+.transcurrido { font-variant-numeric: tabular-nums; color: var(--texto-2); }
+.esqueleto { display: grid; gap: 10px; margin-top: 14px; }
+.esqueleto span { display: block; height: 11px; border-radius: 4px; background: linear-gradient(90deg, var(--gris-bg) 0%, var(--hover) 40%, var(--sel) 50%, var(--hover) 60%, var(--gris-bg) 100%); background-size: 300% 100%; animation: brillo 1.8s ease-in-out infinite; }
+.esqueleto span:nth-child(1) { width: 92%; } .esqueleto span:nth-child(2) { width: 78%; } .esqueleto span:nth-child(3) { width: 85%; }
+.esqueleto span:nth-child(4) { width: 55%; margin-top: 8px; } .esqueleto span:nth-child(5) { width: 70%; }
+@keyframes brillo { from { background-position: 100% 0; } to { background-position: 0 0; } }
+.trabajando { display: flex; align-items: center; gap: 8px; color: var(--texto-2); }
+.trabajando .i { color: var(--acento); }
+.senal.azul { color: var(--acento); }
+.barra .acciones-barra { display: flex; align-items: center; gap: 8px; }
+.barra .acciones-barra .estado-texto { color: var(--texto-3); white-space: nowrap; }
+.btn[disabled] { opacity: .55; cursor: default; }
+.cambio { display: grid; grid-template-columns: 92px 92px minmax(0, 1fr); gap: 10px; align-items: center; padding: 6px 14px; border-bottom: 1px solid var(--linea); }
+.cambio .titulo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cambio a { color: inherit; text-decoration: none; }
+.cambio a:hover { text-decoration: underline; }
+
+/* Diff */
+body[data-enfoque] .app { grid-template-columns: 1fr; }
+body[data-sin-lateral] .app { grid-template-columns: var(--ancho-cola) minmax(0, 1fr); }
+body[data-sin-cola] .app { grid-template-columns: var(--ancho-lateral) minmax(0, 1fr); }
+body[data-sin-lateral][data-sin-cola] .app { grid-template-columns: minmax(0, 1fr); }
+body[data-sin-lateral] .lateral, body[data-sin-cola] .cola { display: none; }
+body[data-enfoque] .btn-lateral { display: none; }
+body[data-enfoque] .lateral, body[data-enfoque] .cola { display: none; }
+.det.ancho { max-width: none; }
+.diff-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 12px; color: var(--texto-2); }
+.diff-barra label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.diff-barra .der { margin-left: auto; display: flex; gap: 8px; }
+.indice { border: 1px solid var(--linea); border-radius: 8px; background: var(--panel); margin-bottom: 14px; }
+.indice a { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 12px; color: var(--texto); text-decoration: none; border-bottom: 1px solid var(--linea); }
+.indice a:last-child { border-bottom: 0; }
+.indice a:hover { background: var(--hover); }
+.indice .ruta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.indice .visto { color: var(--texto-3); text-decoration: line-through; }
+.barrita { display: inline-flex; gap: 1px; margin-left: 6px; vertical-align: 1px; }
+.barrita i { width: 7px; height: 7px; border-radius: 1px; background: var(--linea-fuerte); }
+.barrita i.a { background: var(--verde); } .barrita i.d { background: var(--rojo); }
+.archivo { border: 1px solid var(--linea); border-radius: 8px; background: var(--panel); margin-bottom: 14px; overflow: hidden; }
+.archivo-cab { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 10px; padding: 7px 12px; background: var(--lateral); border-bottom: 1px solid var(--linea); }
+.archivo-cab button.plegar { border: 0; background: none; padding: 0; cursor: pointer; color: var(--texto-3); display: inline-flex; }
+.archivo[data-plegado] .archivo-cab button.plegar svg { transform: rotate(-90deg); }
+.archivo[data-plegado] .codigo-diff, .archivo[data-plegado] .aviso-diff { display: none; }
+.archivo-cab .ruta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.archivo-cab label { display: inline-flex; align-items: center; gap: 5px; color: var(--texto-2); cursor: pointer; white-space: nowrap; }
+.codigo-diff { overflow-x: auto; }
+.codigo-diff table { border-collapse: collapse; width: 100%; font: 12px/1.55 var(--mono); }
+.codigo-diff td { padding: 0 10px; border: 0; vertical-align: top; }
+.codigo-diff td.n { width: 1%; min-width: 44px; text-align: right; color: var(--texto-3); user-select: none; padding: 0 8px; }
+.codigo-diff td.c { white-space: pre; }
+.ajustar .codigo-diff td.c { white-space: pre-wrap; overflow-wrap: anywhere; }
+.codigo-diff tr.add td { background: var(--verde-bg); } .codigo-diff tr.add td.n { color: var(--verde); }
+.codigo-diff tr.del td { background: var(--rojo-bg); } .codigo-diff tr.del td.n { color: var(--rojo); }
+.n-sel { all: unset; display: block; width: 100%; cursor: pointer; text-align: right; }
+.n-sel:hover { color: var(--acento); }
+.n-sel:focus-visible { outline: 2px solid var(--acento); outline-offset: -2px; }
+.codigo-diff tr.sel td { background: var(--sel); }
+.codigo-diff tr.sel td.n { box-shadow: inset 2px 0 0 var(--acento); }
+.codigo-diff tr.sel td.n + td.n { box-shadow: none; }
+.codigo-diff tr.caja td, .codigo-diff tr.hilo td { padding: 0; background: var(--panel); font-family: var(--sans); white-space: normal; }
+.codigo-diff { container-type: inline-size; }
+.caja-com, .hilo-com { position: sticky; left: 8px; box-sizing: border-box; width: min(720px, calc(100cqw - 110px)); margin: 6px 10px 8px 0; padding: 10px 12px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--panel); }
+.hilo-com { border-color: var(--linea); }
+.hilos-pr { display: grid; gap: 8px; margin-top: 10px; }
+.respuesta-a { border-left: 3px solid var(--linea-fuerte); }
+.respondiendo { margin: 6px 0; padding: 4px 8px; border-radius: 6px; background: var(--sel); color: var(--texto-2); font-size: .92em; }
+.leido { margin: 4px 0 0; font-size: .85em; }
+.leido summary { cursor: pointer; }
+.leido ul { margin: 4px 0 0; padding-left: 18px; }
+.origen { display: inline-flex; gap: 6px; align-items: center; margin: 0 0 14px; font-size: 12px; color: var(--texto-3); }
+.origen strong { font-weight: 600; color: var(--texto-2); }
+.cobertura { margin: 0 0 14px; }
+.cobertura ul { margin: 6px 0 0; padding-left: 18px; }
+.valorar { display: inline-flex; gap: 4px; align-items: center; }
+.valorar button[aria-pressed="true"] { color: var(--texto); font-weight: 600; text-decoration: underline; }
+.aviso-codigo { margin: 0 0 6px; color: var(--ambar); font-size: .92em; }
+.btn-texto.destacado { color: var(--acento); font-weight: 600; }
+.md p { margin: 0 0 8px; }
+.md ul, .md ol { margin: 0 0 8px; padding-left: 20px; }
+.md li { margin: 2px 0; }
+.md code { padding: 1px 4px; border-radius: 4px; background: var(--gris-bg); font-family: var(--mono); font-size: .9em; }
+.md-titulo { font-size: 1em; font-weight: 600; margin: 12px 0 4px; }
+.md-desc a { color: var(--acento); }
+.commits { margin: 0; padding-left: 0; list-style: none; }
+.commits li { padding: 6px 0; border-bottom: 1px solid var(--linea); }
+.commits li:last-child { border-bottom: 0; }
+.commits details { margin-top: 4px; }
+.md-codigo { margin: 6px 0 8px; padding: 8px 10px; border-radius: 6px; background: var(--gris-bg); font-family: var(--mono); font-size: .88em; overflow-x: auto; white-space: pre; }
+.md.plegada { max-height: 15em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 70%, transparent); mask-image: linear-gradient(#000 70%, transparent); }
+.barra-sel { position: fixed; z-index: 20; box-sizing: border-box; padding: 8px; border: 1px solid var(--linea-fuerte); border-radius: 8px; background: var(--panel); box-shadow: var(--sombra), 0 8px 24px rgba(0, 0, 0, .25); }
+.barra-sel-botones { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.barra-sel-botones .btn-texto { margin-left: auto; }
+.barra-sel-caja { margin-top: 8px; }
+.barra-sel textarea { width: 100%; box-sizing: border-box; margin: 6px 0; padding: 6px 8px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--bg); color: var(--texto); font: inherit; resize: vertical; }
+.cita { margin: 4px 0 6px; padding: 2px 0 2px 10px; border-left: 3px solid var(--acento); color: var(--texto-2); font-size: .92em; white-space: pre-wrap; }
+::highlight(seki-citado) { background-color: color-mix(in srgb, var(--acento) 28%, transparent); }
+.hilos-pr .hilo-com, .pregunta-pr .hilo-com { position: static; width: auto; margin: 0; }
+h3.con-accion { display: flex; align-items: center; gap: 10px; }
+h3.con-accion .btn-texto { display: inline-flex; align-items: center; gap: 4px; font-weight: 400; opacity: .55; transition: opacity .12s; }
+.seccion:hover h3.con-accion .btn-texto, h3.con-accion .btn-texto:focus-visible { opacity: 1; }
+.pregunta-pr textarea { width: 100%; box-sizing: border-box; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--panel); color: var(--texto); font: inherit; resize: vertical; }
+.pregunta-pr select { padding: 4px 8px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--panel); color: var(--texto); font: inherit; }
+.caja-cab, .hilo-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 8px; }
+.tabs-caja { display: inline-flex; border: 1px solid var(--linea-fuerte); border-radius: 6px; overflow: hidden; }
+.tabs-caja button { height: 24px; padding: 0 10px; border: 0; border-right: 1px solid var(--linea-fuerte); background: none; color: var(--texto-2); font-size: 12px; cursor: pointer; }
+.tabs-caja button:last-child { border-right: 0; }
+.tabs-caja button[aria-pressed="true"] { background: var(--sel); color: var(--texto); font-weight: 500; }
+.tabs-caja button:disabled { color: var(--texto-3); cursor: not-allowed; }
+.caja-com textarea { display: block; width: 100%; min-height: 64px; padding: 7px 9px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--bg); color: var(--texto); font: 13px/1.5 var(--sans); resize: vertical; }
+.caja-com textarea.mono { font: 12px/1.55 var(--mono); white-space: pre; margin-top: 8px; }
+.caja-com label { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; cursor: pointer; }
+.caja-acciones { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.punto-estado { display: inline-flex; align-items: center; gap: 5px; color: var(--texto-2); font-size: 12px; }
+.punto-estado::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--linea-fuerte); }
+.punto-estado.azul::before { background: var(--acento); } .punto-estado.verde::before { background: var(--verde); }
+.punto-estado.ambar::before { background: var(--ambar); } .punto-estado.rojo::before { background: var(--rojo); } .punto-estado.violeta::before { background: var(--violeta); }
+.hilo-cab .der { margin-left: auto; display: inline-flex; gap: 4px; }
+.btn-texto { border: 0; background: none; padding: 2px 6px; border-radius: 4px; color: var(--texto-2); font-size: 12px; cursor: pointer; }
+.btn-texto:hover { background: var(--hover); color: var(--texto); }
+.hilo-texto { white-space: pre-wrap; overflow-wrap: anywhere; }
+.hilo-com pre.sugerido { margin: 8px 0 0; padding: 7px 9px; border-radius: 6px; background: var(--verde-bg); font: 12px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.hilo-respuesta { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--linea); white-space: normal; overflow-wrap: anywhere; }
+.hilo-motivo { margin-top: 6px; color: var(--rojo); }
+.propuesta { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--linea); }
+.prop-cab { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 8px; }
+.prop-archivo { margin-top: 8px; border: 1px solid var(--linea); border-radius: 6px; overflow: hidden; }
+.prop-archivo .ruta { display: flex; gap: 8px; padding: 5px 10px; background: var(--lateral); font: 12px var(--mono); }
+.prop-archivo .codigo-diff td.n { min-width: 36px; }
+.prop-checks { margin-top: 8px; border: 1px solid var(--linea); border-radius: 6px; }
+.prop-checks .check { padding: 6px 10px; grid-template-columns: 16px 64px minmax(0, 1fr); }
+.prop-checks .check:last-child { border-bottom: 0; }
+.prop-acciones { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.prop-ajuste textarea { display: block; width: 100%; min-height: 56px; margin-top: 8px; padding: 7px 9px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--bg); color: var(--texto); font: 13px/1.5 var(--sans); }
+.hilo-pie { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; }
+.desact { padding: 8px 14px 4px; border-bottom: 1px solid var(--linea); }
+.desact table { width: 100%; border-collapse: collapse; }
+.barra-pendiente { position: sticky; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 12px; padding: 10px 14px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--panel); box-shadow: 0 -4px 12px rgb(0 0 0 / .06); }
+.barra-pendiente .der { margin-left: auto; display: inline-flex; gap: 8px; }
+.codigo-diff tr.hunk td { background: var(--sel); color: var(--texto-2); padding-top: 3px; padding-bottom: 3px; }
+.codigo-diff td.c::before { display: inline-block; width: 1.2ch; color: var(--texto-3); }
+.codigo-diff tr.add td.c::before { content: '+'; color: var(--verde); }
+.codigo-diff tr.del td.c::before { content: '−'; color: var(--rojo); }
+.codigo-diff tr.ctx td.c::before { content: ' '; }
+.codigo-diff tr.nota td { padding: 6px 10px 8px; background: var(--panel); border-top: 1px solid var(--linea); border-bottom: 1px solid var(--linea); font-family: var(--sans); white-space: normal; }
+.aviso-diff { padding: 10px 14px; color: var(--texto-2); }
+
+@media (max-width: 1180px) {
+  .app { --ancho-lateral: 200px; --ancho-cola: clamp(280px, 30vw, 380px); }
+  .barra .foto { display: none; }
+}
+@media (max-width: 900px) {
+  .app { display: block; height: auto; }
+  .btn-lateral { display: none; }
+  body[data-sin-lateral] .lateral { display: flex; }
+  body[data-sin-cola] .cola { display: block; }
+  .barra { position: sticky; top: 0; z-index: 3; flex-wrap: wrap; height: auto; padding: 10px 16px; }
+  .buscar { order: 3; flex-basis: 100%; max-width: none; margin: 0; }
+  .rol { margin-left: auto; }
+  .lateral { display: flex; gap: 6px; overflow-x: auto; padding: 8px 16px; border-right: 0; border-bottom: 1px solid var(--linea); }
+  .lateral h2, .lateral .solo-escritorio { display: none; }
+  .lateral .nav { width: auto; white-space: nowrap; flex: none; }
+  .cola { border-right: 0; }
+  .detalle { display: none; }
+  body[data-vista="detalle"] .cola, body[data-vista="detalle"] .lateral { display: none; }
+  body[data-vista="detalle"] .detalle { display: block; }
+  .det { padding: 16px; }
+  .volver { display: inline-flex; margin-bottom: 10px; }
+  .check { grid-template-columns: 16px minmax(0, 1fr); }
+  .check .valor { grid-column: 2; }
+  .fila { grid-template-columns: 8px minmax(0, 1fr); row-gap: 2px; }
+  .fila .id, .fila .titulo, .fila .senales { grid-column: 2; }
+  .fila .punto { grid-row: 1; }
+  .cambio { grid-template-columns: 1fr; gap: 2px; }
+  .barra .acciones-barra .estado-texto { display: none; }
+  .grupo-cab .desc { display: none; }
+  .fila .titulo { white-space: normal; }
+  .ayuda { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+  .girando, .progreso::after, .esqueleto span { animation: none !important; }
+  .progreso::after { width: 100%; opacity: .5; }
+}
+</style>
+</head>
+<body>
+<!--
+THESIS: una bandeja de trabajo ordenada por la acción que toca, no un muro de tarjetas; rechaza las fichas con números grandes y la sopa de etiquetas.
+OWN-WORLD: neutros cálidos de herramienta, color solo para estado (verde listo, ámbar revisar, rojo bloquea, violeta mergeada), sans del sistema a 13 px, mono solo para ids, ramas y rutas.
+STORY: el autor ve qué hacer hoy; el revisor entiende una PR, deja su decisión y la exporta como archivo.
+FIRST VIEWPORT: lateral con vistas y conteos, cola agrupada con filas de una línea, detalle con pila de estados y pestañas.
+FORM: bandeja de tres columnas (Linear, GitHub) y detalle tipo merge request (GitLab, Graphite); referencias de Mobbin.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
+-->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-buscar" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 16 16"><path d="m4 6 4 4 4-4"/></symbol>
+  <symbol id="i-ok" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2"/><path d="m5.4 8.2 1.8 1.8 3.4-3.6"/></symbol>
+  <symbol id="i-alerta" viewBox="0 0 16 16"><path d="M8 2.2 14.3 13H1.7L8 2.2Z"/><path d="M8 6.5v3"/><path d="M8 11.4v.1"/></symbol>
+  <symbol id="i-bloqueo" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></symbol>
+  <symbol id="i-circulo" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2" stroke-dasharray="2.5 2"/></symbol>
+  <symbol id="i-merge" viewBox="0 0 16 16"><circle cx="4.5" cy="3.5" r="1.6"/><circle cx="4.5" cy="12.5" r="1.6"/><circle cx="11.5" cy="8" r="1.6"/><path d="M4.5 5.1v5.8M4.5 5.5c0 2.5 2.5 2.5 5.4 2.5"/></symbol>
+  <symbol id="i-externo" viewBox="0 0 16 16"><path d="M9 3h4v4M13 3 7.5 8.5M11.5 9.5V13h-8.5V4.5H6.5"/></symbol>
+  <symbol id="i-copiar" viewBox="0 0 16 16"><rect x="5" y="5" width="8.5" height="8.5" rx="1.5"/><path d="M3 10.5V3.8C3 3.3 3.3 3 3.8 3h6.7"/></symbol>
+  <symbol id="i-escudo" viewBox="0 0 16 16"><path d="M8 1.8 13 3.7v4c0 3.1-2.1 5.4-5 6.5-2.9-1.1-5-3.4-5-6.5v-4L8 1.8Z"/></symbol>
+  <symbol id="i-reloj" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.8V8l2.2 1.4"/></symbol>
+  <symbol id="i-ojo" viewBox="0 0 16 16"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Z"/><circle cx="8" cy="8" r="1.8"/></symbol>
+  <symbol id="i-flecha" viewBox="0 0 16 16"><path d="M10 3.5 5.5 8l4.5 4.5"/></symbol>
+  <symbol id="i-descargar" viewBox="0 0 16 16"><path d="M8 2.5v8M4.8 7.5 8 10.7l3.2-3.2M3 13.5h10"/></symbol>
+  <symbol id="i-chispa" viewBox="0 0 16 16"><path d="M8 1.8v3M8 11.2v3M1.8 8h3M11.2 8h3M3.6 3.6l2 2M10.4 10.4l2 2M12.4 3.6l-2 2M5.6 10.4l-2 2"/></symbol>
+  <symbol id="i-actualizar" viewBox="0 0 16 16"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></symbol>
+  <symbol id="i-lateral" viewBox="0 0 16 16"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M6 2.5v11"/></symbol>
+  <symbol id="i-cola" viewBox="0 0 16 16"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M6 2.5v11M7.8 5.5h2.4M7.8 8h2.4M7.8 10.5h2.4"/></symbol>
+  <symbol id="i-comentario" viewBox="0 0 16 16"><path d="M2.5 3.5h11v7.5h-6l-3 2.5V11h-2V3.5Z"/></symbol>
+  <symbol id="i-subir" viewBox="0 0 16 16"><path d="M8 10.5v-8M4.8 5.7 8 2.5l3.2 3.2M3 13.5h10"/></symbol>
+</svg>
+
+<div class="app">
+  <header class="barra">
+    <button class="btn-lateral" data-accion="lateral" aria-label="Mostrar u ocultar el menú lateral" aria-pressed="true" title="Menú lateral ( [ )"><svg class="i" aria-hidden="true"><use href="#i-lateral"/></svg></button>
+    <button class="btn-lateral" data-accion="cola" aria-label="Mostrar u ocultar la cola de PRs" aria-pressed="true" title="Cola de PRs ( ] )" style="margin-left:-12px"><svg class="i" aria-hidden="true"><use href="#i-cola"/></svg></button>
+    <h1 id="titulo">Revisión de PRs</h1>
+    <span class="foto" id="foto"></span>
+    <label class="buscar">
+      <svg class="i" aria-hidden="true"><use href="#i-buscar"/></svg>
+      <input type="search" id="buscar" placeholder="Buscar por número, título, rama o archivo" aria-label="Buscar PRs">
+      <kbd>/</kbd>
+    </label>
+    <div class="acciones-barra" id="accionesBarra"></div>
+    <div class="rol" role="group" aria-label="Vista">
+      <button data-rol="autor" aria-pressed="true">Autor</button>
+      <button data-rol="revisor" aria-pressed="false">Revisor</button>
+    </div>
+  </header>
+
+  <nav class="lateral" id="lateral" aria-label="Vistas y filtros"></nav>
+
+  <main class="cola" id="cola" aria-label="Cola de PRs"></main>
+
+  <section class="detalle" id="detalle" aria-label="Detalle de la PR"></section>
+</div>
+<input type="file" id="archivoRevision" accept="application/json,.json" hidden>
+
+<script>/*ANCLAJE*/</script>
+<script>
+let FOTO = /*DATOS*/null;
+// Con el servidor local (tablero_servir) llega { token } y aparecen las acciones; como archivo suelto es null.
+const API = /*API*/null;
+// Diffs por PR, ya recortados. En el servidor se piden a /api/diff si faltan.
+const DIFFS = /*DIFFS*/null ?? {};
+
+const GRUPOS = {
+  pruebas_sin_prod: ['En pruebas, sin salir a producción', 'Código en pruebas que no aparece en producción ni en ninguna PR hacia producción'],
+  solo_prod: ['Listo para producción', 'El código ya está en pruebas; falta mergear hacia producción'],
+  revisar_diferencias: ['Revisar diferencias con pruebas', 'Pruebas tiene otra versión del cambio'],
+  pruebas_abierta: ['Esperando merge en pruebas', 'Su PR hacia pruebas sigue abierta'],
+  sin_pruebas: ['Sin pasar por pruebas', 'No hay PR hacia pruebas ni el código está allá'],
+  hacia_pruebas: ['Hacia pruebas', 'PRs abiertas contra las ramas de pruebas'],
+  pruebas_automaticas: ['Solo pruebas automáticas', 'No cambian el funcionamiento'],
+  otra: ['Otras ramas', 'Base fuera de las líneas configuradas'],
+  inactiva: ['Ramas que ya no se usan', 'Ramas marcadas como inactivas en la configuración del proyecto'],
+};
+const DECISIONES = {
+  aprobada: ['Aprobada', 'verde'],
+  probada: ['Probada en pruebas', 'verde'],
+  duda: ['Con preguntas', 'ambar'],
+  cambios: ['Pide cambios', 'rojo'],
+};
+const GRUPOS_REVISOR = {
+  sin_revisar: ['Sin revisar', 'Aún sin decisión del revisor'],
+  cambios: ['Pide cambios', 'El revisor dejó observaciones'],
+  duda: ['Con preguntas', 'Falta una aclaración del autor'],
+  aprobada: ['Aprobadas', 'Listas desde el punto de vista del revisor'],
+  probada: ['Probadas en pruebas', 'Validadas funcionalmente'],
+};
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const icono = (nombre, clase = '') => `<svg class="i ${clase}" aria-hidden="true"><use href="#i-${nombre}"/></svg>`;
+const almacen = {
+  leer(k, d = null) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  escribir(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } },
+};
+const claveRevision = (pr) => `seki-review:revision:${pr.id}`;
+const clavePasos = (pr, sha = pr.headSha) => `seki-review:probado:${pr.id}:${sha}`;
+const revision = (pr) => almacen.leer(claveRevision(pr));
+const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;
+const gh = (repo, n) => `https://github.com/${FOTO.owner}/${repo}/pull/${n}`;
+
+const estado = {
+  expandidas: new Set(),
+  respondeA: null,
+  rol: almacen.leer('seki-review:rol', 'autor'),
+  vista: 'cola',
+  seleccionLineas: null,
+  lineasArchivo: [],
+  archivosTab: [],
+  caja: null,
+  confirmarDescarte: false,
+  comentariosCargados: new Set(),
+  propuestas: new Map(),
+  confirmarAprobar: null,
+  ajustando: null,
+  marcasComentarios: {},
+  portal: null,
+  filtros: new Set(),
+  cerrados: new Set(almacen.leer('seki-review:cerrados', ['pruebas_automaticas'])),
+  seleccion: null,
+  tab: 'resumen',
+  trabajos: new Map(),
+  refrescando: false,
+  ultimoRefresco: null,
+  confirmarPendientes: false,
+};
+const trabajo = (pr) => estado.trabajos.get(pr.id);
+const usd = (x) => { const n = Number(x) || 0; return `USD ${n.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: n < 0.01 ? 4 : 2 })}`; };
+const nombreModelo = (m) => (m ?? '').replace(/^claude-/, '').replace(/-\d.*$/, '').replace(/^./, (c) => c.toUpperCase());
+const costoTexto = (t) => `${t.modelo ? ` · ${nombreModelo(t.modelo)}` : ''}${t.costo ? ` · ${usd(t.costo)}` : ''}`;
+const trabajoActivo = (pr) => ['en_cola', 'en_curso'].includes(trabajo(pr)?.estado);
+const pendientesDeAnalisis = () => FOTO.prs.filter((p) => p.ambiente !== 'inactiva' && (!p.explicacion || p.explicacion.desactualizada) && !trabajoActivo(p));
+
+// Un solo tono por PR, el más grave que aplique: rojo bloquea, ámbar pide mirar, verde listo, violeta mergeada.
+function tono(pr) {
+  const v = pr.verificaciones?.resumen ?? {};
+  if (v.bloqueante || (pr.sinProd && pr.seguridad)) return 'rojo';
+  if (pr.sinProd || v.alto || pr.estadoPruebas?.estado === 'parcial' || pr.explicacion?.riesgo === 'alto') return 'ambar';
+  if (pr.estadoPr === 'MERGED') return 'violeta';
+  if (pr.accion === 'solo_prod') return 'verde';
+  return '';
+}
+
+const definicionGrupos = () => (estado.rol === 'revisor' ? GRUPOS_REVISOR : GRUPOS);
+const grupoDe = (pr) => (estado.rol === 'revisor' ? revision(pr)?.decision ?? 'sin_revisar' : pr.accion);
+const enVista = (pr) => (estado.vista === 'inactivas' ? pr.ambiente === 'inactiva' : pr.ambiente !== 'inactiva');
+
+function pasaFiltros(pr) {
+  if (!enVista(pr)) return false;
+  if (estado.portal && pr.portal !== estado.portal) return false;
+  const v = pr.verificaciones?.resumen ?? {};
+  if (estado.filtros.has('seguridad') && !pr.seguridad) return false;
+  if (estado.filtros.has('hallazgos') && !(v.bloqueante || v.alto)) return false;
+  if (estado.filtros.has('sinExplicacion') && pr.explicacion && !pr.explicacion.desactualizada) return false;
+  if (estado.filtros.has('sinRevisar') && revision(pr)) return false;
+  const q = $('buscar').value.trim().toLowerCase();
+  if (q) {
+    const archivos = [...(pr.explicacion?.orden_lectura ?? []).map((o) => o.archivo), ...(pr.verificaciones?.hallazgos ?? []).map((h) => h.archivo)].join(' ');
+    if (!`${pr.numero} #${pr.numero} ${pr.titulo} ${pr.rama} ${pr.repo} ${pr.portal} ${archivos}`.toLowerCase().includes(q)) return false;
+  }
+  return true;
+}
+
+function pintarLateral() {
+  const base = FOTO.prs.filter(enVista);
+  const portales = [...new Set(base.map((p) => p.portal))].sort();
+  const cuenta = (fn) => base.filter(fn).length;
+  const inactivas = FOTO.prs.filter((p) => p.ambiente === 'inactiva').length;
+  const nav = (attrs, contenido, n, activo) => `<button class="nav" ${attrs} aria-pressed="${activo}">${contenido}<span class="n">${n}</span></button>`;
+  const filtro = (clave, texto, n) => nav(`data-filtro="${clave}"`, texto, n, estado.filtros.has(clave));
+  $('lateral').innerHTML = `
+    <h2>Vistas</h2>
+    ${nav('data-vista="cola"', 'Cola de trabajo', FOTO.prs.length - inactivas, estado.vista === 'cola')}
+    ${nav('data-vista="inactivas"', 'Ramas que ya no se usan', inactivas, estado.vista === 'inactivas')}
+    <h2>Portal</h2>
+    ${nav('data-portal=""', 'Todos', base.length, !estado.portal)}
+    ${portales.map((p) => nav(`data-portal="${esc(p)}"`, esc(p), cuenta((x) => x.portal === p), estado.portal === p)).join('')}
+    <h2>Filtros</h2>
+    ${filtro('hallazgos', `${icono('alerta')} Con hallazgos altos`, cuenta((x) => x.verificaciones?.resumen.bloqueante || x.verificaciones?.resumen.alto))}
+    ${filtro('seguridad', `${icono('escudo')} Seguridad`, cuenta((x) => x.seguridad))}
+    ${filtro('sinExplicacion', `${icono('circulo')} Sin explicación`, cuenta((x) => !x.explicacion || x.explicacion.desactualizada))}
+    ${filtro('sinRevisar', `${icono('ojo')} Sin revisar`, cuenta((x) => !revision(x)))}
+    ${API ? `<h2>Análisis con IA</h2>
+      ${estado.confirmarPendientes
+        ? nav('data-accion="analizarPendientes"', `${icono('chispa')} Confirmar: ${plural(pendientesDeAnalisis().length, 'PR', 'PRs')}`, '', true)
+        : nav('data-accion="pedirConfirmacion"', `${icono('chispa')} Analizar las que no tienen explicación`, pendientesDeAnalisis().length, false)}
+      ${[...estado.trabajos.values()].some((t) => t.estado === 'en_cola') ? nav('data-accion="cancelarCola"', `${icono('bloqueo')} Cancelar los que están en cola`, [...estado.trabajos.values()].filter((t) => t.estado === 'en_cola').length, false) : ''}` : ''}
+    <div class="solo-escritorio">
+      <h2>Revisión</h2>
+      <button class="nav" data-accion="exportar">${icono('descargar')} Exportar revisión</button>
+      <button class="nav" data-accion="importar">${icono('subir')} Importar revisión</button>
+      <div class="ayuda"><span><kbd>j</kbd> <kbd>k</kbd> moverse en la cola</span><span><kbd>o</kbd> abrir en GitHub</span><span><kbd>/</kbd> buscar</span><span><kbd>[</kbd> menú lateral</span><span><kbd>]</kbd> cola</span></div>
+    </div>`;
+}
+
+function senales(pr) {
+  const s = [];
+  const v = pr.verificaciones?.resumen ?? {};
+  if (v.bloqueante) s.push(`<span class="senal rojo" title="${plural(v.bloqueante, 'verificación bloqueante', 'verificaciones bloqueantes')}">${icono('bloqueo')}${v.bloqueante}</span>`);
+  else if (v.alto) s.push(`<span class="senal ambar" title="${plural(v.alto, 'hallazgo alto', 'hallazgos altos')}">${icono('alerta')}${v.alto}</span>`);
+  const r = revision(pr);
+  if (r?.decision) {
+    const [txt, cls] = DECISIONES[r.decision] ?? [r.decision, ''];
+    s.push(`<span class="senal ${cls}" title="Revisor: ${esc(txt)}">${icono(cls === 'rojo' ? 'bloqueo' : cls === 'ambar' ? 'alerta' : 'ok')}</span>`);
+  }
+  const t = trabajo(pr);
+  if (t?.estado === 'en_curso') s.push(`<span class="senal azul" title="Analizando con IA">${icono('actualizar', 'girando')}</span>`);
+  else if (t?.estado === 'en_cola') s.push(`<span class="senal azul" title="En cola para analizar">${icono('reloj')}</span>`);
+  else if (t?.estado === 'error') s.push(`<span class="senal rojo" title="El análisis falló">${icono('bloqueo')}</span>`);
+  const cs = vivos(pr).length;
+  if (cs) s.push(`<span class="senal" title="${plural(cs, 'comentario', 'comentarios')} en el diff">${icono('comentario')}${cs}</span>`);
+  if (pr.seguridad) s.push(`<span class="senal" title="Seguridad">${icono('escudo')}</span>`);
+  const esfuerzo = pr.explicacion?.esfuerzo ?? pr.esfuerzoTamano;
+  if (esfuerzo) s.push(`<span title="Esfuerzo de revisión, de 1 a 5">E${esfuerzo}</span>`);
+  s.push(`<span title="Días desde que se abrió">${pr.dias} d</span>`);
+  return s.join('');
+}
+
+function pintarCola() {
+  const prs = FOTO.prs.filter(pasaFiltros);
+  if (!prs.length) {
+    $('cola').innerHTML = `<div class="vacio"><p>Ninguna PR coincide con la búsqueda y los filtros activos.</p><button class="btn" data-accion="limpiar">Quitar filtros</button></div>`;
+    return;
+  }
+  const defs = definicionGrupos();
+  const orden = Object.keys(defs);
+  const porGrupo = new Map();
+  for (const pr of prs) {
+    const g = grupoDe(pr);
+    if (!porGrupo.has(g)) porGrupo.set(g, []);
+    porGrupo.get(g).push(pr);
+  }
+  const posicion = (g) => (orden.includes(g) ? orden.indexOf(g) : 99);
+  $('cola').innerHTML = seccionCambios() + [...porGrupo.keys()].sort((a, b) => posicion(a) - posicion(b)).map((g) => {
+    const [nombre, desc] = defs[g] ?? GRUPOS[g] ?? [FOTO.acciones?.[g] ?? g, ''];
+    const filas = porGrupo.get(g).sort((a, b) => a.repo.localeCompare(b.repo) || b.numero - a.numero);
+    const cerrado = estado.cerrados.has(g);
+    return `<section class="grupo" ${cerrado ? 'data-cerrado' : ''}>
+      <button class="grupo-cab" data-grupo-toggle="${g}" aria-expanded="${!cerrado}">${icono('chevron')}<span>${esc(nombre)}</span><span class="n">${filas.length}</span><span class="desc">${esc(desc)}</span></button>
+      <div class="filas">${filas.map((pr) => `
+        <button class="fila" data-id="${esc(pr.id)}" aria-current="${estado.seleccion === pr.id}">
+          <span class="punto ${tono(pr)}"></span>
+          <span class="id mono">${esc(pr.repoEtiqueta)} #${pr.numero}</span>
+          <span class="titulo" title="${esc(pr.titulo)}">${esc(pr.titulo)}</span>
+          <span class="senales">${senales(pr)}</span>
+        </button>`).join('')}</div>
+    </section>`;
+  }).join('');
+}
+
+function seccionCambios() {
+  const c = FOTO.cambios;
+  if (!c || estado.vista !== 'cola') return '';
+  const fecha = (f) => new Date(f).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
+  const enlace = (x) => `<a href="${gh(x.repo, x.numero)}" target="_blank" rel="noopener" title="${esc(x.titulo)}">${esc(x.titulo)}</a>`;
+  const fila = (etiqueta, color, x, extra = '') => `<div class="cambio"><span class="estado ${color}">${etiqueta}</span><span class="mono muy-tenue">${esc(x.repo.replace('core-', ''))} #${x.numero}</span><span class="titulo">${FOTO.prs.some((p) => p.id === x.id) ? `<a href="#" data-ir="${esc(x.id)}">${esc(x.titulo)}</a>` : enlace(x)}${extra}</span></div>`;
+  const nombreGrupo = (g) => (GRUPOS[g] ?? [g])[0];
+  const filas = [
+    ...c.mergeadas.map((x) => fila('Mergeada', 'violeta', x, ` <span class="muy-tenue">en ${esc(x.base)}</span>`)),
+    ...c.cerradas.map((x) => fila(x.estado === 'cerrada' ? 'Cerrada' : 'Salió', '', x)),
+    ...c.nuevas.map((x) => fila('Nueva', 'verde', x)),
+    ...c.movidas.map((x) => fila('Cambió', 'ambar', x, ` <span class="muy-tenue">${esc(nombreGrupo(x.de))} → ${esc(nombreGrupo(x.a))}</span>`)),
+  ];
+  const n = filas.length;
+  const cerrado = estado.cerrados.has('_cambios');
+  return `<section class="grupo" ${cerrado ? 'data-cerrado' : ''}>
+    <button class="grupo-cab" data-grupo-toggle="_cambios" aria-expanded="${!cerrado}">${icono('chevron')}<span>Cambios detectados</span><span class="n">${n}</span><span class="desc">entre ${fecha(c.desde)} y ${fecha(c.hasta)}</span></button>
+    <div class="filas">${filas.join('')}</div>
+  </section>`;
+}
+
+// Tiempo transcurrido que se actualiza cada segundo sin repintar la vista.
+const reloj = (desde) => { const s = Math.max(0, Math.floor((Date.now() - new Date(desde)) / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+const transcurrido = (desde) => (desde ? `<span class="transcurrido" data-desde="${esc(desde)}">${reloj(desde)}</span>` : '');
+setInterval(() => { for (const el of document.querySelectorAll('[data-desde]')) el.textContent = reloj(el.dataset.desde); }, 1000);
+
+function check(icon, color, nombre, valor, detalle = '') {
+  return `<div class="check"><span class="icono ${color}">${icono(icon)}</span><span class="nombre">${nombre}</span><span class="valor">${valor}${detalle ? `<small>${detalle}</small>` : ''}</span></div>`;
+}
+
+function pilaEstados(pr) {
+  const filas = [];
+  const ep = pr.estadoPruebas;
+  if (ep) {
+    const metodo = ep.metodo === 'parche' ? 'Comprobado aplicando el cambio sobre la rama de pruebas' : 'Comparado archivo por archivo';
+    const mapa = { en_pruebas: ['ok', 'verde', 'El código ya está en pruebas'], parcial: ['alerta', 'ambar', 'Pruebas tiene otra versión del cambio'], no_en_pruebas: ['circulo', '', 'Todavía no está en pruebas'] };
+    const [i, c, t] = mapa[ep.estado] ?? ['circulo', '', ep.estado];
+    filas.push(check(i, c, 'Pruebas', t, `${ep.iguales} de ${ep.total} archivos iguales${ep.conflicto ? ', con conflicto' : ''}. ${metodo}.`));
+  }
+  if (pr.estadoProd) {
+    const det = `${pr.estadoProd.iguales} de ${pr.estadoProd.total} archivos iguales en producción`;
+    filas.push(pr.sinProd
+      ? check('bloqueo', pr.seguridad ? 'rojo' : 'ambar', 'Producción', 'Código no encontrado en producción y sin PR hacia producción', det)
+      : check('ok', '', 'Producción', pr.cubiertaPor ? `La PR <a href="${gh(pr.repo, pr.cubiertaPor)}" target="_blank" rel="noopener">#${pr.cubiertaPor}</a> hacia producción trae los mismos archivos` : 'Sin alertas', det));
+  }
+  if (pr.gemela) {
+    const txt = { MERGED: 'mergeada', OPEN: 'abierta', CLOSED: 'cerrada sin mergear' }[pr.gemela.estado] ?? pr.gemela.estado;
+    filas.push(check(pr.gemela.estado === 'MERGED' ? 'merge' : 'circulo', pr.gemela.estado === 'MERGED' ? 'verde' : '', pr.ambiente === 'prod' ? 'PR hacia pruebas' : 'PR hacia producción',
+      `<a href="${gh(pr.repo, pr.gemela.numero)}" target="_blank" rel="noopener">#${pr.gemela.numero}</a> ${txt}`, 'Encontrada por título; el estado de pruebas de arriba es la comprobación'));
+  }
+  if (pr.hermanas?.length) {
+    const faltan = pr.hermanas.some((h) => !h.numero);
+    filas.push(check(faltan ? 'alerta' : 'ok', faltan ? 'ambar' : 'verde', 'Otros portales',
+      pr.hermanas.map((h) => (h.numero ? `${esc(h.portal)}: <a href="${gh(pr.repo, h.numero)}" target="_blank" rel="noopener">#${h.numero}</a>` : `${esc(h.portal)}: sin PR equivalente`)).join(' · '),
+      faltan ? 'Confirmar si el cambio aplica también a ese portal' : ''));
+  }
+  const v = pr.verificaciones;
+  if (v) {
+    const r = v.resumen;
+    const [i, c] = r.bloqueante ? ['bloqueo', 'rojo'] : r.alto ? ['alerta', 'ambar'] : ['ok', 'verde'];
+    const partes = [r.bloqueante && plural(r.bloqueante, 'bloqueante', 'bloqueantes'), r.alto && plural(r.alto, 'alta', 'altas'), r.medio && plural(r.medio, 'media', 'medias'), r.aviso && plural(r.aviso, 'aviso', 'avisos')].filter(Boolean);
+    filas.push(check(i, c, 'Verificaciones', partes.length ? partes.join(', ') : 'Sin hallazgos en las líneas agregadas', partes.length ? '<a href="#" data-tab-ir="verificaciones">Ver hallazgos</a>' : ''));
+  }
+  const tr = trabajo(pr);
+  if (tr) {
+    const hora = (f) => (f ? new Date(f).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) : '');
+    const mapa = {
+      en_cola: ['reloj', '', 'En cola para analizar', ''],
+      en_curso: ['actualizar', '', 'Analizando la PR', `${transcurrido(tr.inicio)} · desde las ${hora(tr.inicio)} · suele tardar entre uno y tres minutos<div class="progreso" role="progressbar" aria-label="Análisis en curso"></div>`],
+      terminado: ['ok', 'verde', 'Explicación generada', `A las ${hora(tr.fin)}${costoTexto(tr)}`],
+      error: ['bloqueo', 'rojo', 'El análisis no se completó', esc(tr.mensaje ?? '')],
+      cancelado: ['circulo', '', 'Análisis cancelado', ''],
+    };
+    const [i, c, txt, det] = mapa[tr.estado] ?? ['circulo', '', tr.estado, ''];
+    filas.push(check(i, c, 'Análisis con IA', txt, det).replace('<svg class="i "', tr.estado === 'en_curso' ? '<svg class="i girando"' : '<svg class="i "'));
+  }
+  const rev = revision(pr);
+  if (rev?.decision) {
+    const [txt, cls] = DECISIONES[rev.decision] ?? [rev.decision, ''];
+    const cambio = rev.headSha && rev.headSha !== pr.headSha ? ' · la PR cambió después de esta revisión' : '';
+    filas.push(check(cls === 'rojo' ? 'bloqueo' : cls === 'ambar' ? 'alerta' : 'ok', cls, 'Revisor', esc(txt), `${esc(new Date(rev.fecha).toLocaleDateString('es-CO'))}${cambio}`));
+  } else if (pr.revisionGithub) {
+    filas.push(check('ojo', '', 'Revisión en GitHub', esc(pr.revisionGithub)));
+  }
+  return filas.length ? `<div class="checks">${filas.join('')}</div>` : '';
+}
+
+const lista = (items) => (items?.length ? `<ul>${items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : '<p class="sin-dato">Sin datos.</p>');
+const sec = (titulo, cuerpo, clave) => {
+  if (!clave || !API) return `<div class="seccion"><h3>${titulo}</h3>${cuerpo}</div>`;
+  const pr = prSel();
+  const hilos = pr ? dePr(pr, clave) : [];
+  return `<div class="seccion" data-seccion="${clave}"><h3 class="con-accion">${titulo}<button type="button" class="btn-texto" data-ampliar="${clave}" title="La IA amplía esta sección con ejemplos del diff">${icono('chispa')} Ampliar</button></h3>${cuerpo}
+    ${hilos.length ? `<div class="hilos-pr">${hilosDiv(hilos)}</div>` : ''}</div>`;
+};
+
+function preguntaPrHtml(pr) {
+  if (!API) return '';
+  const generales = dePr(pr, null);
+  const opciones = Object.entries(SECCIONES).filter(([k]) => pr.explicacion?.[k]?.length || k === 'resumen')
+    .map(([k, t]) => `<option value="${k}">${esc(t)}</option>`).join('');
+  return `<div class="seccion pregunta-pr"><h3>Preguntar sobre esta PR</h3>
+    ${generales.length ? `<div class="hilos-pr">${hilosDiv(generales)}</div>` : ''}
+    ${estado.respondeA?.ambito === 'pr' ? `<div class="respondiendo">Sigue la conversación de: «${esc(estado.respondeA.resumen)}» <button type="button" class="btn-texto" data-accion="quitarRespondeA">Quitar</button></div>` : ''}
+    <textarea id="preguntaPr" rows="3" placeholder="Por ejemplo: ¿qué pasa con los webhooks que ya estaban configurados en producción?" aria-label="Pregunta sobre la PR"></textarea>
+    <div class="prop-acciones"><select id="preguntaPrSeccion" aria-label="Sobre qué parte"><option value="">Toda la PR</option>${opciones}</select>
+      <label class="muy-tenue"><input type="checkbox" id="preguntaPrCodigo"> Revisar el código</label>
+      <button type="button" class="btn chico primario" data-accion="preguntarPr">Preguntar</button><button type="button" class="btn chico" data-accion="agregarPreguntaPr">Agregar a la revisión</button><span class="muy-tenue">Ctrl + Enter pregunta · también puede seleccionar texto de la explicación · la respuesta es más útil si la pregunta no sugiere la conclusión</span></div></div>`;
+}
+
+function coberturaHtml(e) {
+  const c = e.cobertura;
+  if (!c || c.completa) return '';
+  const sin = c.sinDiff ?? [];
+  const rec = c.recortados ?? [];
+  const items = [...sin.map((a) => `<li><span class="mono">${esc(a)}</span> · sin revisar</li>`), ...rec.map((a) => `<li><span class="mono">${esc(a)}</span> · revisado en parte</li>`)];
+  return `<details class="seccion cobertura"><summary><span class="estado ambar">${icono('alerta')} Cobertura parcial: la IA no vio el diff completo (${plural(sin.length, 'archivo sin revisar', 'archivos sin revisar')}${rec.length ? `, ${plural(rec.length, 'recortado', 'recortados')}` : ''})</span></summary>
+    ${items.length ? `<ul class="tenue">${items.slice(0, 80).join('')}</ul>` : ''}</details>`;
+}
+
+function tabResumen(pr) {
+  const e = pr.explicacion;
+  if (!e) {
+    const tr = trabajo(pr);
+    if (API && tr?.estado === 'en_curso') return `<div class="seccion" aria-live="polite"><p class="trabajando">${icono('actualizar', 'girando')} La IA está leyendo el diff y el código relacionado · ${transcurrido(tr.inicio)}</p>
+      <div class="esqueleto" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div></div>`;
+    if (API && tr?.estado === 'en_cola') return `<div class="seccion"><p class="trabajando">${icono('reloj')} En cola: empieza cuando termine el análisis en curso.</p></div>`;
+    if (API) return `<div class="seccion"><p class="tenue">Esta PR todavía no tiene explicación.</p>
+      <p style="margin-top:12px"><button class="btn chico" data-accion="analizar" ${trabajoActivo(pr) ? 'disabled' : ''}>${trabajoActivo(pr) ? `${icono('actualizar', 'girando')} Analizando` : `${icono('chispa')} Analizar con IA`}</button></p></div>`;
+    return `<div class="seccion"><p class="tenue">Esta PR todavía no tiene explicación. Se genera desde Claude Code y aparece aquí al regenerar el tablero.</p>
+      <p style="margin-top:12px"><button class="btn chico" data-copiar="/seki-review:revisar-prs explicar ${esc(pr.repo)}#${pr.numero}">${icono('copiar')} Copiar el comando</button></p></div>`;
+  }
+  return `
+    <p class="origen">${icono('chispa')} <span><strong>Explicación de IA.</strong> Ayuda para leer la PR, no reemplaza revisar el diff. Las reglas fijas están en Verificaciones.</span></p>
+    ${e.desactualizada ? `<div class="seccion"><span class="estado ambar">${icono('alerta')} La PR recibió commits después de esta explicación</span></div>` : ''}
+    ${coberturaHtml(e)}
+    ${sec('Qué resuelve', `<p>${esc(e.resumen)}</p>`, 'resumen')}
+    ${sec('Por qué', `<p>${esc(e.por_que)}</p>`, 'por_que')}
+    ${e.impacto_usuario ? sec('Qué nota quien usa el portal', `<p>${esc(e.impacto_usuario)}</p>`, 'impacto_usuario') : ''}
+    ${sec('Qué cambia', lista(e.que_cambia), 'que_cambia')}
+    ${e.orden_lectura?.length ? sec('Orden de lectura', `<ol class="lectura">${e.orden_lectura.map((o) => `<li><span class="mono">${esc(o.archivo)}</span><br><span class="tenue">${esc(o.motivo)}</span></li>`).join('')}</ol>`, 'orden_lectura') : ''}
+    ${e.diagrama ? sec('Flujo', `<pre class="mermaid">${esc(e.diagrama.replace(/#(?!\d+;)/g, '#35;'))}</pre>`, 'diagrama') : ''}
+    ${e.tecnologias?.length ? sec('Tecnologías', `<div class="tabla"><table><thead><tr><th>Tecnología</th><th>Uso en este cambio</th><th>Por qué esta</th><th>Descartadas</th></tr></thead><tbody>
+      ${e.tecnologias.map((t) => `<tr><td><strong>${esc(t.nombre)}</strong></td><td>${esc(t.uso)}</td><td>${esc(t.por_que)}</td><td class="tenue">${esc((t.alternativas_descartadas ?? []).join(' '))}</td></tr>`).join('')}
+      </tbody></table></div>`, 'tecnologias') : ''}
+    ${e.alternativas?.length ? sec('Alternativas consideradas', lista(e.alternativas), 'alternativas') : ''}
+    ${e.dependencias?.length ? sec('Debe ir antes', lista(e.dependencias), 'dependencias') : ''}
+    ${e.riesgos?.length ? sec('Riesgos', lista(e.riesgos), 'riesgos') : ''}
+    ${barraPendiente(pr)}
+    ${preguntaPrHtml(pr)}
+    <p class="nota-pie">Explicación del ${esc(e.fecha?.slice(0, 10))} sobre el commit <span class="mono">${esc(e.headSha?.slice(0, 7))}</span>${e.riesgo ? ` · riesgo ${esc(e.riesgo)}` : ''}${e.esfuerzo ? ` · esfuerzo ${e.esfuerzo} de 5` : ''}.${API ? ` <button type="button" class="btn-texto" data-accion="analizar" ${trabajoActivo(pr) ? 'disabled' : ''}>Volver a analizar con IA</button>` : ''}</p>`;
+}
+
+function tabVerificaciones(pr) {
+  const v = pr.verificaciones;
+  if (!v) return '<p class="sin-dato">Sin verificaciones para esta PR.</p>';
+  if (!v.hallazgos.length) return '<p class="tenue">Las líneas agregadas pasan todas las reglas.</p>';
+  const color = { bloqueante: 'rojo', alto: 'ambar', medio: '', aviso: '' };
+  return `<div class="tabla"><table><thead><tr><th>Severidad</th><th>Hallazgo</th><th>Dónde</th></tr></thead><tbody>
+    ${v.hallazgos.map((h) => `<tr>
+      <td><span class="estado ${color[h.severidad]}">${esc(h.severidad)}</span></td>
+      <td><strong>${esc(h.titulo)}</strong><br><span class="tenue">${esc(h.mensaje)}</span><br><span class="muy-tenue">${esc(h.origen)}</span></td>
+      <td><a class="mono" href="${esc(pr.url)}/files" target="_blank" rel="noopener">${esc(h.archivo)}${h.linea ? ':' + h.linea : ''}</a>${h.texto ? `<code class="codigo">${esc(h.texto)}</code>` : ''}</td>
+    </tr>`).join('')}
+  </tbody></table></div>
+  <p class="nota-pie">Reglas fijas sobre las líneas agregadas, sin IA: marcan patrones, no confirman que haya un problema. Una línea se excluye de una regla con el comentario <span class="mono">seki-review: ignorar &lt;regla&gt;</span>.</p>`;
+}
+
+function tabDescripcion(pr) {
+  const texto = (pr.descripcion ?? '').replace(/<!--[\s\S]*?-->/g, '').trim();
+  let cuerpo = `<div class="md-desc lectura">${md(texto)}</div>`;
+  if (pr.descripcion === undefined) cuerpo = '<p class="sin-dato">Estos datos no traen la descripción. Use «Actualizar estado».</p>';
+  else if (!texto) cuerpo = `<p class="sin-dato">La PR no tiene descripción.${pr.seguridad ? ' Es una PR de seguridad: conviene pedir al autor qué cambia, por qué y en qué orden se despliega.' : ''}</p>`;
+  const commits = pr.commits ?? [];
+  const lista = commits.length
+    ? `<ol class="commits">${commits.map((c) => `<li>
+        <a class="mono" href="${esc(pr.url)}/commits/${esc(c.sha)}" target="_blank" rel="noopener">${esc(c.sha.slice(0, 7))}</a>
+        ${esc(c.titulo)}
+        <span class="muy-tenue">${esc(c.autor ?? '')}${c.fecha ? ` · ${esc(new Date(c.fecha).toLocaleString('es-CO'))}` : ''}</span>
+        ${c.cuerpo ? `<details><summary class="muy-tenue">Mensaje completo</summary><div class="tenue">${md(c.cuerpo)}</div></details>` : ''}
+      </li>`).join('')}</ol>`
+    : '<p class="sin-dato">Sin commits en estos datos.</p>';
+  return `${sec('Descripción del autor', cuerpo)}${sec('Commits', lista)}`;
+}
+
+function tabProbar(pr) {
+  const pasos = pr.explicacion?.como_probar ?? [];
+  if (!pasos.length) return '<p class="sin-dato">La explicación no trae pasos de prueba.</p>';
+  const marcados = almacen.leer(clavePasos(pr), []);
+  return `<ul class="pasos">${pasos.map((p, i) => `<li><input type="checkbox" id="paso${i}" data-paso="${i}" ${marcados.includes(i) ? 'checked' : ''}><label for="paso${i}">${esc(p)}</label></li>`).join('')}</ul>
+    <p class="nota-pie">${marcados.length} de ${plural(pasos.length, 'paso marcado', 'pasos marcados')}. Se guarda en este navegador y viaja con la revisión exportada.</p>`;
+}
+
+function tabRevision(pr) {
+  const r = revision(pr) ?? {};
+  return `${sec('Decisión', `<div class="decision" role="radiogroup">${Object.entries(DECISIONES).map(([k, [t]]) => `<label><input type="radio" name="decision" value="${k}" ${r.decision === k ? 'checked' : ''}> ${t}</label>`).join('')}</div>`)}
+    ${sec('Observaciones para el autor', `<textarea id="notaRevision" placeholder="Qué falta, qué se probó, qué hay que aclarar">${esc(r.nota ?? '')}</textarea>
+      <div class="guardado" id="guardado">${r.fecha ? `Guardado el ${esc(new Date(r.fecha).toLocaleString('es-CO'))}` : ''}</div>`)}
+    <p class="tenue">La revisión queda en este navegador. Para enviarla al autor:</p>
+    <div class="acciones"><button class="btn" data-accion="exportar">${icono('descargar')} Exportar revisión</button><button class="btn" data-accion="copiarResumen">${icono('copiar')} Copiar resumen</button></div>`;
+}
+
+const ESTADO_ARCHIVO = { added: 'Agregado', removed: 'Eliminado', modified: 'Modificado', renamed: 'Renombrado', copied: 'Copiado', changed: 'Cambiado' };
+const claveVistos = (pr) => `seki-review:vistos:${pr.id}:${pr.headSha}`;
+const idArchivo = (i) => `archivo-${i}`;
+
+function barrita(a, d) {
+  const total = a + d;
+  if (!total) return '';
+  const verdes = Math.round((a / total) * 5);
+  return `<span class="barrita" aria-hidden="true">${[0, 1, 2, 3, 4].map((i) => `<i class="${i < verdes ? 'a' : 'd'}"></i>`).join('')}</span>`;
+}
+
+// Comentarios sobre líneas del diff. Preguntas y pedidos de cambio nacen como borradores y se envían
+// juntos; las notas manuales se guardan al agregarlas y viajan en la revisión exportada.
+const TIPOS_COMENTARIO = {
+  pregunta: { nombre: 'Preguntar', etiqueta: 'Pregunta', ayuda: 'Qué se quiere entender de estas líneas. Mejor «¿qué pasa si…?» que «¿esto está bien?»' },
+  cambio: { nombre: 'Pedir cambio', etiqueta: 'Pedido de cambio', ayuda: 'Cómo debe quedar este código' },
+  nota: { nombre: 'Nota', etiqueta: 'Nota', ayuda: 'Comentario para el autor' },
+};
+const ESTADOS_COMENTARIO = {
+  borrador: ['Borrador', ''], nota: ['Nota guardada', ''], en_cola: ['En cola', 'azul'], en_curso: ['En curso', 'azul'],
+  respondido: ['Respondido', 'verde'], propuesta: ['Propuesta lista', 'ambar'], aprobado: ['Aprobado', 'violeta'],
+  descartado: ['Descartado', ''], error: ['Error', 'rojo'],
+};
+const claveComentarios = (pr) => `seki-review:comentarios:${pr.id}`;
+const comentarios = (pr) => almacen.leer(claveComentarios(pr), []);
+const vivos = (pr) => comentarios(pr).filter((c) => c.estado !== 'descartado');
+const deLineas = (pr) => vivos(pr).filter((c) => !c.ambito);
+const dePr = (pr, seccion) => vivos(pr).filter((c) => c.ambito === 'pr' && (c.seccion ?? null) === (seccion ?? null));
+const SECCIONES = {
+  resumen: 'Qué resuelve', por_que: 'Por qué', impacto_usuario: 'Qué nota quien usa el portal', que_cambia: 'Qué cambia',
+  orden_lectura: 'Orden de lectura', diagrama: 'Flujo', tecnologias: 'Tecnologías', alternativas: 'Alternativas consideradas',
+  dependencias: 'Debe ir antes', riesgos: 'Riesgos', como_probar: 'Cómo probar',
+};
+
+// Preguntas sobre la PR o una sección de la explicación: se envían al momento, sin pasar por "Revisión pendiente".
+// Un segundo clic en la misma opción quita la valoración.
+async function valorar(pr, id, util) {
+  const c = comentarios(pr).find((x) => x.id === id);
+  const valor = c?.valoracion === util ? null : util;
+  try {
+    await api('/api/valorar', { id: pr.id, comentario: id, util: valor });
+    escribirComentarios(pr, comentarios(pr).map((x) => (x.id === id ? { ...x, valoracion: valor ?? undefined } : x)));
+    repintarDetalle();
+  } catch (err) { avisar(err.message); }
+}
+
+async function investigar(pr, id) {
+  try {
+    await api('/api/investigar', { id: pr.id, comentario: id });
+    escribirComentarios(pr, comentarios(pr).map((c) => (c.id === id ? { ...c, estado: 'en_cola', investigar: true } : c)));
+    repintarDetalle();
+  } catch (err) { avisar(err.message); }
+  sondear();
+}
+
+async function preguntarPr(pr, seccion, textoFijo, { citado, enviar = true, investigar } = {}) {
+  const caja = $('preguntaPr');
+  const texto = (textoFijo ?? caja?.value ?? '').trim();
+  if (!texto) { avisar('Escriba la pregunta antes de enviarla.'); return caja?.focus(); }
+  const sobre = seccion ?? ($('preguntaPrSeccion')?.value || undefined);
+  const respondeA = !textoFijo && estado.respondeA?.ambito === 'pr' ? estado.respondeA.id : undefined;
+  const conCodigo = investigar ?? (!textoFijo && !!$('preguntaPrCodigo')?.checked);
+  const c = { id: nuevoIdComentario(), creado: new Date().toISOString(), tipo: 'pregunta', estado: 'borrador', ambito: 'pr', seccion: sobre, citado: citado || undefined, respondeA, investigar: conCodigo || undefined, texto, headSha: pr.headSha };
+  guardarComentario(pr, c);
+  if (respondeA) estado.respondeA = null;
+  if (caja && !textoFijo) caja.value = '';
+  if (enviar) await enviarRevision(pr, [c.id]);
+  else { repintarDetalle(); pintarCola(); }
+}
+
+// Selección de texto en el Resumen: barra flotante para preguntar sobre el fragmento (como en Plannotator).
+const RAPIDAS = [
+  ['¿Por qué?', '¿Por qué se hizo así y no de otra forma?'],
+  ['Dar un ejemplo', 'Dar un ejemplo concreto tomado del diff.'],
+  ['Ampliar', 'Ampliar este punto con más detalle y ejemplos del diff.'],
+];
+let seleccionResumen = null;
+
+function cerrarBarraSel() {
+  $('barraSel')?.remove();
+  seleccionResumen = null;
+}
+
+// Texto seleccionado con el mouse dentro del diff: se traduce a las filas que toca para comentar esas líneas.
+function lineasDeSeleccion(rango) {
+  const fila = (n) => (n.nodeType === 1 ? n : n.parentElement)?.closest('tr[data-clave]');
+  const a = fila(rango.startContainer);
+  const b = fila(rango.endContainer);
+  const archivo = a?.closest('.archivo');
+  if (!a || !b || !archivo || archivo !== b.closest('.archivo') || a.closest('tr.hilo, tr.caja')) return null;
+  return { archivo: +archivo.dataset.k, claveA: a.dataset.clave, claveB: b.dataset.clave };
+}
+
+function abrirCajaDeSeleccion(tipo) {
+  const s = seleccionResumen?.lineas;
+  cerrarBarraSel();
+  if (!s) return;
+  window.getSelection()?.removeAllRanges();
+  leerCaja();
+  estado.caja = { ...cajaVacia(tipo), texto: '' };
+  estado.seleccionLineas = s;
+  marcarSeleccion();
+}
+
+function colocarBarra(barra, caja) {
+  document.body.append(barra);
+  const ancho = Math.min(420, window.innerWidth - 24);
+  barra.style.width = `${ancho}px`;
+  barra.style.left = `${Math.max(12, Math.min(caja.left, window.innerWidth - ancho - 12))}px`;
+  const abajo = caja.bottom + 8;
+  barra.style.top = `${abajo + 170 > window.innerHeight ? Math.max(12, caja.top - 8 - barra.offsetHeight) : abajo}px`;
+}
+
+function abrirBarraSel() {
+  const sel = window.getSelection();
+  const texto = sel?.toString().replace(/\s+/g, ' ').trim();
+  if (!texto || sel.rangeCount === 0) return;
+  if (estado.tab === 'archivos') {
+    const lineas = lineasDeSeleccion(sel.getRangeAt(0));
+    if (!lineas) return;
+    seleccionResumen = { lineas };
+    $('barraSel')?.remove();
+    const barra = document.createElement('div');
+    barra.id = 'barraSel';
+    barra.className = 'barra-sel';
+    barra.setAttribute('role', 'dialog');
+    barra.setAttribute('aria-label', 'Comentar las líneas seleccionadas');
+    barra.innerHTML = `<div class="barra-sel-botones">
+      ${API ? `<button type="button" class="btn chico primario" data-bsel-lineas="pregunta">${icono('chispa')} Preguntar</button>` : ''}
+      ${API && prSel()?.estadoPr === 'OPEN' ? '<button type="button" class="btn chico" data-bsel-lineas="cambio">Pedir cambio</button>' : ''}
+      <button type="button" class="btn chico${API ? '' : ' primario'}" data-bsel-lineas="nota">Nota</button>
+      <button type="button" class="btn-texto" data-bsel="cerrar" aria-label="Cerrar">Esc</button></div>`;
+    colocarBarra(barra, sel.getRangeAt(0).getBoundingClientRect());
+    barra.style.width = 'auto';
+    return;
+  }
+  if (!API || estado.tab !== 'resumen') return;
+  const rango = sel.getRangeAt(0);
+  const nodo = rango.commonAncestorContainer.nodeType === 1 ? rango.commonAncestorContainer : rango.commonAncestorContainer.parentElement;
+  const seccion = nodo?.closest('[data-seccion]');
+  if (!seccion || nodo.closest('.hilos-pr, textarea, button')) return;
+  seleccionResumen = { seccion: seccion.dataset.seccion, citado: texto.slice(0, 2000) };
+  const caja = rango.getBoundingClientRect();
+  $('barraSel')?.remove();
+  const barra = document.createElement('div');
+  barra.id = 'barraSel';
+  barra.className = 'barra-sel';
+  barra.setAttribute('role', 'dialog');
+  barra.setAttribute('aria-label', 'Preguntar sobre el texto seleccionado');
+  barra.innerHTML = `<div class="barra-sel-botones">
+      <button type="button" class="btn chico primario" data-bsel="preguntar">${icono('chispa')} Preguntar</button>
+      ${RAPIDAS.map(([e], i) => `<button type="button" class="btn chico" data-bsel-rapida="${i}">${esc(e)}</button>`).join('')}
+      <button type="button" class="btn-texto" data-bsel="cerrar" aria-label="Cerrar">Esc</button>
+    </div>
+    <div class="barra-sel-caja" hidden>
+      <blockquote class="cita">${esc(seleccionResumen.citado.length > 180 ? `${seleccionResumen.citado.slice(0, 180)}…` : seleccionResumen.citado)}</blockquote>
+      <textarea id="barraSelTexto" rows="3" placeholder="Pregunta o comentario sobre este fragmento" aria-label="Pregunta sobre el fragmento"></textarea>
+      <label class="muy-tenue" style="display:block;margin-bottom:6px"><input type="checkbox" id="barraSelCodigo"> Revisar el código del repositorio</label>
+      <div class="prop-acciones"><button type="button" class="btn chico primario" data-bsel="enviar">Enviar ahora</button><button type="button" class="btn chico" data-bsel="agregar">Agregar a la revisión</button><span class="muy-tenue">Ctrl + Enter agrega</span></div>
+    </div>`;
+  colocarBarra(barra, caja);
+}
+
+function accionBarraSel(accion, rapida) {
+  const pr = prSel();
+  const s = seleccionResumen;
+  if (!pr || !s) return cerrarBarraSel();
+  if (rapida !== undefined) { cerrarBarraSel(); return preguntarPr(pr, s.seccion, RAPIDAS[rapida][1], { citado: s.citado, enviar: false }); }
+  if (accion === 'cerrar') return cerrarBarraSel();
+  if (accion === 'preguntar') { $('barraSel').querySelector('.barra-sel-caja').hidden = false; return $('barraSelTexto').focus(); }
+  const texto = $('barraSelTexto')?.value.trim();
+  if (!texto) { avisar('Escriba la pregunta antes de agregarla.'); return $('barraSelTexto')?.focus(); }
+  const investigar = !!$('barraSelCodigo')?.checked;
+  cerrarBarraSel();
+  window.getSelection()?.removeAllRanges();
+  return preguntarPr(pr, s.seccion, texto, { citado: s.citado, enviar: accion === 'enviar', investigar });
+}
+
+// Resalta en la explicación los fragmentos citados por preguntas (CSS Highlight API; sin ella no se resalta).
+function resaltarCitas(pr) {
+  if (!globalThis.CSS?.highlights || !globalThis.Highlight) return;
+  const rangos = [];
+  for (const c of vivos(pr).filter((x) => x.ambito === 'pr' && x.citado)) {
+    const el = document.querySelector(`[data-seccion="${c.seccion}"]`);
+    const rg = el && rangoDeTexto(el, c.citado);
+    if (rg) rangos.push(rg);
+  }
+  CSS.highlights.set('seki-citado', new Highlight(...rangos));
+}
+
+function rangoDeTexto(el, buscado) {
+  const nodos = [];
+  const andar = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.parentElement.closest('.hilos-pr, h3') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
+  let texto = '';
+  const mapa = [];
+  for (let n = andar.nextNode(); n; n = andar.nextNode()) {
+    for (let i = 0; i < n.data.length; i++) {
+      const ch = /\s/.test(n.data[i]) ? ' ' : n.data[i];
+      if (ch === ' ' && texto.endsWith(' ')) continue;
+      texto += ch;
+      mapa.push([n, i]);
+    }
+    nodos.push(n);
+  }
+  const ini = texto.indexOf(buscado);
+  if (ini < 0) return null;
+  const [na, ia] = mapa[ini];
+  const [nb, ib] = mapa[ini + buscado.length - 1];
+  const rg = document.createRange();
+  rg.setStart(na, ia);
+  rg.setEnd(nb, ib + 1);
+  return rg;
+}
+const borradores = (pr) => comentarios(pr).filter((c) => c.estado === 'borrador');
+// El servidor no envía comentarios hechos sobre otro commit; al editarlos se anclan al commit actual.
+const deOtroCommit = (pr, c) => !!c.headSha && c.headSha !== pr.headSha;
+const nuevoIdComentario = () => `c-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+const rangoTexto = (c) => esc(c.desde === c.hasta ? `L${c.desde}` : `L${c.desde}–${c.hasta}`);
+const cajaVacia = (tipo) => ({ tipo: tipo ?? (API ? 'pregunta' : 'nota'), texto: '', conSugerido: false, sugerido: null, editando: null });
+
+function escribirComentarios(pr, lista) {
+  if (!almacen.escribir(claveComentarios(pr), lista)) avisar('No se pudo guardar: el navegador bloquea el almacenamiento local.');
+}
+
+function guardarComentario(pr, c) {
+  const nuevo = { ...c, actualizado: new Date().toISOString() };
+  escribirComentarios(pr, [...comentarios(pr).filter((x) => x.id !== c.id), nuevo]);
+  sincronizarComentarios(pr, [nuevo]);
+}
+
+function borrarComentarios(pr, ids) {
+  escribirComentarios(pr, comentarios(pr).filter((x) => !ids.includes(x.id)));
+  sincronizarComentarios(pr, [], ids);
+}
+
+// Junta comentarios por id; gana el de actualización más reciente, salvo que el servidor ya lo haya sacado
+// de borrador o nota: eso no se revierte desde el navegador.
+const DEL_NAVEGADOR = new Set(['borrador', 'nota']);
+function fusionarComentarios(actuales, entrantes) {
+  const porId = new Map(actuales.map((c) => [c.id, c]));
+  for (const c of entrantes) {
+    const previo = porId.get(c.id);
+    if (previo && !DEL_NAVEGADOR.has(previo.estado) && DEL_NAVEGADOR.has(c.estado)) continue;
+    if (!previo || (c.actualizado ?? '') > (previo.actualizado ?? '')) porId.set(c.id, c);
+  }
+  return [...porId.values()];
+}
+
+// Con el tablero servido, los comentarios también viven en disco: no se pierden y la IA los lee.
+async function sincronizarComentarios(pr, cambios = [], borrados = []) {
+  if (!API) return;
+  try {
+    let delServidor = cambios.length || borrados.length
+      ? await api('/api/comentarios', { id: pr.id, comentarios: cambios, borrados })
+      : await api(`/api/comentarios?id=${encodeURIComponent(pr.id)}`);
+    // Borradores y notas que solo están en este navegador (sin servidor al crearlos, o importados) se suben.
+    const enServidor = new Set(delServidor.map((c) => c.id));
+    const faltan = comentarios(pr).filter((c) => DEL_NAVEGADOR.has(c.estado) && !enServidor.has(c.id) && !borrados.includes(c.id));
+    if (faltan.length) delServidor = await api('/api/comentarios', { id: pr.id, comentarios: faltan });
+    const antes = JSON.stringify(comentarios(pr));
+    escribirComentarios(pr, fusionarComentarios(comentarios(pr).filter((c) => !borrados.includes(c.id)), delServidor));
+    estado.comentariosCargados.add(pr.id);
+    if (JSON.stringify(comentarios(pr)) !== antes && estado.seleccion === pr.id && !$('detalle').contains(document.activeElement)) { repintarDetalle(); pintarCola(); }
+  } catch (err) { avisar(`Los comentarios quedaron solo en este navegador: ${err.message}`); }
+}
+
+function leerCaja() {
+  const t = $('cajaTexto');
+  if (t) estado.caja.texto = t.value;
+  const s = $('cajaSugerido');
+  if (s) estado.caja.sugerido = s.value;
+}
+
+function cajaHtml(rango) {
+  const c = estado.caja;
+  const pr = FOTO.prs.find((p) => p.id === estado.seleccion);
+  const abierta = pr?.estadoPr === 'OPEN';
+  const motivo = (k) => (k === 'nota' ? '' : !API ? 'Disponible con el tablero abierto desde Claude Code (tablero_servir)' : k === 'cambio' && !abierta ? 'La PR ya no está abierta' : '');
+  const tabs = Object.entries(TIPOS_COMENTARIO).map(([k, t]) => `<button type="button" data-caja-tipo="${k}" aria-pressed="${c.tipo === k}" ${motivo(k) ? `disabled title="${motivo(k)}"` : ''}>${t.nombre}</button>`).join('');
+  const sugerible = rango.lado === 'nuevo';
+  const sugerido = c.tipo === 'nota'
+    ? `<label><input type="checkbox" data-caja-sugerido ${c.conSugerido && sugerible ? 'checked' : ''} ${sugerible ? '' : 'disabled'}> Incluir código sugerido</label>
+       ${sugerible ? '' : ' <span class="muy-tenue">El código sugerido solo aplica a líneas nuevas o sin cambios</span>'}
+       ${c.conSugerido && sugerible ? `<textarea id="cajaSugerido" class="mono" rows="${Math.min(14, rango.claves.length + 1)}" spellcheck="false" aria-label="Código sugerido">${esc(c.sugerido ?? rango.texto)}</textarea>` : ''}`
+    : '';
+  return `<tr class="caja"><td class="n"></td><td class="n"></td><td><div class="caja-com" role="group" aria-label="Comentario sobre ${rangoTexto(rango)}">
+    <div class="caja-cab"><span class="mono muy-tenue">${rangoTexto(rango)}</span><div class="tabs-caja" role="group" aria-label="Tipo de comentario">${tabs}</div></div>
+    ${c.respondeA ? `<div class="respondiendo">Sigue la conversación de: «${esc(c.resumenRespondeA ?? '')}»</div>` : ''}
+    <textarea id="cajaTexto" rows="3" placeholder="${TIPOS_COMENTARIO[c.tipo].ayuda}" aria-label="${TIPOS_COMENTARIO[c.tipo].ayuda}">${esc(c.texto)}</textarea>
+    ${sugerido}
+    <div class="caja-acciones">
+      <button type="button" class="btn chico primario" data-accion="cajaAgregar">${c.editando ? 'Guardar cambios' : c.tipo === 'nota' ? 'Guardar nota' : 'Agregar a la revisión'}</button>
+      <button type="button" class="btn chico" data-accion="cajaCancelar">Cancelar</button>
+      <span class="muy-tenue">Ctrl + Enter</span>
+    </div>
+  </div></td></tr>`;
+}
+
+const hiloHtml = (c, nivel = 0) => `<tr class="hilo"><td class="n"></td><td class="n"></td><td>${hiloCuerpo(c, nivel)}</td></tr>`;
+
+// Qué abrió la IA al investigar: sin esta lista no se sabe si una afirmación sale del código o del diff.
+function consultadoHtml(c) {
+  const a = c.consultado?.archivos ?? [];
+  const b = c.consultado?.busquedas ?? [];
+  const bloq = c.bloqueadas ?? [];
+  if (!c.investigado || (!a.length && !b.length && !bloq.length)) return '';
+  const rango = (x) => (x.desde ? ` L${Number(x.desde)}${x.hasta ? `–${Number(x.hasta)}` : ''}` : '');
+  const filas = [
+    ...a.map((x) => `<li><span class="mono">${x.repo ? `${esc(x.repo)}: ` : ''}${esc(x.ruta)}${rango(x)}</span></li>`),
+    ...b.map((x) => `<li>${esc(x.herramienta === 'Grep' ? 'Búsqueda' : 'Archivos')} <span class="mono">${esc(x.patron)}</span>${x.repo ? ` en ${esc(x.repo)}` : ''}</li>`),
+    ...bloq.map((x) => `<li>Bloqueado por permisos: <span class="mono">${esc(x.herramienta)} ${esc(x.ruta)}</span></li>`),
+  ];
+  return `<details class="leido muy-tenue"><summary>Archivos leídos: ${a.length}${b.length ? ` · ${plural(b.length, 'búsqueda', 'búsquedas')}` : ''}${bloq.length ? ` · ${plural(bloq.length, 'intento bloqueado', 'intentos bloqueados')}` : ''}</summary><ul>${filas.join('')}</ul></details>`;
+}
+
+const valorarHtml = (c) => (API && c.estado === 'respondido'
+  ? `<span class="valorar" role="group" aria-label="¿Sirvió la respuesta?">¿Sirvió? <button type="button" class="btn-texto" data-com-valorar="${esc(c.id)}" data-util="si" aria-pressed="${c.valoracion === true}">Sí</button><button type="button" class="btn-texto" data-com-valorar="${esc(c.id)}" data-util="no" aria-pressed="${c.valoracion === false}">No</button></span> · `
+  : '');
+
+function respuestaHtml(c) {
+  const larga = c.respuesta.length > 900 || c.respuesta.split('\n').length > 14;
+  const abierta = estado.expandidas.has(c.id);
+  const costo = c.desdeCache ? 'Respuesta guardada, sin costo' : `${esc(nombreModelo(c.modelo))}${c.costo ? ` · ${usd(c.costo)}${Number(c.lote) > 1 ? ` por el lote de ${Number(c.lote)}` : ''}` : ''}`;
+  const investigar = API && c.tipo === 'pregunta' && !c.investigado && c.estado === 'respondido'
+    ? `<button type="button" class="btn-texto${c.necesitaCodigo ? ' destacado' : ''}" data-com-investigar="${esc(c.id)}" title="La IA busca y lee el código de la PR y de los otros repos (sin secretos)">${icono('buscar')} Investigar en el código</button>` : '';
+  return `<div class="hilo-respuesta">
+    ${c.necesitaCodigo && !c.investigado ? '<p class="aviso-codigo">Para responder con certeza hay que revisar el código del repositorio.</p>' : ''}
+    <div class="md${larga && !abierta ? ' plegada' : ''}">${md(c.respuesta)}</div>
+    ${larga ? `<button type="button" class="btn-texto" data-ver-mas="${esc(c.id)}">${abierta ? 'Ver menos' : 'Ver más'}</button>` : ''}
+    ${c.leido?.length ? `<p class="leido muy-tenue">Revisado en: ${c.leido.map((x) => `<span class="mono">${esc(x.repo)}${x.portal && x.portal !== x.repo ? ` (${esc(x.portal)})` : ''} ${esc(x.rama)}@${esc(String(x.sha ?? '').slice(0, 7))}</span>`).join(' · ')}</p>` : ''}
+    ${consultadoHtml(c)}
+    <div class="hilo-pie muy-tenue"><span>Respuesta de IA</span> · ${c.investigado ? `${icono('buscar')} Revisado en el código · ` : ''}${costo}${valorarHtml(c)}<button type="button" class="btn-texto" data-com-repreguntar="${esc(c.id)}">Repreguntar</button>${investigar}</div></div>`;
+}
+
+// Ordena una lista de comentarios como conversación: cada repregunta debajo de la pregunta a la que responde.
+function enHilo(cs) {
+  const ids = new Set(cs.map((c) => c.id));
+  const hijos = new Map();
+  for (const c of cs) if (c.respondeA && ids.has(c.respondeA)) hijos.set(c.respondeA, [...(hijos.get(c.respondeA) ?? []), c]);
+  const salida = [];
+  const poner = (c, n) => { salida.push([c, n]); for (const h of hijos.get(c.id) ?? []) poner(h, n + 1); };
+  for (const c of cs) if (!(c.respondeA && ids.has(c.respondeA))) poner(c, 0);
+  return salida;
+}
+const hilosDiv = (cs) => enHilo(cs).map(([c, n]) => hiloCuerpo(c, n)).join('');
+
+// Formato mínimo de las respuestas de la IA: bloques de código, código en línea, negrita, listas y párrafos.
+function md(texto) {
+  return String(texto ?? '').replace(/\r/g, '').split('```').map((b, i) => (i % 2
+    ? `<pre class="md-codigo">${esc(b.replace(/^[a-zA-Z]*\n/, '').replace(/\n$/, ''))}</pre>`
+    : mdTexto(b))).join('');
+}
+// Solo enlaces http(s): esc() ya quitó las comillas, así que el href no puede salirse del atributo.
+const mdEnLinea = (t) => esc(t).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+  .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+function mdTexto(t) {
+  return t.split(/\n\s*\n/).map((par) => {
+    const partes = [];
+    let lista = null;
+    const agregar = (tipo, valor) => {
+      if (!lista || lista.tipo !== tipo) { lista = { tipo, items: [] }; partes.push(lista); }
+      lista.items.push(valor);
+    };
+    for (const linea of par.split('\n')) {
+      const item = /^\s*(?:[-*•]|(\d+)[.)])\s+(.*)$/.exec(linea);
+      const titulo = /^\s*#{1,6}\s+(.*)$/.exec(linea);
+      if (/^\s*\|/.test(linea)) {
+        agregar('pre', linea);
+      } else if (item) {
+        agregar(item[1] ? 'ol' : 'ul', item[2]);
+      } else if (titulo) {
+        lista = null;
+        partes.push({ tipo: 'h', items: [titulo[1]] });
+      } else if (linea.trim()) {
+        lista = null;
+        partes.push(linea);
+      }
+    }
+    return partes.map((x) => {
+      if (typeof x === 'string') return `<p>${mdEnLinea(x)}</p>`;
+      if (x.tipo === 'pre') return `<pre class="md-codigo">${esc(x.items.join('\n'))}</pre>`;
+      if (x.tipo === 'h') return `<h4 class="md-titulo">${mdEnLinea(x.items[0])}</h4>`;
+      return `<${x.tipo}>${x.items.map((i) => `<li>${mdEnLinea(i)}</li>`).join('')}</${x.tipo}>`;
+    }).join('');
+  }).join('');
+}
+
+function hiloCuerpo(c, nivel = 0) {
+  const revisando = c.investigar && (c.estado === 'en_cola' || c.estado === 'en_curso');
+  const [txt, cls] = revisando ? ['Revisando el código', 'azul'] : ESTADOS_COMENTARIO[c.estado] ?? [c.estado, ''];
+  const editable = (c.estado === 'borrador' || c.estado === 'nota') && !c.ambito;
+  const donde = c.ambito === 'pr' ? (c.seccion ? esc(SECCIONES[c.seccion] ?? '') : 'Toda la PR') : rangoTexto(c);
+  return `<div class="hilo-com${nivel ? ' respuesta-a' : ''}" style="${nivel ? `margin-left:${Math.min(nivel, 3) * 18}px` : ''}">
+    <div class="hilo-cab">${nivel ? '<span class="muy-tenue">Sigue</span>' : ''}<strong>${TIPOS_COMENTARIO[c.tipo]?.etiqueta ?? esc(c.tipo)}</strong><span class="mono muy-tenue">${donde}</span><span class="punto-estado ${cls}">${esc(txt)}</span>
+      ${editable ? `<span class="der"><button type="button" class="btn-texto" data-com-editar="${esc(c.id)}">Editar</button><button type="button" class="btn-texto" data-com-borrar="${esc(c.id)}">Borrar</button></span>` : ''}${c.ambito && c.estado === 'borrador' ? `<span class="der"><button type="button" class="btn-texto" data-com-borrar="${esc(c.id)}">Borrar</button></span>` : ''}</div>
+    ${c.citado ? `<blockquote class="cita">${esc(c.citado)}</blockquote>` : ''}
+    <div class="hilo-texto">${esc(c.texto)}</div>
+    ${c.sugerido !== undefined ? `<pre class="sugerido" aria-label="Código sugerido">${esc(c.sugerido)}</pre>` : ''}
+    ${c.respuesta ? respuestaHtml(c) : ''}
+    ${c.propuestaId ? propuestaHtml(c) : ''}
+    ${c.estado === 'error' && c.motivo ? `<div class="hilo-motivo">${esc(c.motivo)}${API && c.tipo !== 'nota' ? ` <button type="button" class="btn-texto" data-com-reintentar="${esc(c.id)}">Reintentar</button>` : ''}</div>` : ''}
+  </div>`;
+}
+
+// Propuestas de cambio de la IA, pedidas al servidor bajo demanda.
+const propuestasPedidas = new Set();
+function propuestaDe(c) {
+  const prop = estado.propuestas.get(c.propuestaId);
+  if (prop || !API || propuestasPedidas.has(c.propuestaId)) return prop;
+  propuestasPedidas.add(c.propuestaId);
+  api(`/api/propuesta?pr=${encodeURIComponent(estado.seleccion)}&id=${encodeURIComponent(c.propuestaId)}`)
+    .then((x) => { estado.propuestas.set(x.id, x); repintarDetalle(); }, (e) => avisar(e.message))
+    .finally(() => propuestasPedidas.delete(c.propuestaId));
+  return null;
+}
+
+function diffPropuesta(prop) {
+  return prop.patch.split(/^diff --git /m).slice(1).map((bloque) => {
+    const archivo = /^\+\+\+ (?:b\/)?(.+)$/m.exec(bloque)?.[1] ?? bloque.split(' ')[0].replace(/^a\//, '');
+    const inicio = bloque.indexOf('\n@@');
+    const lineas = inicio >= 0 ? SekiAnclaje.lineasDePatch(bloque.slice(inicio + 1).replace(/\n$/, '')) : [];
+    const filas = lineas.map((l) => (l.tipo === 'hunk'
+      ? `<tr class="hunk"><td class="n"></td><td class="n"></td><td class="c">${esc(l.texto)}</td></tr>`
+      : `<tr class="${l.tipo}"><td class="n">${l.viejo ?? ''}</td><td class="n">${l.nuevo ?? ''}</td><td class="c">${esc(l.texto)}</td></tr>`)).join('');
+    const fuera = prop.fueraDelComentario.includes(archivo);
+    return `<div class="prop-archivo"><div class="ruta"><span>${esc(archivo)}</span>${fuera ? '<span class="estado ambar">Fuera del comentario</span>' : ''}</div><div class="codigo-diff"><table>${filas}</table></div></div>`;
+  }).join('');
+}
+
+function checksPropuesta(prop) {
+  const c = prop.comprobaciones;
+  const fila = (nombre, r, configurado = true) => {
+    if (!configurado || !r) return check('circulo', '', nombre, 'No se comprobó', configurado ? 'Sin archivos que comprobar' : 'No configurado para este repo');
+    if (r.omitido) return check('alerta', 'ambar', nombre, 'Se superó el tiempo máximo', '');
+    if (r.ok) return check('ok', 'verde', nombre, 'Sin fallos nuevos', r.sinBaseline ? 'Sin baseline: no se comparó con el estado previo' : '');
+    return check('bloqueo', 'rojo', nombre, plural(r.nuevosFallos.length, 'fallo nuevo', 'fallos nuevos'), `${esc(r.nuevosFallos.slice(0, 6).join(' · '))}${r.sinBaseline ? ' · Sin baseline: puede incluir fallos que ya existían' : ''}`);
+  };
+  const reglas = c.reglas.bloqueantes
+    ? check('bloqueo', 'rojo', 'Reglas', plural(c.reglas.bloqueantes, 'bloqueante', 'bloqueantes'), esc(c.reglas.hallazgos.filter((h) => h.severidad === 'bloqueante').map((h) => `${h.archivo}:${h.linea} ${h.titulo}`).join(' · ')))
+    : c.reglas.resumen?.alto ? check('alerta', 'ambar', 'Reglas', plural(c.reglas.resumen.alto, 'hallazgo alto', 'hallazgos altos'), esc(c.reglas.hallazgos.filter((h) => h.severidad === 'alto').map((h) => h.titulo).join(' · ')))
+    : check('ok', 'verde', 'Reglas', 'Sin hallazgos', '');
+  return `<div class="prop-checks">${reglas}${fila('Tipos', c.tipos, c.tipos !== null)}${fila('Tests', c.tests, c.tests !== null)}</div>
+    ${(c.avisos ?? []).map((a) => `<p class="muy-tenue" style="margin:6px 0 0">${esc(a)}</p>`).join('')}`;
+}
+
+function propuestaHtml(c) {
+  const prop = propuestaDe(c);
+  if (!prop) return `<div class="propuesta tenue">${API ? 'Cargando la propuesta.' : 'La propuesta solo se ve con el tablero abierto desde Claude Code.'}</div>`;
+  const pr = prSel();
+  const pie = `<span class="muy-tenue">${esc(nombreModelo(prop.modelo))}${prop.costo ? ` · ${usd(prop.costo)}` : ''}</span>`;
+  let acciones = '';
+  if (prop.estado === 'lista') {
+    const confirmar = estado.confirmarAprobar === prop.id;
+    acciones = `<div class="prop-acciones">
+      <button type="button" class="btn chico primario" data-prop-aprobar="${esc(prop.id)}">${prop.conFallos ? (confirmar ? 'Confirmar: aprobar con fallos' : 'Aprobar con fallos') : 'Aprobar y subir a la rama'}</button>
+      <button type="button" class="btn chico" data-prop-ajustar="${esc(prop.id)}" aria-expanded="${estado.ajustando === prop.id}">Pedir ajuste</button>
+      <button type="button" class="btn chico" data-prop-descartar="${esc(prop.id)}">Descartar</button>${pie}
+    </div>
+    ${confirmar ? '<p class="hilo-motivo">La propuesta tiene fallos en las comprobaciones. El segundo clic la sube igual a la rama.</p>' : ''}
+    ${estado.ajustando === prop.id ? `<div class="prop-ajuste"><textarea id="ajusteTexto" placeholder="Qué cambiar de esta propuesta" aria-label="Qué cambiar de esta propuesta"></textarea>
+      <div class="prop-acciones"><button type="button" class="btn chico primario" data-prop-enviar-ajuste="${esc(prop.id)}">Enviar ajuste</button></div></div>` : ''}`;
+  } else if (prop.estado === 'conflicto' || prop.estado === 'rechazada') {
+    acciones = `<p class="hilo-motivo">${esc(prop.motivo ?? '')}</p><div class="prop-acciones">
+      <button type="button" class="btn chico" data-prop-regenerar="${esc(prop.id)}" ${pr?.estadoPr === 'OPEN' ? '' : 'disabled title="La PR ya no está abierta"'}>Regenerar</button>
+      ${prop.estado === 'rechazada' ? `<button type="button" class="btn chico" data-prop-copiar="${esc(prop.id)}">${icono('copiar')} Copiar parche</button>` : ''}${pie}</div>`;
+  } else if (prop.estado === 'aprobada') {
+    acciones = `<div class="prop-acciones"><span class="punto-estado violeta">Subida a la rama</span><a href="${esc(pr?.url ?? '')}/commits/${esc(prop.commit)}" target="_blank" rel="noopener" class="mono">${esc(prop.commit.slice(0, 7))} ${icono('externo')}</a>${pie}</div>`;
+  }
+  return `<div class="propuesta">
+    <div class="prop-cab"><strong>Propuesta</strong><span>${esc(prop.resumen)}</span></div>
+    ${diffPropuesta(prop)}
+    ${checksPropuesta(prop)}
+    ${acciones}
+  </div>`;
+}
+
+async function accionPropuesta(accion, id, extra = {}) {
+  const pr = prSel();
+  try {
+    const r = await api(`/api/propuesta/${accion}`, { pr: pr.id, id, ...extra });
+    estado.propuestas.delete(id);
+    if (accion === 'aprobar' && !r.ok) {
+      if (r.motivo === 'requiere_confirmacion') { estado.confirmarAprobar = id; return repintarDetalle(); }
+      avisar(r.motivo);
+    }
+    if (accion === 'aprobar' && r.ok) avisar(`Cambio subido a la rama (${r.commit.slice(0, 7)}).`);
+    estado.confirmarAprobar = null;
+    estado.ajustando = null;
+    await sincronizarComentarios(pr);
+    repintarDetalle();
+  } catch (err) { avisar(err.message); }
+  sondear();
+}
+
+function agregarComentario() {
+  leerCaja();
+  const pr = FOTO.prs.find((p) => p.id === estado.seleccion);
+  const rango = rangoSeleccion();
+  const c = estado.caja;
+  if (!pr || !rango) return;
+  if (!c.texto.trim()) { avisar('Escriba el comentario antes de agregarlo.'); return $('cajaTexto')?.focus(); }
+  const previo = c.editando ? comentarios(pr).find((x) => x.id === c.editando) : null;
+  const conSugerido = c.tipo === 'nota' && c.conSugerido && rango.lado === 'nuevo';
+  guardarComentario(pr, {
+    ...(previo ?? { id: nuevoIdComentario(), creado: new Date().toISOString() }),
+    tipo: c.tipo,
+    estado: c.tipo === 'nota' ? 'nota' : 'borrador',
+    archivo: estado.archivosTab[estado.seleccionLineas.archivo],
+    lado: rango.lado, desde: rango.desde, hasta: rango.hasta, claves: rango.claves,
+    textoOriginal: rango.texto,
+    texto: c.texto.trim(),
+    sugerido: conSugerido ? SekiAnclaje.textoSugerido(c.sugerido ?? rango.texto) : undefined,
+    headSha: pr.headSha,
+    respondeA: c.tipo === 'pregunta' && !previo ? c.respondeA : previo?.respondeA,
+  });
+  cerrarCaja(c.tipo);
+}
+
+function cerrarCaja(tipo) {
+  document.querySelectorAll('.codigo-diff tr.caja').forEach((f) => f.remove());
+  estado.seleccionLineas = null;
+  estado.caja = cajaVacia(tipo ?? estado.caja.tipo);
+  repintarDetalle();
+  pintarCola();
+}
+
+function repintarDetalle() {
+  const y = $('detalle').scrollTop;
+  pintarDetalle();
+  $('detalle').scrollTop = y;
+}
+
+function editarComentario(pr, id) {
+  const c = comentarios(pr).find((x) => x.id === id);
+  const k = estado.archivosTab.indexOf(c?.archivo);
+  if (!c || k < 0) return;
+  const claves = c.claves?.length ? c.claves : [`${c.lado === 'viejo' ? 'v' : 'n'}${c.desde}`, `${c.lado === 'viejo' ? 'v' : 'n'}${c.hasta}`];
+  estado.seleccionLineas = { archivo: k, claveA: claves[0], claveB: claves[claves.length - 1] };
+  estado.caja = { tipo: c.tipo, texto: c.texto, conSugerido: c.sugerido !== undefined, sugerido: c.sugerido ?? null, editando: c.id };
+  marcarSeleccion();
+}
+
+// Filas de un parche unificado con número de línea viejo y nuevo; los hallazgos se cuelgan bajo su línea nueva.
+// k: índice del archivo en la pestaña, para ubicar la selección de líneas.
+function filasDiff(lineas, hallazgos, k, hilos = new Map()) {
+  const filas = [];
+  const porLinea = new Map();
+  for (const h of hallazgos) {
+    if (!porLinea.has(h.linea)) porLinea.set(h.linea, []);
+    porLinea.get(h.linea).push(h);
+  }
+  const color = { bloqueante: 'rojo', alto: 'ambar', medio: '', aviso: '' };
+  const sel = estado.seleccionLineas?.archivo === k ? clavesSeleccion() : new Set();
+  const num = (n, clave) => (n === null ? '<td class="n"></td>' : `<td class="n"><button class="n-sel" data-sel="${clave}" aria-label="Seleccionar línea ${n}">${n}</button></td>`);
+  for (const l of lineas) {
+    if (l.tipo === 'hunk') {
+      filas.push(`<tr class="hunk"><td class="n"></td><td class="n"></td><td class="c">${esc(l.texto)}</td></tr>`);
+      continue;
+    }
+    const clave = SekiAnclaje.claveLinea(l);
+    filas.push(`<tr class="${l.tipo}${sel.has(clave) ? ' sel' : ''}" data-clave="${clave}">${num(l.viejo, clave)}${num(l.nuevo, clave)}<td class="c">${esc(l.texto)}</td></tr>`);
+    if (l.tipo !== 'del' && porLinea.has(l.nuevo)) {
+      for (const x of porLinea.get(l.nuevo)) {
+        filas.push(`<tr class="nota"><td class="n"></td><td class="n"></td><td><span class="estado ${color[x.severidad]}">${esc(x.severidad)}</span> <strong>${esc(x.titulo)}</strong> · <span class="tenue">${esc(x.mensaje)}</span></td></tr>`);
+      }
+    }
+    for (const [c, n] of enHilo(hilos.get(clave) ?? [])) filas.push(hiloHtml(c, n));
+  }
+  return filas.join('');
+}
+
+// Selección de líneas del diff: clic marca una línea, Shift + clic extiende el rango dentro del mismo archivo.
+function rangoSeleccion() {
+  const s = estado.seleccionLineas;
+  if (!s) return null;
+  return SekiAnclaje.normalizarRango(estado.lineasArchivo[s.archivo] ?? [], s.claveA, s.claveB);
+}
+
+const clavesSeleccion = () => new Set(rangoSeleccion()?.claves ?? []);
+
+function marcarSeleccion() {
+  leerCaja();
+  document.querySelectorAll('.codigo-diff tr.sel').forEach((f) => f.classList.remove('sel'));
+  document.querySelectorAll('.codigo-diff tr.caja').forEach((f) => f.remove());
+  const s = estado.seleccionLineas;
+  const rango = rangoSeleccion();
+  if (!s || !rango) return;
+  const tabla = document.querySelector(`#${idArchivo(s.archivo)} .codigo-diff`);
+  if (!tabla) return;
+  tabla.closest('.archivo').removeAttribute('data-plegado');
+  let ultima = null;
+  for (const clave of rango.claves) {
+    const fila = tabla.querySelector(`tr[data-clave="${clave}"]`);
+    fila?.classList.add('sel');
+    ultima = fila ?? ultima;
+  }
+  ultima?.insertAdjacentHTML('afterend', cajaHtml(rango));
+  const t = $('cajaTexto');
+  if (t && document.activeElement?.id !== 'cajaSugerido') { t.focus({ preventScroll: true }); t.setSelectionRange(t.value.length, t.value.length); }
+}
+
+function seleccionarLinea(boton, extender) {
+  const k = +boton.closest('.archivo').dataset.k;
+  const clave = boton.dataset.sel;
+  const previa = estado.seleccionLineas;
+  const extiende = extender && previa?.archivo === k;
+  if (!extiende && !estado.caja.editando) { leerCaja(); estado.caja = { ...cajaVacia(estado.caja.tipo), texto: estado.caja.texto }; }
+  estado.seleccionLineas = extiende ? { ...previa, claveB: clave } : { archivo: k, claveA: clave, claveB: clave };
+  marcarSeleccion();
+}
+
+function barraPendiente(pr) {
+  const bs = borradores(pr);
+  if (!bs.length) return '';
+  const preguntas = bs.filter((c) => c.tipo === 'pregunta').length;
+  const cambios = bs.filter((c) => c.tipo === 'cambio').length;
+  const partes = [preguntas && plural(preguntas, 'pregunta', 'preguntas'), cambios && plural(cambios, 'pedido de cambio', 'pedidos de cambio')].filter(Boolean).join(' · ');
+  return `<div class="barra-pendiente" role="region" aria-label="Revisión pendiente">
+    <span><strong>Revisión pendiente (${bs.length})</strong> <span class="tenue">${partes}</span></span>
+    <span class="der">
+      <button type="button" class="btn chico primario" data-accion="enviarRevision" ${API ? '' : 'disabled title="Disponible con el tablero abierto desde Claude Code (tablero_servir)"'}>${icono('chispa')} Enviar revisión</button>
+      <button type="button" class="btn chico" data-accion="descartarBorradores">${estado.confirmarDescarte ? `Confirmar: descartar ${plural(bs.length, 'borrador', 'borradores')}` : 'Descartar borradores'}</button>
+    </span>
+  </div>`;
+}
+
+function ordenarArchivos(pr, archivos) {
+  const orden = (pr.explicacion?.orden_lectura ?? []).map((o) => o.archivo);
+  const pos = (a) => { const i = orden.findIndex((o) => a.filename === o || a.filename.endsWith('/' + o) || o.endsWith(a.filename)); return i < 0 ? orden.length : i; };
+  return archivos.map((a, i) => ({ ...a, i })).sort((a, b) => pos(a) - pos(b) || a.i - b.i);
+}
+
+let diffPendiente = null;
+function tabArchivos(pr) {
+  let archivos = DIFFS[pr.id];
+  if (!archivos) {
+    if (API) {
+      if (diffPendiente !== pr.id) {
+        diffPendiente = pr.id;
+        api(`/api/diff?id=${encodeURIComponent(pr.id)}`).then((d) => { DIFFS[pr.id] = d; if (estado.seleccion === pr.id) pintarDetalle(); }, (e) => avisar(e.message)).finally(() => { diffPendiente = null; });
+      }
+      return '<p class="tenue">Cargando los cambios de GitHub.</p>';
+    }
+    return `<p class="tenue">Este tablero no trae el diff de esta PR. Véalo en <a href="${esc(pr.url)}/files" target="_blank" rel="noopener">GitHub</a> o regenere el tablero.</p>`;
+  }
+  archivos = ordenarArchivos(pr, archivos);
+  estado.lineasArchivo = archivos.map((a) => (a.patch !== undefined ? SekiAnclaje.lineasDePatch(a.patch) : []));
+  estado.archivosTab = archivos.map((a) => a.filename);
+  if (API && !estado.comentariosCargados.has(pr.id)) { estado.comentariosCargados.add(pr.id); sincronizarComentarios(pr); }
+  const lista = deLineas(pr);
+  const anclados = archivos.map((_, k) => new Map());
+  const sueltos = archivos.map(() => []);
+  const fuera = [];
+  for (const c of lista) {
+    const k = estado.archivosTab.indexOf(c.archivo);
+    if (k < 0) { fuera.push(c); continue; }
+    const a = SekiAnclaje.anclar(c, estado.lineasArchivo[k]);
+    if (a.desactualizado) { sueltos[k].push(c); continue; }
+    if (!anclados[k].has(a.claveFinal)) anclados[k].set(a.claveFinal, []);
+    anclados[k].get(a.claveFinal).push(c);
+  }
+  const bloqueSuelto = (cs, titulo) => (cs.length ? `<div class="desact"><p class="muy-tenue">${titulo}</p><table>${enHilo(cs).map(([c, n]) => hiloHtml(c, n)).join('')}</table></div>` : '');
+  const vistos = new Set(almacen.leer(claveVistos(pr), []));
+  const hallazgos = pr.verificaciones?.hallazgos ?? [];
+  const ajustar = almacen.leer('seki-review:ajustar', false);
+  const totalA = archivos.reduce((n, a) => n + a.additions, 0);
+  const totalD = archivos.reduce((n, a) => n + a.deletions, 0);
+  const plegarDesde = totalA + totalD > 1200 ? 3 : 99;
+  const ordenados = !!pr.explicacion?.orden_lectura?.length;
+  return `<div class="${ajustar ? 'ajustar' : ''}">
+    <div class="diff-barra">
+      <span>${plural(archivos.length, 'archivo', 'archivos')} · <span class="mas">+${totalA}</span> <span class="menos">−${totalD}</span> · ${vistos.size} de ${archivos.length} vistos</span>
+      ${ordenados ? '<span class="muy-tenue">En el orden de lectura de la explicación</span>' : ''}
+      <span class="der">
+        <label><input type="checkbox" data-accion-diff="ajustar" ${ajustar ? 'checked' : ''}> Ajustar líneas largas</label>
+        <button class="btn chico" data-accion="plegarTodo">Plegar todo</button>
+        <button class="btn chico" data-accion="enfoque" title="Esconde la cola y el lateral; Esc para volver">${document.body.hasAttribute('data-enfoque') ? 'Ver la cola' : 'Ampliar'}</button>
+        <a class="btn chico" href="${esc(pr.url)}/files" target="_blank" rel="noopener">Ver en GitHub ${icono('externo')}</a>
+      </span>
+    </div>
+    ${bloqueSuelto(fuera, 'Comentarios sobre archivos que ya no están en la PR')}
+    <nav class="indice" aria-label="Archivos de la PR">${archivos.map((a, k) => `<a href="#${idArchivo(k)}" data-saltar="${idArchivo(k)}"><span class="mono muy-tenue">${k + 1}</span><span class="ruta mono ${vistos.has(a.filename) ? 'visto' : ''}" title="${esc(a.filename)}"><bdi>${esc(a.filename)}</bdi></span><span class="mono"><span class="mas">+${a.additions}</span> <span class="menos">−${a.deletions}</span>${barrita(a.additions, a.deletions)}</span></a>`).join('')}</nav>
+    ${archivos.map((a, k) => {
+      const plegado = vistos.has(a.filename) || k >= plegarDesde;
+      const propios = hallazgos.filter((h) => h.archivo === a.filename && h.linea);
+      const cuerpo = a.patch !== undefined
+        ? `<div class="codigo-diff"><table>${filasDiff(estado.lineasArchivo[k], propios, k, anclados[k])}</table></div>${a.recortado ? `<div class="aviso-diff">El resto de este archivo no viene en el tablero. <a href="${esc(pr.url)}/files" target="_blank" rel="noopener">Ver completo en GitHub</a>.</div>` : ''}`
+        : `<div class="aviso-diff">${a.recortado ? 'La PR supera el tope de líneas que trae el tablero.' : 'GitHub no muestra el diff de este archivo (binario o demasiado grande).'} <a href="${esc(pr.url)}/files" target="_blank" rel="noopener">Ver en GitHub</a>.</div>`;
+      return `<section class="archivo" id="${idArchivo(k)}" data-k="${k}" ${plegado ? 'data-plegado' : ''}>
+        <div class="archivo-cab">
+          <button class="plegar" data-plegar="${idArchivo(k)}" aria-label="Plegar o desplegar">${icono('chevron')}</button>
+          <span class="estado">${ESTADO_ARCHIVO[a.status] ?? esc(a.status)}</span>
+          <span class="ruta mono" title="${esc(a.filename)}">${a.previous_filename ? `${esc(a.previous_filename)} → ` : ''}${esc(a.filename)}</span>
+          ${propios.length ? `<span class="senal ambar" title="Hallazgos en este archivo">${icono('alerta')}${propios.length}</span>` : ''}
+          <span class="mono"><span class="mas">+${a.additions}</span> <span class="menos">−${a.deletions}</span></span>
+          <label><input type="checkbox" data-visto="${esc(a.filename)}" ${vistos.has(a.filename) ? 'checked' : ''}> Visto</label>
+        </div>
+        ${bloqueSuelto(sueltos[k], 'Comentarios sobre líneas que cambiaron')}
+        ${cuerpo}
+      </section>`;
+    }).join('')}
+    ${barraPendiente(pr)}
+  </div>`;
+}
+
+const TABS = [
+  ['resumen', 'Resumen', () => null],
+  ['descripcion', 'Descripción', (pr) => pr.commits?.length || null],
+  ['archivos', 'Archivos', (pr) => pr.archivos ?? DIFFS[pr.id]?.length ?? null],
+  ['verificaciones', 'Verificaciones', (pr) => pr.verificaciones?.hallazgos.length || null],
+  ['probar', 'Cómo probar', (pr) => pr.explicacion?.como_probar?.length || null],
+  ['revision', 'Revisión', () => null],
+];
+const CUERPOS = { resumen: tabResumen, descripcion: tabDescripcion, archivos: tabArchivos, verificaciones: tabVerificaciones, probar: tabProbar, revision: tabRevision };
+
+function pintarDetalle() {
+  leerCaja();
+  const pr = FOTO.prs.find((p) => p.id === estado.seleccion);
+  if (!pr) {
+    $('detalle').innerHTML = `<div class="vacio"><p>Seleccione una PR de la cola para ver dónde está, qué cambia y cómo probarla.</p></div>`;
+    return;
+  }
+  const t = tono(pr);
+  const [nombreGrupo] = definicionGrupos()[grupoDe(pr)] ?? GRUPOS[pr.accion] ?? [pr.accion];
+  const etiqueta = pr.estadoPr === 'MERGED'
+    ? `<span class="estado violeta">${icono('merge')} Mergeada en pruebas</span>`
+    : `<span class="estado ${t}">${esc(nombreGrupo)}</span>`;
+  $('detalle').innerHTML = `<article class="det ${estado.tab === 'archivos' ? 'ancho' : ''}">
+    <button class="btn chico volver" data-accion="volver">${icono('flecha')} Cola</button>
+    <div class="det-meta">${etiqueta}<span class="mono">${esc(pr.repo)} #${pr.numero}</span><span>${esc(pr.portal)}</span></div>
+    <h2>${esc(pr.titulo)}</h2>
+    <div class="det-meta">
+      <span class="mono">${esc(pr.base)} ← ${esc(pr.rama)}</span>
+      ${pr.adiciones !== undefined ? `<span class="mono"><span class="mas">+${pr.adiciones}</span> <span class="menos">−${pr.eliminaciones}</span> · ${plural(pr.archivos, 'archivo', 'archivos')}</span>` : ''}
+      <span>${icono('reloj')} hace ${plural(pr.dias, 'día', 'días')}</span>
+    </div>
+    <div class="acciones">
+      <a class="btn primario" href="${esc(pr.url)}" target="_blank" rel="noopener">Abrir en GitHub ${icono('externo')}</a>
+      <button class="btn" data-copiar="/plannotator-review ${esc(pr.url)}">${icono('copiar')} Revisar línea por línea</button>
+      ${API
+        ? `<button class="btn" data-accion="analizar" ${trabajoActivo(pr) ? 'disabled' : ''}>${trabajoActivo(pr) ? `${icono('actualizar', 'girando')} Analizando` : `${icono('chispa')} ${pr.explicacion ? 'Volver a analizar con IA' : 'Analizar con IA'}`}</button>`
+        : `<button class="btn" data-copiar="/seki-review:revisar-prs explicar ${esc(pr.repo)}#${pr.numero}">${icono('copiar')} ${pr.explicacion ? 'Regenerar explicación' : 'Explicar'}</button>`}
+    </div>
+    ${pilaEstados(pr)}
+    <div class="tabs" role="tablist">${TABS.map(([k, nombre, n]) => { const c = n(pr); return `<button class="tab" role="tab" data-tab="${k}" aria-selected="${estado.tab === k}">${nombre}${c ? `<span class="n">${c}</span>` : ''}</button>`; }).join('')}</div>
+    <div role="tabpanel">${CUERPOS[estado.tab](pr)}</div>
+  </article>`;
+  if (estado.tab === 'archivos') marcarSeleccion();
+  if (estado.tab === 'resumen') resaltarCitas(pr);
+  if (seleccionResumen && estado.tab !== (seleccionResumen.lineas ? 'archivos' : 'resumen')) cerrarBarraSel();
+  pintarDiagramas();
+}
+
+document.addEventListener('mouseup', (ev) => {
+  if (ev.target.closest('#barraSel')) return;
+  setTimeout(abrirBarraSel, 0);
+});
+
+// Mermaid se carga del CDN solo cuando hay un diagrama a la vista; sin red queda el texto del diagrama.
+let mermaidListo = null;
+function pintarDiagramas() {
+  const nodos = $('detalle').querySelectorAll('pre.mermaid');
+  if (!nodos.length) return;
+  mermaidListo ??= new Promise((ok, falla) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js';
+    s.onload = () => {
+      const oscuro = getComputedStyle(document.documentElement).colorScheme === 'dark';
+      window.mermaid.initialize({ startOnLoad: false, theme: oscuro ? 'dark' : 'neutral', securityLevel: 'strict' });
+      ok(window.mermaid);
+    };
+    s.onerror = falla;
+    document.head.appendChild(s);
+  });
+  mermaidListo.then((m) => m.run({ nodes: nodos })).catch(() => {});
+}
+
+// Últimos 30 días por modelo, frente a las respuestas marcadas como útiles: sirve para ver si la elección de modelo rinde.
+function textoResumenCostos(r) {
+  const filas = Object.entries(r?.modelos ?? {}).filter(([, m]) => m.trabajos);
+  if (!filas.length) return '';
+  return [`Últimos ${r.dias} días`, ...filas.map(([n, m]) => `${n}: ${plural(m.trabajos, 'trabajo', 'trabajos')}${m.fallidos ? ` (${m.fallidos} fallidos)` : ''} · ${usd(m.costo)}${m.utiles || m.noUtiles ? ` · útiles ${m.utiles} de ${m.utiles + m.noUtiles}` : ''}${m.costoPorUtil ? ` · ${usd(m.costoPorUtil)} por respuesta útil` : ''}`),
+    ...(r.reintentos ? [`Reintentos y análisis repetidos: ${r.reintentos}`] : [])].join('\n');
+}
+
+function pintarBarra() {
+  if (!API) return;
+  const r = estado.ultimoRefresco;
+  const gasto = estado.costoHoy?.trabajos ? `Gasto de IA hoy: ${usd(estado.costoHoy.total)} · ${plural(estado.costoHoy.trabajos, 'trabajo', 'trabajos')}` : '';
+  const texto = estado.refrescando ? 'Consultando GitHub y git' : r && !r.ok ? 'La última actualización falló' : gasto;
+  $('accionesBarra').innerHTML = `<span class="estado-texto" title="${esc(textoResumenCostos(estado.resumenCostos))}">${texto}</span>
+    <button class="btn chico" data-accion="refrescar" ${estado.refrescando ? 'disabled' : ''} title="${esc(r && !r.ok ? r.mensaje : 'Vuelve a consultar GitHub y git: qué se mergeó, qué es nuevo y dónde está cada PR')}">${icono('actualizar', estado.refrescando ? 'girando' : '')} ${estado.refrescando ? 'Actualizando' : 'Actualizar estado'}</button>`;
+}
+
+async function api(ruta, cuerpo) {
+  const r = await fetch(ruta, {
+    method: cuerpo === undefined ? 'GET' : 'POST',
+    headers: { 'X-Seki-Token': API.token, 'Content-Type': 'application/json' },
+    body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo),
+  });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`);
+  return r.json();
+}
+
+let sondeo = null;
+async function sondear() {
+  clearTimeout(sondeo);
+  try {
+    const previo = new Map([...estado.trabajos].map(([k, t]) => [k, t.estado]));
+    const eraRefresco = estado.refrescando;
+    const e = await api('/api/estado');
+    estado.trabajos = new Map(e.trabajos.map((t) => [t.id, t]));
+    estado.refrescando = e.refrescando;
+    estado.ultimoRefresco = e.ultimoRefresco;
+    if (e.costoHoy?.trabajos !== estado.costoHoy?.trabajos) api('/api/costos').then((r) => { estado.resumenCostos = r; pintarBarra(); }).catch(() => {});
+    estado.costoHoy = e.costoHoy;
+    const marcas = e.comentarios ?? {};
+    for (const [id, marca] of Object.entries(marcas)) {
+      const pr = FOTO.prs.find((x) => x.id === id);
+      if (pr && estado.marcasComentarios[id] !== marca && estado.comentariosCargados.has(id)) sincronizarComentarios(pr);
+    }
+    estado.marcasComentarios = marcas;
+    const termino = e.trabajos.some((t) => t.estado === 'terminado' && previo.get(t.id) !== 'terminado') || (eraRefresco && !e.refrescando);
+    if (termino) FOTO = await api('/api/foto');
+    // Si la persona está escribiendo en el detalle, no se repinta: perdería el foco y el texto a medio escribir.
+    pintarTodo({ detalle: !$('detalle').contains(document.activeElement) });
+    const activo = e.refrescando || e.trabajos.some((t) => t.estado === 'en_cola' || t.estado === 'en_curso');
+    if (activo) sondeo = setTimeout(sondear, 3000);
+  } catch (err) {
+    estado.ultimoRefresco = { ok: false, mensaje: `Sin conexión con el servidor local: ${err.message}. Vuelva a abrirlo con tablero_servir.` };
+    pintarBarra();
+  }
+}
+
+async function accionApi(ruta, cuerpo) {
+  try { await api(ruta, cuerpo); } catch (err) { avisar(err.message); }
+  sondear();
+}
+
+function pintarTodo({ detalle = true } = {}) {
+  pintarBarra();
+  pintarLateral();
+  pintarCola();
+  if (detalle) pintarDetalle();
+}
+
+function seleccionar(id, { enfocar = false } = {}) {
+  if (estado.seleccion !== id) estado.seleccionLineas = null;
+  estado.seleccion = id;
+  history.replaceState(null, '', `#${encodeURIComponent(id)}/${estado.tab}`);
+  document.body.dataset.vista = 'detalle';
+  document.querySelectorAll('.fila').forEach((f) => f.setAttribute('aria-current', String(f.dataset.id === id)));
+  pintarDetalle();
+  $('detalle').scrollTop = 0;
+  const fila = document.querySelector(`.fila[data-id="${CSS.escape(id)}"]`);
+  if (fila) { fila.scrollIntoView({ block: 'nearest' }); if (enfocar) fila.focus(); }
+}
+
+function guardarRevision(pr, cambios) {
+  const nueva = { ...(revision(pr) ?? {}), ...cambios, fecha: new Date().toISOString(), headSha: pr.headSha };
+  const ok = almacen.escribir(claveRevision(pr), nueva);
+  const g = $('guardado');
+  if (g) g.textContent = ok ? `Guardado el ${new Date(nueva.fecha).toLocaleString('es-CO')}` : 'No se pudo guardar: el navegador bloquea el almacenamiento local.';
+  pintarLateral();
+  pintarCola();
+}
+
+function revisionesExportables() {
+  return FOTO.prs.map((pr) => {
+    const r = revision(pr);
+    const pasos = almacen.leer(clavePasos(pr), []);
+    const cs = comentarios(pr);
+    if (!r && !pasos.length && !cs.length) return null;
+    return { id: pr.id, repo: pr.repo, numero: pr.numero, titulo: pr.titulo, url: pr.url, headSha: pr.headSha, ...r, pasosProbados: pasos, comentarios: cs };
+  }).filter(Boolean);
+}
+
+function exportar() {
+  const datos = { proyecto: FOTO.proyecto, exportado: new Date().toISOString(), revisiones: revisionesExportables() };
+  if (!datos.revisiones.length) return avisar('Todavía no hay decisiones, pasos marcados ni comentarios para exportar.');
+  const blob = new Blob([JSON.stringify(datos, null, 2)], { type: 'application/json' });
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `revision-prs-${datos.exportado.slice(0, 10)}.json` });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  avisar(`${plural(datos.revisiones.length, 'revisión exportada', 'revisiones exportadas')}.`);
+}
+
+function resumenTexto() {
+  const notasDe = (r) => (r.comentarios ?? []).filter((c) => c.tipo === 'nota' && c.estado !== 'descartado');
+  const rs = revisionesExportables().filter((r) => r.decision || notasDe(r).length);
+  if (!rs.length) return 'Sin decisiones de revisión ni notas registradas.';
+  const nota = (c) => `  · ${c.archivo}:${rangoTexto(c)} · ${c.texto.replace(/\s+/g, ' ')}${c.sugerido !== undefined ? `\n    Código sugerido:\n${c.sugerido.split('\n').map((l) => `      ${l}`).join('\n')}` : ''}`;
+  return rs.map((r) => {
+    const cab = `- ${r.repo}#${r.numero} ${r.titulo}${r.decision ? `: ${(DECISIONES[r.decision] ?? [r.decision])[0]}${r.nota ? `. ${r.nota.replace(/\s+/g, ' ')}` : ''}` : ''}\n  ${r.url}`;
+    return [cab, ...notasDe(r).map(nota)].join('\n');
+  }).join('\n');
+}
+
+function importar(archivo) {
+  archivo.text().then((t) => {
+    const datos = JSON.parse(t);
+    let n = 0;
+    for (const r of datos.revisiones ?? []) {
+      const pr = FOTO.prs.find((p) => p.id === r.id);
+      if (!pr) continue;
+      const { pasosProbados, comentarios: cs, id, repo, numero, titulo, url, ...decision } = r;
+      if (decision.decision) almacen.escribir(claveRevision(pr), decision);
+      if (cs?.length) { escribirComentarios(pr, fusionarComentarios(comentarios(pr), cs)); sincronizarComentarios(pr); }
+      if (pasosProbados?.length) almacen.escribir(clavePasos(pr, r.headSha), pasosProbados);
+      n++;
+    }
+    pintarTodo();
+    avisar(`${plural(n, 'revisión importada', 'revisiones importadas')}.`);
+  }).catch(() => avisar('El archivo no es una revisión exportada desde este tablero.'));
+}
+
+const prSel = () => FOTO.prs.find((p) => p.id === estado.seleccion);
+
+function repreguntar(pr, id) {
+  const c = comentarios(pr).find((x) => x.id === id);
+  if (!c) return;
+  // La IA recibe el hilo completo desde el servidor; aquí solo se muestra un recordatorio corto.
+  const r = c.respuesta.replace(/\s+/g, ' ');
+  const resumen = r.length > 90 ? `${r.slice(0, 90)}…` : r;
+  if (c.ambito === 'pr') {
+    estado.respondeA = { id: c.id, ambito: 'pr', resumen };
+    repintarDetalle();
+    const caja = $('preguntaPr');
+    if (!caja) return;
+    if ($('preguntaPrSeccion')) $('preguntaPrSeccion').value = c.seccion ?? '';
+    caja.scrollIntoView({ block: 'center' });
+    return caja.focus();
+  }
+  editarComentario(pr, id);
+  estado.caja = { ...cajaVacia('pregunta'), respondeA: c.id, resumenRespondeA: resumen };
+  marcarSeleccion();
+}
+
+async function enviarRevision(pr, soloIds) {
+  const pedidos = (soloIds ? comentarios(pr).filter((c) => soloIds.includes(c.id)) : borradores(pr)).filter((c) => c.tipo !== 'nota');
+  const viejos = pedidos.filter((c) => deOtroCommit(pr, c));
+  const ids = pedidos.filter((c) => !deOtroCommit(pr, c)).map((c) => c.id);
+  if (viejos.length) avisar(`Sin enviar por ser de un commit anterior: ${plural(viejos.length, 'comentario', 'comentarios')}. Al editarlos se anclan al commit actual.`);
+  if (!ids.length) return;
+  try {
+    await sincronizarComentarios(pr);
+    await api('/api/enviar-revision', { id: pr.id, ids });
+    escribirComentarios(pr, comentarios(pr).map((c) => (ids.includes(c.id) ? { ...c, estado: 'en_cola', actualizado: new Date().toISOString() } : c)));
+    repintarDetalle();
+    pintarCola();
+  } catch (err) { avisar(err.message); }
+  sondear();
+}
+
+function aplicarCola(oculta) {
+  document.body.toggleAttribute('data-sin-cola', oculta);
+  document.querySelector('[data-accion="cola"]').setAttribute('aria-pressed', String(!oculta));
+}
+
+function alternarCola() {
+  const oculta = !document.body.hasAttribute('data-sin-cola');
+  almacen.escribir('seki-review:sin-cola', oculta);
+  aplicarCola(oculta);
+}
+
+function aplicarLateral(oculto) {
+  document.body.toggleAttribute('data-sin-lateral', oculto);
+  document.querySelector('[data-accion="lateral"]').setAttribute('aria-pressed', String(!oculto));
+}
+
+function alternarLateral() {
+  const oculto = !document.body.hasAttribute('data-sin-lateral');
+  almacen.escribir('seki-review:sin-lateral', oculto);
+  aplicarLateral(oculto);
+}
+
+function avisar(texto) {
+  const destino = $('guardado') ?? $('foto');
+  const previo = destino.textContent;
+  destino.textContent = texto;
+  setTimeout(() => { if (destino.textContent === texto) destino.textContent = previo; }, 3500);
+}
+
+function copiar(boton, texto) {
+  const original = boton.innerHTML;
+  const fin = (t) => { boton.textContent = t; setTimeout(() => { boton.innerHTML = original; }, 1400); };
+  (navigator.clipboard ? navigator.clipboard.writeText(texto) : Promise.reject()).then(() => fin('Copiado'), () => fin('No se pudo copiar'));
+}
+
+document.addEventListener('click', (ev) => {
+  if ($('barraSel') && !ev.target.closest('#barraSel') && window.getSelection()?.isCollapsed) cerrarBarraSel();
+  const salto = ev.target.closest('a[data-saltar]');
+  if (salto) { ev.preventDefault(); const a = $(salto.dataset.saltar); a.removeAttribute('data-plegado'); a.scrollIntoView({ block: 'start' }); return; }
+  const ir = ev.target.closest('a[data-ir]');
+  if (ir) { ev.preventDefault(); return seleccionar(ir.dataset.ir); }
+  const casilla = ev.target.closest('[data-caja-sugerido]');
+  if (casilla) { leerCaja(); estado.caja.conSugerido = casilla.checked; return marcarSeleccion(); }
+  const nSel = ev.target.closest('.n-sel');
+  if (nSel) return seleccionarLinea(nSel, ev.shiftKey);
+  const t = ev.target.closest('button, a[data-tab-ir]');
+  if (!t) return;
+  const d = t.dataset;
+  if (d.id) return seleccionar(d.id);
+  if (d.grupoToggle) {
+    estado.cerrados.has(d.grupoToggle) ? estado.cerrados.delete(d.grupoToggle) : estado.cerrados.add(d.grupoToggle);
+    almacen.escribir('seki-review:cerrados', [...estado.cerrados]);
+    t.closest('.grupo').toggleAttribute('data-cerrado');
+    t.setAttribute('aria-expanded', String(!estado.cerrados.has(d.grupoToggle)));
+    return;
+  }
+  if (d.vista) { estado.vista = d.vista; return pintarTodo(); }
+  if (d.portal !== undefined) { estado.portal = d.portal || null; return pintarTodo(); }
+  if (d.filtro) { estado.filtros.has(d.filtro) ? estado.filtros.delete(d.filtro) : estado.filtros.add(d.filtro); return pintarTodo(); }
+  if (d.rol) {
+    estado.rol = d.rol;
+    almacen.escribir('seki-review:rol', estado.rol);
+    document.querySelectorAll('[data-rol]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.rol === estado.rol)));
+    return pintarTodo();
+  }
+  if (d.tab) { estado.tab = d.tab; history.replaceState(null, '', `#${encodeURIComponent(estado.seleccion)}/${estado.tab}`); return pintarDetalle(); }
+  if (d.tabIr) { ev.preventDefault(); estado.tab = d.tabIr; return pintarDetalle(); }
+  if (d.copiar) return copiar(t, d.copiar);
+  if (d.accion === 'limpiar') { estado.filtros.clear(); estado.portal = null; $('buscar').value = ''; return pintarTodo(); }
+  if (d.accion === 'volver') { document.body.dataset.vista = 'cola'; return; }
+  if (d.accion === 'exportar') return exportar();
+  if (d.accion === 'importar') return $('archivoRevision').click();
+  if (d.accion === 'copiarResumen') return copiar(t, resumenTexto());
+  if (d.plegar) return $(d.plegar).toggleAttribute('data-plegado');
+  if (d.accion === 'lateral') return alternarLateral();
+  if (d.accion === 'cola') return alternarCola();
+  if (d.accion === 'preguntarPr') return preguntarPr(prSel());
+  if (d.accion === 'quitarRespondeA') { estado.respondeA = null; return repintarDetalle(); }
+  if (d.verMas) { estado.expandidas.has(d.verMas) ? estado.expandidas.delete(d.verMas) : estado.expandidas.add(d.verMas); return repintarDetalle(); }
+  if (d.comInvestigar) return investigar(prSel(), d.comInvestigar);
+  if (d.comValorar) return valorar(prSel(), d.comValorar, d.util === 'si');
+  if (d.accion === 'agregarPreguntaPr') return preguntarPr(prSel(), undefined, undefined, { enviar: false });
+  if (d.bsel || d.bselRapida !== undefined) return accionBarraSel(d.bsel, d.bselRapida === undefined ? undefined : Number(d.bselRapida));
+  if (d.bselLineas) return abrirCajaDeSeleccion(d.bselLineas);
+  if (d.ampliar) return preguntarPr(prSel(), d.ampliar, `Ampliar la sección «${SECCIONES[d.ampliar]}»: más detalle y ejemplos concretos tomados del diff.`);
+  if (d.cajaTipo) { leerCaja(); estado.caja.tipo = d.cajaTipo; return marcarSeleccion(); }
+  if (d.accion === 'cajaAgregar') return agregarComentario();
+  if (d.accion === 'cajaCancelar') return cerrarCaja();
+  if (d.comEditar) return editarComentario(prSel(), d.comEditar);
+  if (d.comBorrar) { borrarComentarios(prSel(), [d.comBorrar]); repintarDetalle(); return pintarCola(); }
+  if (d.accion === 'descartarBorradores') {
+    if (!estado.confirmarDescarte) { estado.confirmarDescarte = true; return repintarDetalle(); }
+    estado.confirmarDescarte = false;
+    const pr = prSel();
+    borrarComentarios(pr, borradores(pr).map((c) => c.id));
+    repintarDetalle();
+    return pintarCola();
+  }
+  if (d.accion === 'enviarRevision') return enviarRevision(prSel());
+  if (d.comReintentar) return enviarRevision(prSel(), [d.comReintentar]);
+  if (d.comRepreguntar) return repreguntar(prSel(), d.comRepreguntar);
+  if (d.propAprobar) {
+    if (estado.propuestas.get(d.propAprobar)?.conFallos && estado.confirmarAprobar !== d.propAprobar) { estado.confirmarAprobar = d.propAprobar; return repintarDetalle(); }
+    t.disabled = true;
+    return accionPropuesta('aprobar', d.propAprobar, { confirmarFallos: estado.confirmarAprobar === d.propAprobar });
+  }
+  if (d.propAjustar) { estado.ajustando = estado.ajustando === d.propAjustar ? null : d.propAjustar; repintarDetalle(); return $('ajusteTexto')?.focus({ preventScroll: true }); }
+  if (d.propEnviarAjuste) {
+    const indicacion = $('ajusteTexto')?.value.trim();
+    if (!indicacion) return avisar('Escriba qué cambiar de la propuesta.');
+    return accionPropuesta('ajustar', d.propEnviarAjuste, { indicacion });
+  }
+  if (d.propDescartar) return accionPropuesta('descartar', d.propDescartar);
+  if (d.propRegenerar) return accionPropuesta('regenerar', d.propRegenerar);
+  if (d.propCopiar) return copiar(t, estado.propuestas.get(d.propCopiar)?.patch ?? '');
+  if (d.accion === 'enfoque') { document.body.toggleAttribute('data-enfoque'); return pintarDetalle(); }
+  if (d.accion === 'plegarTodo') { document.querySelectorAll('.archivo').forEach((a) => a.setAttribute('data-plegado', '')); return; }
+  if (d.accion === 'refrescar') { estado.refrescando = true; pintarBarra(); return accionApi('/api/refrescar', {}); }
+  if (d.accion === 'analizar') {
+    const pr = FOTO.prs.find((p) => p.id === estado.seleccion);
+    estado.trabajos.set(pr.id, { id: pr.id, estado: 'en_cola' });
+    pintarTodo();
+    return accionApi('/api/analizar', { prs: [{ repo: pr.repo, numero: pr.numero }] });
+  }
+  if (d.accion === 'pedirConfirmacion') { estado.confirmarPendientes = true; pintarLateral(); setTimeout(() => { estado.confirmarPendientes = false; pintarLateral(); }, 6000); return; }
+  if (d.accion === 'analizarPendientes') {
+    estado.confirmarPendientes = false;
+    const prs = pendientesDeAnalisis().sort((a, b) => Number(b.seguridad) - Number(a.seguridad)).map((p) => ({ repo: p.repo, numero: p.numero }));
+    return accionApi('/api/analizar', { prs });
+  }
+  if (d.accion === 'cancelarCola') return accionApi('/api/cancelar-cola', {});
+});
+
+document.addEventListener('change', (ev) => {
+  if (ev.target.id === 'archivoRevision') {
+    if (ev.target.files[0]) importar(ev.target.files[0]);
+    ev.target.value = '';
+    return;
+  }
+  const pr = FOTO.prs.find((p) => p.id === estado.seleccion);
+  if (!pr) return;
+  if (ev.target.name === 'decision') return guardarRevision(pr, { decision: ev.target.value });
+  if (ev.target.dataset.visto !== undefined) {
+    const vistos = new Set(almacen.leer(claveVistos(pr), []));
+    ev.target.checked ? vistos.add(ev.target.dataset.visto) : vistos.delete(ev.target.dataset.visto);
+    almacen.escribir(claveVistos(pr), [...vistos]);
+    const seccion = ev.target.closest('.archivo');
+    if (ev.target.checked) seccion.setAttribute('data-plegado', ''); else seccion.removeAttribute('data-plegado');
+    const scroll = $('detalle').scrollTop;
+    pintarDetalle();
+    $('detalle').scrollTop = scroll;
+    return;
+  }
+  if (ev.target.dataset.accionDiff === 'ajustar') { almacen.escribir('seki-review:ajustar', ev.target.checked); return pintarDetalle(); }
+  if (ev.target.dataset.paso !== undefined) {
+    const marcados = [...document.querySelectorAll('[data-paso]:checked')].map((x) => +x.dataset.paso);
+    almacen.escribir(clavePasos(pr), marcados);
+    pintarDetalle();
+  }
+});
+
+let temporizadorNota;
+document.addEventListener('input', (ev) => {
+  if (ev.target.id === 'buscar') return pintarCola();
+  if (ev.target.id === 'notaRevision') {
+    const pr = FOTO.prs.find((p) => p.id === estado.seleccion);
+    clearTimeout(temporizadorNota);
+    temporizadorNota = setTimeout(() => guardarRevision(pr, { nota: ev.target.value }), 400);
+  }
+});
+
+document.addEventListener('keydown', (ev) => {
+  if ((ev.target.id === 'cajaTexto' || ev.target.id === 'cajaSugerido') && ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); return agregarComentario(); }
+  if (ev.target.id === 'preguntaPr' && ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); return preguntarPr(prSel()); }
+  if (ev.target.id === 'barraSelTexto' && ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); return accionBarraSel('agregar'); }
+  if (ev.key === 'Escape' && $('barraSel')) { ev.preventDefault(); return cerrarBarraSel(); }
+  if (ev.target.matches('input, textarea, select')) {
+    if (ev.key === 'Escape') ev.target.blur();
+    return;
+  }
+  if (ev.key === 'Escape' && estado.seleccionLineas) { estado.seleccionLineas = null; return marcarSeleccion(); }
+  if (ev.key === 'Escape' && document.body.hasAttribute('data-enfoque')) { document.body.removeAttribute('data-enfoque'); return pintarDetalle(); }
+  if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  const filas = [...document.querySelectorAll('.grupo:not([data-cerrado]) .fila')];
+  const i = filas.findIndex((f) => f.dataset.id === estado.seleccion);
+  const ir = (f) => f && seleccionar(f.dataset.id, { enfocar: true });
+  if (ev.key === 'j' || ev.key === 'ArrowDown') { ev.preventDefault(); ir(filas[i + 1] ?? filas[i]); }
+  if (ev.key === 'k' || ev.key === 'ArrowUp') { ev.preventDefault(); ir(filas[Math.max(i - 1, 0)]); }
+  if (ev.key === '/') { ev.preventDefault(); $('buscar').focus(); }
+  if (ev.key === '[') { ev.preventDefault(); alternarLateral(); }
+  if (ev.key === ']') { ev.preventDefault(); alternarCola(); }
+  if (ev.key === 'o') { const pr = FOTO.prs.find((p) => p.id === estado.seleccion); if (pr) window.open(pr.url, '_blank', 'noopener'); }
+});
+
+$('titulo').textContent = `Revisión de PRs · ${FOTO.proyecto}`;
+$('foto').textContent = `Datos de GitHub del ${new Date(FOTO.generado).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })}`;
+document.querySelectorAll('[data-rol]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.rol === estado.rol)));
+aplicarLateral(almacen.leer('seki-review:sin-lateral', false));
+aplicarCola(almacen.leer('seki-review:sin-cola', false));
+estado.caja = cajaVacia();
+const [inicial, tabInicial] = decodeURIComponent(location.hash.slice(1)).split('/');
+if (CUERPOS[tabInicial]) estado.tab = tabInicial;
+pintarTodo();
+if (FOTO.prs.some((p) => p.id === inicial)) seleccionar(inicial);
+if (API) sondear();
+</script>
+</body>
+</html>

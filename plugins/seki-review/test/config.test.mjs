@@ -1,0 +1,48 @@
+import { test, afterEach } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { proyecto } from '../mcp/lib/config.mjs';
+import { reglasDeConfig } from '../mcp/lib/reglas.mjs';
+import { verificar } from '../mcp/lib/verificar.mjs';
+import { sistemaDe } from '../mcp/lib/ia.mjs';
+
+const previo = { config: process.env.SEKI_REVIEW_CONFIG, proyecto: process.env.SEKI_PROYECTO };
+afterEach(() => {
+  for (const [k, v] of [['SEKI_REVIEW_CONFIG', previo.config], ['SEKI_PROYECTO', previo.proyecto]]) v === undefined ? delete process.env[k] : (process.env[k] = v);
+});
+
+function config(obj) {
+  const ruta = join(mkdtempSync(join(tmpdir(), 'seki-cfg-')), 'proyectos.json');
+  writeFileSync(ruta, JSON.stringify(obj));
+  process.env.SEKI_REVIEW_CONFIG = ruta;
+}
+
+test('sin clave usa SEKI_PROYECTO o el primer proyecto, y las copias van fuera del proyecto', () => {
+  config({ uno: { salida: '/s/uno', repos: {} }, dos: { salida: '/s/dos', repos: {} } });
+  delete process.env.SEKI_PROYECTO;
+  assert.equal(proyecto().clave, 'uno');
+  assert.match(proyecto().copias, /\.cache\/seki-review\/copias\/uno$/);
+  process.env.SEKI_PROYECTO = 'dos';
+  assert.equal(proyecto().clave, 'dos');
+  assert.throws(() => proyecto('tres'), /Proyecto "tres" no está/);
+});
+
+test('una regla propia del proyecto se aplica con soloEnTexto, exclusiones y repos', () => {
+  const extra = reglasDeConfig([
+    { id: 'palabra', titulo: 'Palabra vetada', severidad: 'alto', archivos: '\\.(ts|ejs)$', patron: '\\bcliente\\b', flags: 'i', excluir: '^\\s*//', soloEnTexto: true, mensaje: 'Decir usuario.' },
+    { id: 'solo-web', titulo: 'Solo web', severidad: 'raro', archivos: '\\.js$', patron: 'x', repos: ['web'], mensaje: 'm' },
+  ]);
+  assert.equal(extra[1].severidad, 'aviso');
+  const archivos = [{ filename: 'a.ts', status: 'modified', patch: '@@ -1,0 +1,4 @@\n+const cliente = 1;\n+msg("Hola Cliente");\n+// cliente en comentario\n+x' }, { filename: 'v.ejs', status: 'added', patch: '@@ -0,0 +1 @@\n+<p>cliente</p>' }];
+  const r = verificar({ repo: 'api', archivos, extra });
+  const propios = r.hallazgos.filter((h) => h.regla === 'palabra' || h.titulo === 'Palabra vetada');
+  assert.deepEqual(propios.map((h) => `${h.archivo}:${h.linea}`), ['a.ts:2', 'v.ejs:1']);
+  assert.ok(!r.hallazgos.some((h) => h.titulo === 'Solo web'));
+});
+
+test('el prompt de sistema lleva el contexto del proyecto solo si existe', () => {
+  assert.match(sistemaDe({ contexto: 'Decir "usuario".' }, 'base'), /# Contexto del proyecto\n\nDecir "usuario"\./);
+  assert.doesNotMatch(sistemaDe({}, 'base'), /Contexto del proyecto/);
+});

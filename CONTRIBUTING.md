@@ -14,7 +14,7 @@
 1. Subir la versión en `plugins/<plugin>/.claude-plugin/plugin.json` y en `mcp/server.mjs`.
 2. Agregar la entrada en `CHANGELOG.md`.
 3. Correr las pruebas: `node --test 'test/*.test.mjs'` y `node test/humo.mjs` desde `plugins/<plugin>`. Antes de publicar,
-   también la prueba real de permisos: `PW_PRUEBA_REAL=1 node --test test/permisos-real.test.mjs` (cuesta centavos).
+   también la prueba real de permisos: `SEKI_PRUEBA_REAL=1 node --test test/permisos-real.test.mjs` (cuesta centavos).
 4. Commit de versión, etiqueta anotada `<plugin>-vX.Y.Z` y push con `--follow-tags`.
 
 ## Datos

@@ -1,8 +1,14 @@
 # Cambios
 
-Cada versión tiene su etiqueta `pw-revision-vX.Y.Z` en el commit que la publica.
+Cada versión tiene su etiqueta `seki-review-vX.Y.Z` en el commit que la publica.
 
-## pw-revision
+## seki-review
+
+### 0.17.0 (2026-10-28)
+- Nuevo nombre: Seki Review (`seki-review`, antes `pw-revision`). Comando `/seki-review:revisar-prs`; variables de entorno `SEKI_*`.
+- Herramienta general: la configuración de proyectos, su contexto (stack y reglas de texto) y sus reglas propias viven en `~/.config/seki-review/proyectos.json`; el plugin trae solo un ejemplo.
+- Sin proyecto indicado se usa `SEKI_PROYECTO` o el primero de la configuración.
+- Las reglas genéricas explican su motivo sin referirse a incidentes de un proyecto.
 
 ### 0.16.0 (2026-10-28)
 - Cada afirmación dice su origen: explicación de IA, reglas fijas (Verificaciones) o nota de la persona.
@@ -10,7 +16,7 @@ Cada versión tiene su etiqueta `pw-revision-vX.Y.Z` en el commit que la publica
 - Investigar guarda los archivos que la IA abrió, sus búsquedas y los intentos que bloquearon los permisos.
 - "¿Sirvió? Sí / No" en cada respuesta; costo de 30 días por modelo frente a respuestas útiles.
 - Aprobar registra el intento antes del push y, si el proceso se corta, reconoce el commit ya subido en vez de repetirlo.
-- Prompts contra respuestas complacientes; prueba real de permisos opcional (`PW_PRUEBA_REAL=1`).
+- Prompts contra respuestas complacientes; prueba real de permisos opcional (`SEKI_PRUEBA_REAL=1`).
 - Corrige la prueba inestable: el repositorio de prueba no detectaba un cambio de igual tamaño hecho en el mismo instante.
 
 ### 0.15.0 (2026-10-28)

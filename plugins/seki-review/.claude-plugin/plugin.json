@@ -1,0 +1,9 @@
+{
+  "name": "seki-review",
+  "version": "0.17.0",
+  "license": "MIT",
+  "description": "Seki Review: revisión de PRs con IA. Pendientes por ambiente, estado frente a pruebas, explicación del cambio, preguntas sobre el código y tablero local",
+  "author": {
+    "name": "JoanMateo77"
+  }
+}

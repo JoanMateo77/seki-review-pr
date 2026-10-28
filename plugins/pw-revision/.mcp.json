@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "pw-revision": {
-      "command": "sh",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/bin/servidor.sh"]
-    }
-  }
-}
