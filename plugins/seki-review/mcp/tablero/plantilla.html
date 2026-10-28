@@ -61,7 +61,7 @@ svg.i { width: 14px; height: 14px; flex: none; stroke: currentColor; fill: none;
 .btn-lateral:hover { background: var(--hover); color: var(--texto); }
 .barra h1 { font-size: 13px; font-weight: 600; margin: 0; white-space: nowrap; }
 .barra .foto { color: var(--texto-3); white-space: nowrap; }
-.buscar { flex: 1; max-width: 420px; margin-left: auto; position: relative; }
+.buscar { flex: 1; min-width: 240px; max-width: 420px; margin-left: auto; position: relative; }
 .buscar input { width: 100%; height: 30px; padding: 0 30px; border: 1px solid var(--linea); border-radius: 6px; background: var(--bg); }
 .buscar input:hover { border-color: var(--linea-fuerte); }
 .buscar svg { position: absolute; left: 9px; top: 8px; color: var(--texto-3); }
@@ -97,6 +97,18 @@ kbd { font: 12px/1.2 var(--mono); padding: 1px 5px; border: 1px solid var(--line
 .fila[aria-current="true"] { background: var(--sel); }
 .fila .id { color: var(--texto-3); white-space: nowrap; }
 .fila .titulo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fila .motivo-ia { grid-column: 3 / -1; margin-top: -4px; font-size: 12px; color: var(--texto-2); white-space: normal; }
+.filtro-ia { margin: 10px 14px; padding: 10px 12px; border: 1px solid var(--linea); border-radius: 6px; background: var(--gris-bg); font-size: 13px; display: grid; gap: 4px; }
+.filtro-ia.error { border-color: var(--ambar); }
+.filtro-ia p { margin: 0; }
+.filtro-ia .progreso { margin: 2px 0; }
+.filtro-ia .i { vertical-align: -2px; }
+.filtrar-ia { flex: none; display: inline-flex; align-items: center; gap: 6px; }
+.vista-ia { display: flex; align-items: center; }
+.vista-ia .nav { min-width: 0; }
+.vista-ia .recorte { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quitar-vista { flex: none; padding: 2px 6px; color: var(--texto-3); }
+@media (max-width: 900px) { .filtrar-ia span { display: none; } }
 .fila .senales { display: flex; align-items: center; gap: 10px; color: var(--texto-3); font-size: 12px; white-space: nowrap; }
 .senal { display: inline-flex; align-items: center; gap: 3px; }
 .senal.rojo { color: var(--rojo); } .senal.ambar { color: var(--ambar); } .senal.verde { color: var(--verde); }
@@ -182,8 +194,8 @@ textarea { width: 100%; min-height: 96px; padding: 8px 10px; border: 1px solid v
 .trabajando { display: flex; align-items: center; gap: 8px; color: var(--texto-2); }
 .trabajando .i { color: var(--acento); }
 .senal.azul { color: var(--acento); }
-.barra .acciones-barra { display: flex; align-items: center; gap: 8px; }
-.barra .acciones-barra .estado-texto { color: var(--texto-3); white-space: nowrap; }
+.barra .acciones-barra { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.barra .acciones-barra .estado-texto { color: var(--texto-3); white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .btn[disabled] { opacity: .55; cursor: default; }
 .cambio { display: grid; grid-template-columns: 92px 92px minmax(0, 1fr); gap: 10px; align-items: center; padding: 6px 14px; border-bottom: 1px solid var(--linea); }
 .cambio .titulo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -363,7 +375,8 @@ h3.con-accion .btn-texto { display: inline-flex; align-items: center; gap: 4px; 
   .check { grid-template-columns: 16px minmax(0, 1fr); }
   .check .valor { grid-column: 2; }
   .fila { grid-template-columns: 8px minmax(0, 1fr); row-gap: 2px; }
-  .fila .id, .fila .titulo, .fila .senales { grid-column: 2; }
+  .fila .id, .fila .titulo, .fila .senales, .fila .motivo-ia { grid-column: 2; }
+  .fila .motivo-ia { margin-top: 0; }
   .fila .punto { grid-row: 1; }
   .cambio { grid-template-columns: 1fr; gap: 2px; }
   .barra .acciones-barra .estado-texto { display: none; }
@@ -421,6 +434,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
       <input type="search" id="buscar" placeholder="Buscar por número, título, rama o archivo" aria-label="Buscar PRs">
       <kbd>/</kbd>
     </label>
+    <button type="button" class="btn chico filtrar-ia" id="filtrarIa" data-accion="filtrarIa" hidden aria-label="Filtrar con IA según lo escrito en el buscador" title="La IA deja en la cola solo las PRs que responden a lo escrito, por ejemplo «PRs de ciberseguridad» (Ctrl + Enter en el buscador)"><svg class="i" aria-hidden="true"><use href="#i-chispa"/></svg><span>Filtrar con IA</span></button>
     <div class="acciones-barra" id="accionesBarra"></div>
     <div class="rol" role="group" aria-label="Vista">
       <button data-rol="autor" aria-pressed="true">Autor</button>
@@ -498,6 +512,7 @@ const estado = {
   ajustando: null,
   marcasComentarios: {},
   avances: {},
+  filtroIa: null,
   portal: null,
   filtros: new Set(),
   cerrados: new Set(almacen.leer('seki-review:cerrados', ['pruebas_automaticas'])),
@@ -531,6 +546,7 @@ const enVista = (pr) => (estado.vista === 'inactivas' ? pr.ambiente === 'inactiv
 
 function pasaFiltros(pr) {
   if (!enVista(pr)) return false;
+  if (estado.filtroIa?.estado === 'listo' && !estado.filtroIa.motivos.has(pr.id)) return false;
   if (estado.portal && pr.portal !== estado.portal) return false;
   const v = pr.verificaciones?.resumen ?? {};
   if (estado.filtros.has('seguridad') && !pr.seguridad) return false;
@@ -564,6 +580,10 @@ function pintarLateral() {
     ${filtro('seguridad', `${icono('escudo')} Seguridad`, cuenta((x) => x.seguridad))}
     ${filtro('sinExplicacion', `${icono('circulo')} Sin explicación`, cuenta((x) => !x.explicacion || x.explicacion.desactualizada))}
     ${filtro('sinRevisar', `${icono('ojo')} Sin revisar`, cuenta((x) => !revision(x)))}
+    ${API && vistasIa().length ? `<h2>Vistas con IA</h2>${vistasIa().map((v, i) => {
+      const activa = mismaConsulta(estado.filtroIa?.consulta, v);
+      return `<div class="vista-ia">${nav(`data-vista-ia="${i}" title="${esc(v)}"`, `${icono('chispa')}<span class="recorte">${esc(v)}</span>`, activa && estado.filtroIa.estado === 'listo' ? estado.filtroIa.motivos.size : '', activa)}<button type="button" class="btn-texto quitar-vista" data-quitar-vista-ia="${i}" aria-label="Quitar la vista ${esc(v)}" title="Quitar la vista">×</button></div>`;
+    }).join('')}` : ''}
     ${API ? `<h2>Análisis con IA</h2>
       ${estado.confirmarPendientes
         ? nav('data-accion="analizarPendientes"', `${icono('chispa')} Confirmar: ${plural(pendientesDeAnalisis().length, 'PR', 'PRs')}`, '', true)
@@ -603,7 +623,7 @@ function senales(pr) {
 function pintarCola() {
   const prs = FOTO.prs.filter(pasaFiltros);
   if (!prs.length) {
-    $('cola').innerHTML = `<div class="vacio"><p>Ninguna PR coincide con la búsqueda y los filtros activos.</p><button class="btn" data-accion="limpiar">Quitar filtros</button></div>`;
+    $('cola').innerHTML = `${bannerFiltroIa()}<div class="vacio"><p>Ninguna PR coincide con la búsqueda y los filtros activos.</p><button class="btn" data-accion="limpiar">Quitar filtros</button></div>`;
     return;
   }
   const defs = definicionGrupos();
@@ -615,7 +635,7 @@ function pintarCola() {
     porGrupo.get(g).push(pr);
   }
   const posicion = (g) => (orden.includes(g) ? orden.indexOf(g) : 99);
-  $('cola').innerHTML = seccionCambios() + [...porGrupo.keys()].sort((a, b) => posicion(a) - posicion(b)).map((g) => {
+  $('cola').innerHTML = bannerFiltroIa() + (estado.filtroIa ? '' : seccionCambios()) + [...porGrupo.keys()].sort((a, b) => posicion(a) - posicion(b)).map((g) => {
     const [nombre, desc] = defs[g] ?? GRUPOS[g] ?? [FOTO.acciones?.[g] ?? g, ''];
     const filas = porGrupo.get(g).sort((a, b) => a.repo.localeCompare(b.repo) || b.numero - a.numero);
     const cerrado = estado.cerrados.has(g);
@@ -627,9 +647,62 @@ function pintarCola() {
           <span class="id mono">${esc(pr.repoEtiqueta)} #${pr.numero}</span>
           <span class="titulo" title="${esc(pr.titulo)}">${esc(pr.titulo)}</span>
           <span class="senales">${senales(pr)}</span>
+          ${estado.filtroIa?.estado === 'listo' ? `<span class="motivo-ia">${esc(estado.filtroIa.motivos.get(pr.id))}</span>` : ''}
         </button>`).join('')}</div>
     </section>`;
   }).join('');
+}
+
+// Filtro con IA: la necesidad se escribe en el buscador. Las necesidades guardadas como vista viven en este navegador.
+const claveVistasIa = () => `seki-review:vistas-ia:${FOTO.proyecto}`;
+const vistasIa = () => almacen.leer(claveVistasIa(), []);
+const mismaConsulta = (a, b) => a?.toLowerCase() === b?.toLowerCase();
+const firmaFoto = () => FOTO.prs.map((x) => `${x.id}@${x.headSha}`).sort().join('|');
+
+async function filtrarConIa(consulta) {
+  const q = (consulta ?? $('buscar').value).replace(/\s+/g, ' ').trim();
+  if (!q) { avisar('Escriba en el buscador qué PRs busca, por ejemplo «PRs de ciberseguridad».'); return $('buscar').focus(); }
+  if (estado.filtroIa?.estado === 'cargando' && mismaConsulta(estado.filtroIa.consulta, q)) return;
+  const pedido = { consulta: q, estado: 'cargando', inicio: new Date().toISOString(), firma: firmaFoto() };
+  estado.filtroIa = pedido;
+  $('buscar').value = '';
+  pintarTodo({ detalle: false });
+  let siguiente;
+  try {
+    const r = await api('/api/filtrar', { consulta: q });
+    siguiente = { ...pedido, estado: 'listo', motivos: new Map(r.coincidencias.map((c) => [c.id, c.motivo])), costo: r.costo, desdeCache: r.desdeCache };
+  } catch (err) {
+    siguiente = { ...pedido, estado: 'error', mensaje: err.message };
+  }
+  // Si mientras tanto se quitó o se pidió otro filtro, esta respuesta ya no aplica.
+  if (estado.filtroIa !== pedido) return;
+  estado.filtroIa = siguiente;
+  pintarTodo({ detalle: false });
+  if (siguiente.estado === 'listo' && !siguiente.desdeCache) sondear();
+}
+
+function bannerFiltroIa() {
+  const f = estado.filtroIa;
+  if (!f) return '';
+  const q = `«${esc(f.consulta)}»`;
+  const quitar = '<button type="button" class="btn-texto" data-accion="quitarFiltroIa">Quitar el filtro</button>';
+  if (f.estado === 'cargando') {
+    return `<div class="filtro-ia" role="status"><p class="trabajando">${icono('actualizar', 'girando')}<span>La IA está revisando ${plural(FOTO.prs.length, 'PR', 'PRs')} para ${q} · ${transcurrido(f.inicio)}</span></p>
+      <div class="progreso" aria-hidden="true"></div><p class="muy-tenue">Usa título, rama y archivos de cada PR; suele tardar entre 10 y 40 segundos. ${quitar}</p></div>`;
+  }
+  if (f.estado === 'error') {
+    return `<div class="filtro-ia error" role="alert"><p>${icono('alerta')} ${esc(f.mensaje)}</p>
+      <p><button type="button" class="btn chico" data-accion="reintentarFiltroIa">Reintentar</button> ${quitar}</p></div>`;
+  }
+  const visibles = FOTO.prs.filter(pasaFiltros).length;
+  const ocultas = f.motivos.size - visibles;
+  const guardada = vistasIa().some((v) => mismaConsulta(v, f.consulta));
+  const cambio = f.firma !== firmaFoto()
+    ? `<p class="aviso-lento">${icono('reloj')} La cola cambió después de filtrar. <button type="button" class="btn-texto" data-accion="reintentarFiltroIa">Volver a filtrar</button></p>` : '';
+  return `<div class="filtro-ia" role="status">
+    <p><strong>${icono('chispa')} Filtro con IA</strong> ${q}: ${f.motivos.size ? plural(f.motivos.size, 'PR encaja', 'PRs encajan') : 'ninguna PR encaja'}${ocultas > 0 ? ` · ${plural(ocultas, 'oculta', 'ocultas')} por los demás filtros o la vista` : ''}</p>
+    <p class="muy-tenue">${f.desdeCache ? 'Resultado guardado, sin costo' : usd(f.costo)} · decidido por título, rama y archivos: revise el motivo de cada una.</p>
+    <p>${guardada ? '' : '<button type="button" class="btn-texto" data-accion="guardarFiltroIa">Guardar como vista</button> · '}${quitar}</p>${cambio}</div>`;
 }
 
 function seccionCambios() {
@@ -1710,6 +1783,7 @@ function textoResumenCostos(r) {
 
 function pintarBarra() {
   if (!API) return;
+  $('filtrarIa').hidden = false;
   const r = estado.ultimoRefresco;
   const gasto = estado.costoHoy?.trabajos ? `Gasto de IA hoy: ${usd(estado.costoHoy.total)} · ${plural(estado.costoHoy.trabajos, 'trabajo', 'trabajos')}` : '';
   const texto = estado.refrescando ? 'Consultando GitHub y git' : r && !r.ok ? 'La última actualización falló' : gasto;
@@ -1955,7 +2029,24 @@ document.addEventListener('click', (ev) => {
   if (d.tab) { estado.tab = d.tab; history.replaceState(null, '', `#${encodeURIComponent(estado.seleccion)}/${estado.tab}`); return pintarDetalle(); }
   if (d.tabIr) { ev.preventDefault(); estado.tab = d.tabIr; return pintarDetalle(); }
   if (d.copiar) return copiar(t, d.copiar);
-  if (d.accion === 'limpiar') { estado.filtros.clear(); estado.portal = null; $('buscar').value = ''; return pintarTodo(); }
+  if (d.accion === 'limpiar') { estado.filtros.clear(); estado.portal = null; estado.filtroIa = null; $('buscar').value = ''; return pintarTodo(); }
+  if (d.accion === 'filtrarIa') return filtrarConIa();
+  if (d.accion === 'reintentarFiltroIa') { const q = estado.filtroIa?.consulta; estado.filtroIa = null; return filtrarConIa(q); }
+  if (d.accion === 'quitarFiltroIa') { estado.filtroIa = null; return pintarTodo({ detalle: false }); }
+  if (d.accion === 'guardarFiltroIa' && estado.filtroIa) {
+    almacen.escribir(claveVistasIa(), [...vistasIa().filter((v) => !mismaConsulta(v, estado.filtroIa.consulta)), estado.filtroIa.consulta]);
+    avisar('Vista guardada en la barra lateral.');
+    return pintarTodo({ detalle: false });
+  }
+  if (d.vistaIa !== undefined) {
+    const v = vistasIa()[+d.vistaIa];
+    if (mismaConsulta(estado.filtroIa?.consulta, v)) { estado.filtroIa = null; return pintarTodo({ detalle: false }); }
+    return v && filtrarConIa(v);
+  }
+  if (d.quitarVistaIa !== undefined) {
+    almacen.escribir(claveVistasIa(), vistasIa().filter((_, i) => i !== +d.quitarVistaIa));
+    return pintarLateral();
+  }
   if (d.accion === 'volver') { document.body.dataset.vista = 'cola'; return; }
   if (d.accion === 'exportar') return exportar();
   if (d.accion === 'importar') return $('archivoRevision').click();
@@ -2060,6 +2151,7 @@ document.addEventListener('input', (ev) => {
 
 document.addEventListener('keydown', (ev) => {
   if ((ev.target.id === 'cajaTexto' || ev.target.id === 'cajaSugerido') && ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); return agregarComentario(); }
+  if (ev.target.id === 'buscar' && ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey) && API) { ev.preventDefault(); return filtrarConIa(); }
   if (ev.target.id === 'preguntaPr' && ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); return preguntarPr(prSel()); }
   if (ev.target.id === 'barraSelTexto' && ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); return accionBarraSel('agregar'); }
   if (ev.key === 'Escape' && $('barraSel')) { ev.preventDefault(); return cerrarBarraSel(); }

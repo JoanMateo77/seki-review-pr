@@ -8,8 +8,8 @@ import { rutaCostos } from './cache.mjs';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../..');
 
-export const TOPES = { responder: 0.5, explicar: 2, cambiar: 1.5, investigar: 1 };
-export const TURNOS = { responder: 4, explicar: 30, cambiar: 40, investigar: 25 };
+export const TOPES = { responder: 0.5, explicar: 2, cambiar: 1.5, investigar: 1, filtrar: 0.5 };
+export const TURNOS = { responder: 4, explicar: 30, cambiar: 40, investigar: 25, filtrar: 3 };
 
 // Archivos que la IA no puede leer en ningún directorio que se le abra; cada proyecto suma los suyos en `secretos`.
 // Las reglas de Read también rigen Grep y Glob; van con la ruta absoluta de cada directorio porque las relativas solo

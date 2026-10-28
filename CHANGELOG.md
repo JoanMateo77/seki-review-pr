@@ -4,6 +4,12 @@ Cada versión tiene su etiqueta `seki-review-vX.Y.Z` en el commit que la publica
 
 ## seki-review
 
+### 0.19.0 (2026-10-28)
+- Filtro con IA: se escribe una necesidad en el buscador ("PRs de ciberseguridad") y "Filtrar con IA" (o Ctrl + Enter) deja en la cola solo las PRs que encajan, cada una con su motivo. La IA decide con título, rama y archivos, sin leer el diff (unos segundos, centavos por consulta).
+- El resultado se guarda por necesidad y estado de la cola: repetirlo no cuesta mientras ninguna PR cambie; si la cola cambia, el aviso ofrece volver a filtrar.
+- "Guardar como vista" deja la necesidad en "Vistas con IA" de la barra lateral.
+- El buscador conserva un ancho mínimo y el texto de gasto se recorta en pantallas medianas.
+
 ### 0.18.0 (2026-10-28)
 - Seleccionar texto en la respuesta de la IA de un hilo (Resumen o Archivos) abre la barra para repreguntar sobre ese fragmento: la pregunta queda en el mismo hilo, cita el fragmento y lo resalta en la respuesta. La IA recibe el fragmento como parte de la respuesta anterior, no de la explicación. La caja de pregunta sobre toda la PR se mantiene.
 - Avance real mientras la IA trabaja: etapas (copias, lectura, cambio, comprobaciones, corrección) y cuántos archivos leyó y buscó, con el último archivo abierto; también en el análisis de la PR.

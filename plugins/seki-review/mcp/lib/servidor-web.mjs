@@ -12,6 +12,7 @@ import { investigarPregunta, responderPreguntas } from './preguntas.mjs';
 import { ajustarPropuesta, aprobar, descartar, leerPropuesta, proponerCambios } from './propuestas.mjs';
 import { explicarConIa } from './explicar.mjs';
 import { avances } from './avance.mjs';
+import { filtrarPrs } from './filtrar.mjs';
 import { costosDelDia, registrarCosto, resumenCostos } from './ia.mjs';
 import { servidorActivo, tokenDe } from './acceso.mjs';
 import { limpiarCopias } from './copias.mjs';
@@ -137,6 +138,12 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true 
         return responder(res, 200, { ok: true });
       }
       if (req.method === 'GET' && url.pathname === '/api/costos') return responder(res, 200, resumenCostos(p));
+      if (req.method === 'POST' && url.pathname === '/api/filtrar') {
+        const { consulta } = await leerCuerpo(req);
+        const foto = fotoConExplicaciones(p);
+        if (!foto) throw Object.assign(new Error('Todavía no hay datos de PRs.'), { codigo: 503 });
+        return responder(res, 200, await filtrarPrs(p, foto.prs, consulta));
+      }
       if (req.method === 'POST' && url.pathname === '/api/investigar') {
         const { id, comentario } = await leerCuerpo(req);
         const pr = prDeFoto(id);

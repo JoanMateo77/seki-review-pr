@@ -46,6 +46,10 @@ rango) y se deja una nota manual, opcionalmente con código sugerido; las notas 
 y "Enviar revisión" las manda juntas (todas las preguntas de una PR en una sola llamada). El costo de cada trabajo
 queda en `revision-prs/datos/costos.jsonl`. Un pedido de cambio genera una propuesta en una copia aparte de la rama (con
 comprobaciones de reglas, tipos y tests). Solo el botón Aprobar la sube a la rama de la PR, y nunca hace merge.
+**Filtro con IA:** se escribe una necesidad en el buscador ("PRs de ciberseguridad", "lo que toca el login") y
+"Filtrar con IA" deja solo las PRs que encajan, con el motivo de cada una. Decide con título, rama y archivos (no lee el
+diff); el resultado se guarda mientras la cola no cambie y se puede guardar como vista en la barra lateral.
+
 En el Resumen, al seleccionar texto de la explicación aparece una barra para preguntar sobre ese fragmento (o
 "¿Por qué?", "Dar un ejemplo", "Ampliar"); cada sección tiene "Ampliar" y al final hay una caja para preguntar sobre
 toda la PR. Seleccionar texto de una respuesta de la IA (en Resumen o Archivos) repregunta en ese hilo sobre el
