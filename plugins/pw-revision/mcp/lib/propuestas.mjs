@@ -233,7 +233,14 @@ async function aprobarSinSerie(p, pr, propuestaId, { confirmarFallos = false } =
     marcar('rechazada', { motivo });
     return { ok: false, motivo, parche: prop.patch };
   }
-  const cadena = Array.isArray(subido.cadena) ? subido.cadena : [];
+  let cadena = Array.isArray(subido.cadena) ? subido.cadena : [];
+  // Un push que llegó a GitHub sin que se alcanzara a guardar el resultado (proceso cortado, tiempo agotado) se
+  // reconoce por su commit y se da por aprobado, en vez de volver a subirlo.
+  const pendiente = subido.pendiente;
+  if (pendiente && remoto.headRefOid === pendiente.commit) {
+    cadena = cerrarAprobacion(p, pr, estadoRuta, remoto.headRefName, cadena, pendiente);
+    if (pendiente.propuestaId === propuestaId) return { ok: true, commit: pendiente.commit, reconciliada: true };
+  }
   if (!soloCommitsDelTablero(remoto.headRefOid, prop.headSha, cadena)) {
     marcar('conflicto', { motivo: 'La rama cambió desde que se generó la propuesta' });
     return { ok: false, motivo: 'La rama cambió desde que se generó la propuesta' };
@@ -249,7 +256,6 @@ async function aprobarSinSerie(p, pr, propuestaId, { confirmarFallos = false } =
   }
   try {
     await git(dir, ['commit', '-q', '--no-verify', '-m', recortar(prop.resumen, 200) || MENSAJE_POR_DEFECTO]);
-    await git(dir, ['push', '-q', 'origin', `HEAD:refs/heads/${remoto.headRefName}`]);
   } catch (e) {
     await reiniciarCopia(dir, remoto.headRefOid);
     const motivo = recortar(e.stderr || e.message);
@@ -257,11 +263,33 @@ async function aprobarSinSerie(p, pr, propuestaId, { confirmarFallos = false } =
     return { ok: false, motivo, parche: prop.patch };
   }
   const commit = (await git(dir, ['rev-parse', 'HEAD'])).trim();
+  const intento = { propuestaId, base: remoto.headRefOid, commit };
   mkdirSync(rutaPropuestas(p.salida, pr.repo, pr.numero), { recursive: true });
-  escribirJson(estadoRuta, { rama: remoto.headRefName, cadena: [...cadena, { base: remoto.headRefOid, commit }].slice(-50) });
-  marcar('aprobada', { commit, aprobada: new Date().toISOString() });
-  actualizarComentario(p, pr.repo, pr.numero, prop.comentarioId, { estado: 'aprobado', commit });
+  escribirJson(estadoRuta, { rama: remoto.headRefName, cadena, pendiente: intento });
+  try {
+    await git(dir, ['push', '-q', 'origin', `HEAD:refs/heads/${remoto.headRefName}`]);
+  } catch (e) {
+    // Un error del push no prueba que no llegó: se mira la rama remota antes de darlo por rechazado.
+    const remota = await git(dir, ['ls-remote', 'origin', `refs/heads/${remoto.headRefName}`]).catch(() => '');
+    if (!remota.startsWith(commit)) {
+      escribirJson(estadoRuta, { rama: remoto.headRefName, cadena });
+      await reiniciarCopia(dir, remoto.headRefOid);
+      const motivo = recortar(e.stderr || e.message);
+      marcar('rechazada', { motivo });
+      return { ok: false, motivo, parche: prop.patch };
+    }
+  }
+  cerrarAprobacion(p, pr, estadoRuta, remoto.headRefName, cadena, intento);
   return { ok: true, commit };
+}
+
+function cerrarAprobacion(p, pr, estadoRuta, rama, cadena, { propuestaId, base, commit }) {
+  const nueva = [...cadena, { base, commit }].slice(-50);
+  escribirJson(estadoRuta, { rama, cadena: nueva });
+  const prop = leerPropuesta(p, pr.repo, pr.numero, propuestaId);
+  guardar(p, pr.repo, pr.numero, { ...prop, estado: 'aprobada', commit, aprobada: new Date().toISOString() });
+  actualizarComentario(p, pr.repo, pr.numero, prop.comentarioId, { estado: 'aprobado', commit });
+  return nueva;
 }
 
 export const descartar = (...args) => enSerie(args[1], () => descartarSinSerie(...args));

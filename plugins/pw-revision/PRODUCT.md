@@ -41,6 +41,13 @@ A diferencia de la lista de PRs de GitHub, comprueba con git si el código ya es
 
 ## Mejoras futuras
 
+- **Reglas para las plantillas de revisión (PCI DSS y demás), anotadas 28-10-2026 desde la wiki ai-coding.** Cada punto
+  de una plantilla lleva evidencia citada (archivo y línea) o el estado "no verificable con el diff"; marcar un punto
+  no equivale a haber visto el comportamiento. Lo que se pueda comprobar con una regla fija va a `pr_verificaciones`,
+  no al modelo. No se corre la misma plantilla con varios modelos esperando consenso: el acuerdo entre modelos da
+  pistas, no descarta errores compartidos. En "Mis revisiones", Aprobar o Solicitar cambios en GitHub es una acción
+  humana por cada envío, con el diff abierto.
+
 - **Plugin para todo el equipo (anotado 27-10-2026, sin implementar).** Que cualquier persona del
   equipo lo instale y use en todos los proyectos, no solo uno: varias plantillas de revisión base
   (PCI DSS, OWASP web, migración SQL/DDL, pantallas y textos, integración bancaria, liviana) cargadas para todos los

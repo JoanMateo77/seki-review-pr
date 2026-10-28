@@ -240,6 +240,14 @@ body[data-enfoque] .lateral, body[data-enfoque] .cola { display: none; }
 .respuesta-a { border-left: 3px solid var(--linea-fuerte); }
 .respondiendo { margin: 6px 0; padding: 4px 8px; border-radius: 6px; background: var(--sel); color: var(--texto-2); font-size: .92em; }
 .leido { margin: 4px 0 0; font-size: .85em; }
+.leido summary { cursor: pointer; }
+.leido ul { margin: 4px 0 0; padding-left: 18px; }
+.origen { display: inline-flex; gap: 6px; align-items: center; margin: 0 0 14px; font-size: 12px; color: var(--texto-3); }
+.origen strong { font-weight: 600; color: var(--texto-2); }
+.cobertura { margin: 0 0 14px; }
+.cobertura ul { margin: 6px 0 0; padding-left: 18px; }
+.valorar { display: inline-flex; gap: 4px; align-items: center; }
+.valorar button[aria-pressed="true"] { color: var(--texto); font-weight: 600; text-decoration: underline; }
 .aviso-codigo { margin: 0 0 6px; color: var(--ambar); font-size: .92em; }
 .btn-texto.destacado { color: var(--acento); font-weight: 600; }
 .md p { margin: 0 0 8px; }
@@ -710,7 +718,17 @@ function preguntaPrHtml(pr) {
     <textarea id="preguntaPr" rows="3" placeholder="Por ejemplo: ¿qué pasa con los webhooks que ya estaban configurados en producción?" aria-label="Pregunta sobre la PR"></textarea>
     <div class="prop-acciones"><select id="preguntaPrSeccion" aria-label="Sobre qué parte"><option value="">Toda la PR</option>${opciones}</select>
       <label class="muy-tenue"><input type="checkbox" id="preguntaPrCodigo"> Revisar el código</label>
-      <button type="button" class="btn chico primario" data-accion="preguntarPr">Preguntar</button><button type="button" class="btn chico" data-accion="agregarPreguntaPr">Agregar a la revisión</button><span class="muy-tenue">Ctrl + Enter pregunta · también puede seleccionar texto de la explicación</span></div></div>`;
+      <button type="button" class="btn chico primario" data-accion="preguntarPr">Preguntar</button><button type="button" class="btn chico" data-accion="agregarPreguntaPr">Agregar a la revisión</button><span class="muy-tenue">Ctrl + Enter pregunta · también puede seleccionar texto de la explicación · la respuesta es más útil si la pregunta no sugiere la conclusión</span></div></div>`;
+}
+
+function coberturaHtml(e) {
+  const c = e.cobertura;
+  if (!c || c.completa) return '';
+  const sin = c.sinDiff ?? [];
+  const rec = c.recortados ?? [];
+  const items = [...sin.map((a) => `<li><span class="mono">${esc(a)}</span> · sin revisar</li>`), ...rec.map((a) => `<li><span class="mono">${esc(a)}</span> · revisado en parte</li>`)];
+  return `<details class="seccion cobertura"><summary><span class="estado ambar">${icono('alerta')} Cobertura parcial: la IA no vio el diff completo (${plural(sin.length, 'archivo sin revisar', 'archivos sin revisar')}${rec.length ? `, ${plural(rec.length, 'recortado', 'recortados')}` : ''})</span></summary>
+    ${items.length ? `<ul class="tenue">${items.slice(0, 80).join('')}</ul>` : ''}</details>`;
 }
 
 function tabResumen(pr) {
@@ -726,7 +744,9 @@ function tabResumen(pr) {
       <p style="margin-top:12px"><button class="btn chico" data-copiar="/pw-revision:revisar-prs explicar ${esc(pr.repo)}#${pr.numero}">${icono('copiar')} Copiar el comando</button></p></div>`;
   }
   return `
+    <p class="origen">${icono('chispa')} <span><strong>Explicación de IA.</strong> Ayuda para leer la PR, no reemplaza revisar el diff. Las reglas fijas están en Verificaciones.</span></p>
     ${e.desactualizada ? `<div class="seccion"><span class="estado ambar">${icono('alerta')} La PR recibió commits después de esta explicación</span></div>` : ''}
+    ${coberturaHtml(e)}
     ${sec('Qué resuelve', `<p>${esc(e.resumen)}</p>`, 'resumen')}
     ${sec('Por qué', `<p>${esc(e.por_que)}</p>`, 'por_que')}
     ${e.impacto_usuario ? sec('Qué nota quien usa el portal', `<p>${esc(e.impacto_usuario)}</p>`, 'impacto_usuario') : ''}
@@ -756,7 +776,7 @@ function tabVerificaciones(pr) {
       <td><a class="mono" href="${esc(pr.url)}/files" target="_blank" rel="noopener">${esc(h.archivo)}${h.linea ? ':' + h.linea : ''}</a>${h.texto ? `<code class="codigo">${esc(h.texto)}</code>` : ''}</td>
     </tr>`).join('')}
   </tbody></table></div>
-  <p class="nota-pie">Una línea se excluye de una regla con el comentario <span class="mono">pw-revision: ignorar &lt;regla&gt;</span>.</p>`;
+  <p class="nota-pie">Reglas fijas sobre las líneas agregadas, sin IA: marcan patrones, no confirman que haya un problema. Una línea se excluye de una regla con el comentario <span class="mono">pw-revision: ignorar &lt;regla&gt;</span>.</p>`;
 }
 
 function tabDescripcion(pr) {
@@ -807,7 +827,7 @@ function barrita(a, d) {
 // Comentarios sobre líneas del diff. Preguntas y pedidos de cambio nacen como borradores y se envían
 // juntos; las notas manuales se guardan al agregarlas y viajan en la revisión exportada.
 const TIPOS_COMENTARIO = {
-  pregunta: { nombre: 'Preguntar', etiqueta: 'Pregunta', ayuda: 'Qué se quiere entender de estas líneas' },
+  pregunta: { nombre: 'Preguntar', etiqueta: 'Pregunta', ayuda: 'Qué se quiere entender de estas líneas. Mejor «¿qué pasa si…?» que «¿esto está bien?»' },
   cambio: { nombre: 'Pedir cambio', etiqueta: 'Pedido de cambio', ayuda: 'Cómo debe quedar este código' },
   nota: { nombre: 'Nota', etiqueta: 'Nota', ayuda: 'Comentario para el autor' },
 };
@@ -828,6 +848,17 @@ const SECCIONES = {
 };
 
 // Preguntas sobre la PR o una sección de la explicación: se envían al momento, sin pasar por "Revisión pendiente".
+// Un segundo clic en la misma opción quita la valoración.
+async function valorar(pr, id, util) {
+  const c = comentarios(pr).find((x) => x.id === id);
+  const valor = c?.valoracion === util ? null : util;
+  try {
+    await api('/api/valorar', { id: pr.id, comentario: id, util: valor });
+    escribirComentarios(pr, comentarios(pr).map((x) => (x.id === id ? { ...x, valoracion: valor ?? undefined } : x)));
+    repintarDetalle();
+  } catch (err) { avisar(err.message); }
+}
+
 async function investigar(pr, id) {
   try {
     await api('/api/investigar', { id: pr.id, comentario: id });
@@ -1082,6 +1113,25 @@ function cajaHtml(rango) {
 
 const hiloHtml = (c, nivel = 0) => `<tr class="hilo"><td class="n"></td><td class="n"></td><td>${hiloCuerpo(c, nivel)}</td></tr>`;
 
+// Qué abrió la IA al investigar: sin esta lista no se sabe si una afirmación sale del código o del diff.
+function consultadoHtml(c) {
+  const a = c.consultado?.archivos ?? [];
+  const b = c.consultado?.busquedas ?? [];
+  const bloq = c.bloqueadas ?? [];
+  if (!c.investigado || (!a.length && !b.length && !bloq.length)) return '';
+  const rango = (x) => (x.desde ? ` L${Number(x.desde)}${x.hasta ? `–${Number(x.hasta)}` : ''}` : '');
+  const filas = [
+    ...a.map((x) => `<li><span class="mono">${x.repo ? `${esc(x.repo)}: ` : ''}${esc(x.ruta)}${rango(x)}</span></li>`),
+    ...b.map((x) => `<li>${esc(x.herramienta === 'Grep' ? 'Búsqueda' : 'Archivos')} <span class="mono">${esc(x.patron)}</span>${x.repo ? ` en ${esc(x.repo)}` : ''}</li>`),
+    ...bloq.map((x) => `<li>Bloqueado por permisos: <span class="mono">${esc(x.herramienta)} ${esc(x.ruta)}</span></li>`),
+  ];
+  return `<details class="leido muy-tenue"><summary>Archivos leídos: ${a.length}${b.length ? ` · ${plural(b.length, 'búsqueda', 'búsquedas')}` : ''}${bloq.length ? ` · ${plural(bloq.length, 'intento bloqueado', 'intentos bloqueados')}` : ''}</summary><ul>${filas.join('')}</ul></details>`;
+}
+
+const valorarHtml = (c) => (API && c.estado === 'respondido'
+  ? `<span class="valorar" role="group" aria-label="¿Sirvió la respuesta?">¿Sirvió? <button type="button" class="btn-texto" data-com-valorar="${esc(c.id)}" data-util="si" aria-pressed="${c.valoracion === true}">Sí</button><button type="button" class="btn-texto" data-com-valorar="${esc(c.id)}" data-util="no" aria-pressed="${c.valoracion === false}">No</button></span> · `
+  : '');
+
 function respuestaHtml(c) {
   const larga = c.respuesta.length > 900 || c.respuesta.split('\n').length > 14;
   const abierta = estado.expandidas.has(c.id);
@@ -1093,7 +1143,8 @@ function respuestaHtml(c) {
     <div class="md${larga && !abierta ? ' plegada' : ''}">${md(c.respuesta)}</div>
     ${larga ? `<button type="button" class="btn-texto" data-ver-mas="${esc(c.id)}">${abierta ? 'Ver menos' : 'Ver más'}</button>` : ''}
     ${c.leido?.length ? `<p class="leido muy-tenue">Revisado en: ${c.leido.map((x) => `<span class="mono">${esc(x.repo)}${x.portal && x.portal !== x.repo ? ` (${esc(x.portal)})` : ''} ${esc(x.rama)}@${esc(String(x.sha ?? '').slice(0, 7))}</span>`).join(' · ')}</p>` : ''}
-    <div class="hilo-pie muy-tenue">${c.investigado ? `${icono('buscar')} Revisado en el código · ` : ''}${costo}<button type="button" class="btn-texto" data-com-repreguntar="${esc(c.id)}">Repreguntar</button>${investigar}</div></div>`;
+    ${consultadoHtml(c)}
+    <div class="hilo-pie muy-tenue"><span>Respuesta de IA</span> · ${c.investigado ? `${icono('buscar')} Revisado en el código · ` : ''}${costo}${valorarHtml(c)}<button type="button" class="btn-texto" data-com-repreguntar="${esc(c.id)}">Repreguntar</button>${investigar}</div></div>`;
 }
 
 // Ordena una lista de comentarios como conversación: cada repregunta debajo de la pregunta a la que responde.
@@ -1539,12 +1590,20 @@ function pintarDiagramas() {
   mermaidListo.then((m) => m.run({ nodes: nodos })).catch(() => {});
 }
 
+// Últimos 30 días por modelo, frente a las respuestas marcadas como útiles: sirve para ver si la elección de modelo rinde.
+function textoResumenCostos(r) {
+  const filas = Object.entries(r?.modelos ?? {}).filter(([, m]) => m.trabajos);
+  if (!filas.length) return '';
+  return [`Últimos ${r.dias} días`, ...filas.map(([n, m]) => `${n}: ${plural(m.trabajos, 'trabajo', 'trabajos')}${m.fallidos ? ` (${m.fallidos} fallidos)` : ''} · ${usd(m.costo)}${m.utiles || m.noUtiles ? ` · útiles ${m.utiles} de ${m.utiles + m.noUtiles}` : ''}${m.costoPorUtil ? ` · ${usd(m.costoPorUtil)} por respuesta útil` : ''}`),
+    ...(r.reintentos ? [`Reintentos y análisis repetidos: ${r.reintentos}`] : [])].join('\n');
+}
+
 function pintarBarra() {
   if (!API) return;
   const r = estado.ultimoRefresco;
   const gasto = estado.costoHoy?.trabajos ? `Gasto de IA hoy: ${usd(estado.costoHoy.total)} · ${plural(estado.costoHoy.trabajos, 'trabajo', 'trabajos')}` : '';
   const texto = estado.refrescando ? 'Consultando GitHub y git' : r && !r.ok ? 'La última actualización falló' : gasto;
-  $('accionesBarra').innerHTML = `<span class="estado-texto">${texto}</span>
+  $('accionesBarra').innerHTML = `<span class="estado-texto" title="${esc(textoResumenCostos(estado.resumenCostos))}">${texto}</span>
     <button class="btn chico" data-accion="refrescar" ${estado.refrescando ? 'disabled' : ''} title="${esc(r && !r.ok ? r.mensaje : 'Vuelve a consultar GitHub y git: qué se mergeó, qué es nuevo y dónde está cada PR')}">${icono('actualizar', estado.refrescando ? 'girando' : '')} ${estado.refrescando ? 'Actualizando' : 'Actualizar estado'}</button>`;
 }
 
@@ -1568,6 +1627,7 @@ async function sondear() {
     estado.trabajos = new Map(e.trabajos.map((t) => [t.id, t]));
     estado.refrescando = e.refrescando;
     estado.ultimoRefresco = e.ultimoRefresco;
+    if (e.costoHoy?.trabajos !== estado.costoHoy?.trabajos) api('/api/costos').then((r) => { estado.resumenCostos = r; pintarBarra(); }).catch(() => {});
     estado.costoHoy = e.costoHoy;
     const marcas = e.comentarios ?? {};
     for (const [id, marca] of Object.entries(marcas)) {
@@ -1787,6 +1847,7 @@ document.addEventListener('click', (ev) => {
   if (d.accion === 'quitarRespondeA') { estado.respondeA = null; return repintarDetalle(); }
   if (d.verMas) { estado.expandidas.has(d.verMas) ? estado.expandidas.delete(d.verMas) : estado.expandidas.add(d.verMas); return repintarDetalle(); }
   if (d.comInvestigar) return investigar(prSel(), d.comInvestigar);
+  if (d.comValorar) return valorar(prSel(), d.comValorar, d.util === 'si');
   if (d.accion === 'agregarPreguntaPr') return preguntarPr(prSel(), undefined, undefined, { enviar: false });
   if (d.bsel || d.bselRapida !== undefined) return accionBarraSel(d.bsel, d.bselRapida === undefined ? undefined : Number(d.bselRapida));
   if (d.bselLineas) return abrirCajaDeSeleccion(d.bselLineas);

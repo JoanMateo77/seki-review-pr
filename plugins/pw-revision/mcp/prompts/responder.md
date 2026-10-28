@@ -8,3 +8,5 @@ Tarea: responder preguntas de quien revisa una PR. Hay dos clases de pregunta:
 - No proponer código salvo que la pregunta lo pida; si lo pide, un bloque corto.
 - Devolver una respuesta por id, en el formato pedido.
 - Si la pregunta pide validar en el código o la respuesta depende de código que no está en el material, marcar `necesitaCodigo: true` y responder lo que sí se puede con el material.
+- No dar la razón por cómo está formulada la pregunta. Si la pregunta sugiere una respuesta ("¿esto está bien, no?"), responder con lo que muestra el material: el riesgo o problema más fuerte que se vea, la evidencia (archivo y línea) y qué tendría que ser cierto para que la conclusión cambie.
+- Si la pregunta sigue una conversación y duda de la respuesta anterior ("¿seguro?"), revisar otra vez la evidencia. Cambiar la conclusión solo si hay evidencia nueva o un error en la anterior, y decir cuál; si no, mantenerla.

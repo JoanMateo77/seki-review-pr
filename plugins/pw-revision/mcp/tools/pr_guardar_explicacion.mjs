@@ -37,6 +37,12 @@ export default {
       como_probar: lista,
       riesgos: lista,
       dependencias: { ...lista, description: 'PRs, SQL o variables que deben ir antes' },
+      cobertura: {
+        type: 'object',
+        description: 'Qué parte del diff se revisó. completa=false si el diff vino recortado y no se leyó el resto',
+        required: ['completa'],
+        properties: { completa: { type: 'boolean' }, sinDiff: { ...lista, description: 'Archivos que no se revisaron' }, recortados: { ...lista, description: 'Archivos revisados solo en parte' } },
+      },
       riesgo: { type: 'string', enum: ['bajo', 'medio', 'alto'] },
       esfuerzo: { type: 'integer', minimum: 1, maximum: 5, description: 'Esfuerzo de revisión: 1 = minutos, 5 = media jornada o más' },
       orden_lectura: {

@@ -14,4 +14,6 @@ Campos de la explicación:
 - orden_lectura: archivos en el orden en que conviene leerlos, empezando por donde nace el cambio y dejando pruebas y vistas al final; un motivo corto por archivo; omitir los triviales.
 - diagrama: solo si cambia un flujo entre componentes (portal, back, checkout, banco, cron). sequenceDiagram de Mermaid con participantes en lenguaje del negocio, sin nombres de funciones, a lo sumo 12 mensajes.
 
+Cobertura: si el diff vino recortado y no se leyó del checkout lo que faltaba, guardar cobertura con completa=false y la lista de archivos no revisados, y decirlo en riesgos. Las verificaciones automáticas son reglas fijas: no repetirlas como hallazgos propios; si se confirman o se descartan mirando el código, decirlo con archivo y línea.
+
 Al terminar, responder en una línea: "listo" o el motivo por el que no se pudo.
