@@ -19,7 +19,11 @@ export function repoConPr({ n = 7, archivo = 'a.ts', antes, despues, rama = 'fix
   const base = sh(trabajo, 'rev-parse', 'HEAD');
   sh(trabajo, 'checkout', '-qb', rama);
   writeFileSync(join(trabajo, archivo), despues);
-  sh(trabajo, 'commit', '-qam', 'cambio');
+  // `commit -a` confía en el tamaño y la hora del archivo: si cambia en el mismo instante y con el mismo tamaño
+  // (a → b), git lo da por igual y no hay nada que commitear. Sacarlo del índice obliga a leer el contenido.
+  sh(trabajo, 'rm', '-q', '--cached', archivo);
+  sh(trabajo, 'add', archivo);
+  sh(trabajo, 'commit', '-qm', 'cambio');
   const head = sh(trabajo, 'rev-parse', 'HEAD');
   sh(trabajo, 'remote', 'add', 'origin', remoto);
   sh(trabajo, 'push', '-q', 'origin', 'main', rama, `${rama}:refs/pull/${n}/head`);

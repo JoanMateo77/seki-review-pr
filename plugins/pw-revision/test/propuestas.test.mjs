@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { guardarComentarios, leerComentarios } from '../mcp/lib/comentarios.mjs';
 import { aprobar, descartar, leerPropuestas, proponerCambios } from '../mcp/lib/propuestas.mjs';
-import { rutaCopia } from '../mcp/lib/cache.mjs';
+import { escribirJson, leerJson, rutaCopia, rutaPropuestas } from '../mcp/lib/cache.mjs';
 import { falsoClaude, llamadas } from './util/claude.mjs';
 import { falsoGh } from './util/gh.mjs';
 import { repoConPr, sh } from './util/repo.mjs';
@@ -111,6 +111,37 @@ test('aprobar con la rama movida no aplica y deja conflicto', async () => {
   assert.equal(res.motivo, 'La rama cambió desde que se generó la propuesta');
   assert.equal(leerPropuestas(p, 'x', 7)[0].estado, 'conflicto');
   assert.equal(sh(r.remoto, 'rev-parse', r.rama), r.head);
+});
+
+test('aprobar reconoce un push que llegó sin que se guardara el resultado y no lo repite', async () => {
+  const { r, p, pr } = preparar();
+  await proponerCambios(p, pr, ['c-0001'], deps);
+  const [prop] = leerPropuestas(p, 'x', 7);
+  const { commit } = await aprobar(p, pr, prop.id);
+  // Estado que deja un proceso cortado justo después del push.
+  const estadoRuta = join(rutaPropuestas(p.salida, 'x', 7), 'estado.json');
+  escribirJson(estadoRuta, { rama: r.rama, cadena: [], pendiente: { propuestaId: prop.id, base: r.head, commit } });
+  escribirJson(join(rutaPropuestas(p.salida, 'x', 7), `${prop.id}.json`), { ...leerPropuestas(p, 'x', 7)[0], estado: 'lista', commit: undefined });
+  gh.fijar({ state: 'OPEN', headRefName: r.rama, headRefOid: commit });
+  const res = await aprobar(p, pr, prop.id);
+  assert.equal(res.ok, true, res.motivo);
+  assert.equal(res.reconciliada, true);
+  assert.equal(sh(r.remoto, 'rev-list', '--count', `${r.head}..${r.rama}`).trim(), '1');
+  assert.equal(sh(r.remoto, 'rev-parse', r.rama), commit);
+  assert.equal(leerPropuestas(p, 'x', 7)[0].estado, 'aprobada');
+  assert.deepEqual(leerJson(estadoRuta), { rama: r.rama, cadena: [{ base: r.head, commit }] });
+});
+
+test('aprobar con un intento anterior que no llegó lo descarta y sube normal', async () => {
+  const { r, p, pr } = preparar();
+  await proponerCambios(p, pr, ['c-0001'], deps);
+  const [prop] = leerPropuestas(p, 'x', 7);
+  escribirJson(join(rutaPropuestas(p.salida, 'x', 7), 'estado.json'), { rama: r.rama, cadena: [], pendiente: { propuestaId: prop.id, base: r.head, commit: 'e'.repeat(40) } });
+  const res = await aprobar(p, pr, prop.id);
+  assert.equal(res.ok, true, res.motivo);
+  assert.equal(res.reconciliada, undefined);
+  assert.equal(sh(r.remoto, 'rev-parse', r.rama), res.commit);
+  assert.equal(leerJson(join(rutaPropuestas(p.salida, 'x', 7), 'estado.json')).pendiente, undefined);
 });
 
 test('aprobar con PR cerrada no aplica', async () => {

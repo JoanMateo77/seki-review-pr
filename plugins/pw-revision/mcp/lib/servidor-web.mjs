@@ -11,7 +11,7 @@ import { actualizarComentario, guardarComentarios, leerComentarios, marcasComent
 import { investigarPregunta, responderPreguntas } from './preguntas.mjs';
 import { ajustarPropuesta, aprobar, descartar, leerPropuesta, proponerCambios } from './propuestas.mjs';
 import { explicarConIa } from './explicar.mjs';
-import { costosDelDia } from './ia.mjs';
+import { costosDelDia, registrarCosto, resumenCostos } from './ia.mjs';
 import { servidorActivo, tokenDe } from './acceso.mjs';
 import { limpiarCopias } from './copias.mjs';
 
@@ -123,6 +123,19 @@ export async function iniciarServidor({ proyecto = 'demo', puerto = PUERTO, abri
         for (const cid of investigar) cola.encolar([{ id: `${pr.id}:investigar:${cid}:${ahora}`, tipo: 'investigar', prId: pr.id, ...conRescate(pr, [cid], () => investigarPregunta(p, pr, cid)) }]);
         return responder(res, 202, { preguntas: todas.length, cambios: cambios.length, desactualizados: desactualizados.length });
       }
+      // ¿Sirvió la respuesta? Se guarda en la pregunta y en el registro de costos para comparar modelos.
+      if (req.method === 'POST' && url.pathname === '/api/valorar') {
+        const { id, comentario, util } = await leerCuerpo(req);
+        if (util !== true && util !== false && util !== null) throw new Error('util debe ser verdadero, falso o nulo');
+        const pr = prDeFoto(id);
+        const c = leerComentarios(p, pr.repo, pr.numero).find((x) => x.id === comentario && x.tipo === 'pregunta');
+        if (!c) throw Object.assign(new Error('La pregunta no existe'), { codigo: 404 });
+        if (c.estado !== 'respondido') throw new Error('Solo se valora una pregunta respondida');
+        actualizarComentario(p, pr.repo, pr.numero, c.id, { valoracion: util ?? undefined });
+        registrarCosto(p, { tipo: 'valoracion', prId: pr.id, comentario: c.id, modelo: c.modelo, investigado: !!c.investigado, util, costo: 0 });
+        return responder(res, 200, { ok: true });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/costos') return responder(res, 200, resumenCostos(p));
       if (req.method === 'POST' && url.pathname === '/api/investigar') {
         const { id, comentario } = await leerCuerpo(req);
         const pr = prDeFoto(id);

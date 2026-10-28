@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { argsClaude, costosDelDia, ejecutarClaude, elegirModelo, reglasSecretos, registrarCosto } from '../mcp/lib/ia.mjs';
+import { argsClaude, costosDelDia, ejecutarClaude, elegirModelo, herramientasUsadas, reglasSecretos, registrarCosto, resumenCostos } from '../mcp/lib/ia.mjs';
 
 import { falsoClaude } from './util/claude.mjs';
 
@@ -120,4 +120,35 @@ test('argsClaude: directorios extra y reglas que niegan archivos de secretos', (
   assert.ok(negadas.includes('Read(//a/b/**/*.env)'));
   assert.ok(negadas.includes('Read(//a/b/**/.env*)'));
   assert.ok(negadas.includes('Read(//a/b/**/claves.txt)'));
+});
+
+test('resumenCostos compara costo por modelo con lo marcado como útil y cuenta los reintentos', () => {
+  const p = { salida: mkdtempSync(join(tmpdir(), 'pw-res-')) };
+  const f = (d) => `2026-10-${d}T10:00:00.000Z`;
+  registrarCosto(p, { fecha: f('01'), tipo: 'explicar', prId: 'a#1', modelo: 'claude-opus-5-5', costo: 9, ok: true });
+  registrarCosto(p, { fecha: f('20'), tipo: 'explicar', prId: 'a#1', modelo: 'claude-sonnet-5-5', costo: 1, ok: true });
+  registrarCosto(p, { fecha: f('20'), tipo: 'explicar', prId: 'a#1', modelo: 'claude-sonnet-5-5', costo: 1, ok: false });
+  registrarCosto(p, { fecha: f('21'), tipo: 'responder', prId: 'a#1', modelo: 'claude-haiku-5-5', costo: 0.1, ok: true });
+  registrarCosto(p, { fecha: f('21'), tipo: 'valoracion', comentario: 'c-1', modelo: 'claude-haiku-5-5', util: false, costo: 0 });
+  registrarCosto(p, { fecha: f('22'), tipo: 'valoracion', comentario: 'c-1', modelo: 'claude-haiku-5-5', util: true, costo: 0 });
+  registrarCosto(p, { fecha: f('22'), tipo: 'valoracion', comentario: 'c-2', modelo: 'claude-sonnet-5-5', util: null, costo: 0 });
+  const r = resumenCostos(p, { dias: 10, ahora: Date.parse('2026-10-28T00:00:00Z') });
+  assert.deepEqual(r.modelos, {
+    sonnet: { trabajos: 2, fallidos: 1, costo: 2, utiles: 0, noUtiles: 0, costoPorUtil: null },
+    haiku: { trabajos: 1, fallidos: 0, costo: 0.1, utiles: 1, noUtiles: 0, costoPorUtil: 0.1 },
+  });
+  assert.equal(r.reintentos, 1);
+  assert.equal(costosDelDia(p, '2026-10-22').trabajos, 0);
+});
+
+test('herramientasUsadas lee las llamadas de una salida stream-json sin contar la respuesta estructurada', () => {
+  const salida = [
+    JSON.stringify({ type: 'system', subtype: 'init' }),
+    JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'tool_use' }, { type: 'tool_use', name: 'Grep', input: { pattern: 'x' } }] } }),
+    'no es json "tool_use"',
+    JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'StructuredOutput', input: { texto: 'y' } }] } }),
+    JSON.stringify({ type: 'result', is_error: false }),
+  ].join('\n');
+  assert.deepEqual(herramientasUsadas(salida), [{ nombre: 'Grep', entrada: { pattern: 'x' } }]);
+  assert.ok(argsClaude({ modelo: 'haiku', sistema: 's', prompt: 'p', tope: 1, turnos: 1, traza: true }).join(' ').includes('--output-format stream-json --verbose'));
 });

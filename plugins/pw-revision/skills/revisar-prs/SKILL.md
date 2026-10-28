@@ -57,6 +57,15 @@ copias de PRs cerradas o sin uso hace 7 días se borran al actualizar el estado.
 mouse abre la misma barra (Preguntar, Pedir cambio, Nota) sobre esas líneas. Repreguntar enlaza la pregunta a la anterior y la IA recibe el
 hilo completo.
 
+**Quién dijo qué:** el Resumen se marca como explicación de IA (ayuda de lectura, no veredicto); Verificaciones son reglas
+fijas sin IA; las notas son de la persona. Si el diff vino recortado, la explicación muestra "Cobertura parcial" con los
+archivos no revisados. Al explicar desde el chat con lectura parcial, guardar `cobertura` con `completa: false` y la lista.
+Cada investigación lista los archivos que la IA abrió, sus búsquedas y lo que bloquearon los permisos. Cada respuesta
+tiene "¿Sirvió? Sí / No"; el título del gasto del día muestra los últimos 30 días por modelo frente a las respuestas
+útiles. Aprobar deja registrado el intento antes del push: si el proceso se corta, el siguiente Aprobar reconoce el
+commit ya subido y no lo repite. Prueba real de permisos (unos centavos): `PW_PRUEBA_REAL=1 node --test test/permisos-real.test.mjs`,
+antes de publicar una versión o tras actualizar Claude Code.
+
 **"archivo":** `tablero_generar` solo cuando se necesita el archivo suelto (sin acciones) para enviarlo a quien
 revisa. El tablero servido vive mientras dure la sesión de Claude Code; su enlace es fijo por máquina. Fuera de Claude Code:
 `sh <plugin>/bin/tablero.sh`.

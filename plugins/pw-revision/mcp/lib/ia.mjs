@@ -36,10 +36,12 @@ const ESCRITURA = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 
 const configMcp = () => JSON.stringify({ mcpServers: { 'pw-revision': { command: 'sh', args: [join(RAIZ, 'bin/servidor.sh')] } } });
 
-export function argsClaude({ modelo, sistema, prompt, schema, tools = [], mcp = false, tope: usd, turnos, sesion, persistir = false, dirs = [], prohibidas = [] }) {
+// traza: salida stream-json para saber qué herramientas usó la IA; la última línea sigue siendo el resultado.
+export function argsClaude({ modelo, sistema, prompt, schema, tools = [], mcp = false, tope: usd, turnos, sesion, persistir = false, dirs = [], prohibidas = [], traza = false }) {
   const args = ['-p', prompt, '--model', modelo, '--system-prompt', sistema,
     '--strict-mcp-config', '--tools', tools.join(','), '--disable-slash-commands', '--setting-sources', '',
-    '--max-budget-usd', String(usd), '--max-turns', String(turnos), '--output-format', 'json'];
+    '--max-budget-usd', String(usd), '--max-turns', String(turnos), '--output-format', traza ? 'stream-json' : 'json'];
+  if (traza) args.push('--verbose');
   if (mcp) args.push('--mcp-config', configMcp());
   // Edit y Write en --allowedTools escriben en cualquier ruta; acceptEdits solo acepta dentro del cwd.
   const edita = tools.some((t) => ESCRITURA.has(t));
@@ -68,6 +70,18 @@ function uso(r) {
     u.salida += m.outputTokens ?? 0;
   }
   return u;
+}
+
+// Llamadas a herramientas de una salida stream-json, en orden.
+export function herramientasUsadas(salida) {
+  const usadas = [];
+  for (const linea of salida.split('\n')) {
+    if (!linea.includes('"tool_use"')) continue;
+    let o;
+    try { o = JSON.parse(linea); } catch { continue; }
+    for (const c of o?.message?.content ?? []) if (c?.type === 'tool_use' && c.name !== 'StructuredOutput') usadas.push({ nombre: c.name, entrada: c.input ?? {} });
+  }
+  return usadas;
 }
 
 export function ejecutarClaude(args, { cwd, limiteMs = 10 * 60 * 1000 }) {
@@ -100,6 +114,8 @@ export function ejecutarClaude(args, { cwd, limiteMs = 10 * 60 * 1000 }) {
         modelo: Object.keys(r?.modelUsage ?? {})[0] ?? null,
         uso: uso(r),
         costo: r?.total_cost_usd ?? null,
+        herramientas: args.includes('stream-json') ? herramientasUsadas(salida) : [],
+        denegadas: (r?.permission_denials ?? []).map((d) => ({ nombre: d.tool_name, entrada: d.tool_input ?? {} })),
         motivo,
       });
     };
@@ -132,9 +148,42 @@ export function costosDelDia(p, dia = new Date().toISOString().slice(0, 10)) {
     if (!linea) continue;
     let x;
     try { x = JSON.parse(linea); } catch { continue; }
-    if (!x.fecha?.startsWith(dia)) continue;
+    if (!x.fecha?.startsWith(dia) || x.tipo === 'valoracion') continue;
     r.total += x.costo ?? 0;
     r.trabajos++;
   }
   return r;
+}
+
+const nombreCorto = (m) => (/opus/i.test(m) ? 'opus' : /haiku/i.test(m) ? 'haiku' : /sonnet/i.test(m) ? 'sonnet' : m || 'otro');
+
+// Costo por modelo de los últimos días frente a lo que la persona marcó como útil, para calibrar la elección de
+// modelo con datos propios. Un análisis repetido sobre la misma PR cuenta como reintento.
+export function resumenCostos(p, { dias = 30, ahora = Date.now() } = {}) {
+  const ruta = rutaCostos(p.salida);
+  const desde = new Date(ahora - dias * 86400000).toISOString();
+  const modelos = {};
+  const valoradas = new Map();
+  const analizadas = new Set();
+  let reintentos = 0;
+  if (!existsSync(ruta)) return { dias, modelos, reintentos };
+  for (const linea of readFileSync(ruta, 'utf8').split('\n')) {
+    let x;
+    try { x = linea && JSON.parse(linea); } catch { continue; }
+    if (!x || !(x.fecha >= desde)) continue;
+    if (x.tipo === 'valoracion') { valoradas.set(x.comentario, x); continue; }
+    const m = (modelos[nombreCorto(x.modelo)] ??= { trabajos: 0, fallidos: 0, costo: 0, utiles: 0, noUtiles: 0 });
+    m.trabajos++;
+    if (x.ok === false) m.fallidos++;
+    m.costo += x.costo ?? 0;
+    if (x.tipo === 'explicar') { if (analizadas.has(x.prId)) reintentos++; analizadas.add(x.prId); }
+    if (x.reintento) reintentos++;
+  }
+  for (const v of valoradas.values()) {
+    if (v.util === null) continue;
+    const m = (modelos[nombreCorto(v.modelo)] ??= { trabajos: 0, fallidos: 0, costo: 0, utiles: 0, noUtiles: 0 });
+    m[v.util ? 'utiles' : 'noUtiles']++;
+  }
+  for (const m of Object.values(modelos)) m.costoPorUtil = m.utiles ? m.costo / m.utiles : null;
+  return { dias, modelos, reintentos };
 }

@@ -4,7 +4,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { guardarComentarios, leerComentarios } from '../mcp/lib/comentarios.mjs';
-import { investigarPregunta, responderPreguntas } from '../mcp/lib/preguntas.mjs';
+import { consultasDe, investigarPregunta, responderPreguntas } from '../mcp/lib/preguntas.mjs';
 import { falsoClaude, llamadas } from './util/claude.mjs';
 
 const pr = { id: 'r#1', repo: 'r', numero: 1, titulo: 'T', headSha: 'abc', adiciones: 10, eliminaciones: 0, esfuerzoTamano: 1 };
@@ -136,4 +136,35 @@ test('investigar lee los otros repos en la rama equivalente y deja registrado qu
   const args = readFileSync(`${rastro}.args`, 'utf8').split('\n');
   assert.ok(!args.includes(b.checkout));
   assert.ok(args.some((x) => x.includes('b-pruebas')));
+});
+
+test('investigar guarda los archivos leídos, las búsquedas y lo que bloquearon los permisos', async () => {
+  const { repoConPr } = await import('./util/repo.mjs');
+  const r = repoConPr({ antes: 'a\n', despues: 'b\n' });
+  const salida = mkdtempSync(join(tmpdir(), 'pw-inv3-'));
+  const p = { salida, copias: join(salida, 'copias'), repos: { x: { checkout: r.checkout } } };
+  const prx = { ...pr, id: 'x#7', repo: 'x', numero: 7, headSha: r.head, seguridad: false };
+  guardarComentarios(p, 'x', 7, [{ id: 'c-0001', tipo: 'pregunta', estado: 'borrador', ambito: 'pr', texto: '¿Quién llama?', headSha: r.head }]);
+  const uso = (nombre, input) => JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: nombre, input }] } });
+  const script = `printf '%s\\n' '${uso('Grep', { pattern: 'llamar' })}'; printf '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"%s/a.ts","offset":10,"limit":20}}]}}\\n' "$PWD"`;
+  process.env.PW_CLAUDE = falsoClaude({ ...exito([]), structured_output: { texto: 'Nadie.' }, permission_denials: [{ tool_name: 'Read', tool_input: { file_path: '/x/.env' } }] }, 0, script);
+  await investigarPregunta(p, prx, 'c-0001', deps);
+  const [c] = leerComentarios(p, 'x', 7);
+  assert.deepEqual(c.consultado, { archivos: [{ repo: 'x', ruta: 'a.ts', desde: 10, hasta: 29 }], busquedas: [{ herramienta: 'Grep', patron: 'llamar' }] });
+  assert.deepEqual(c.bloqueadas, [{ herramienta: 'Read', ruta: '/x/.env' }]);
+});
+
+test('consultasDe ubica cada ruta en su repo y deja sin repo lo que está fuera', () => {
+  const res = consultasDe([
+    { nombre: 'Read', entrada: { file_path: '/c/pr/src/a.ts' } },
+    { nombre: 'Read', entrada: { file_path: '/c/otro/b.ts', offset: 5, limit: 3 } },
+    { nombre: 'Read', entrada: { file_path: 'rel.ts' } },
+    { nombre: 'Read', entrada: { file_path: '/fuera/z.ts' } },
+    { nombre: 'Read', entrada: { file_path: '/c/pr/src/a.ts' } },
+    { nombre: 'Glob', entrada: { pattern: '**/*.ts', path: '/c/otro' } },
+  ], [{ repo: 'pr', dir: '/c/pr' }, { repo: 'otro (B)', dir: '/c/otro' }]);
+  assert.deepEqual(res.archivos, [
+    { repo: 'pr', ruta: 'src/a.ts' }, { repo: 'otro (B)', ruta: 'b.ts', desde: 5, hasta: 7 }, { repo: 'pr', ruta: 'rel.ts' }, { repo: null, ruta: '/fuera/z.ts' },
+  ]);
+  assert.deepEqual(res.busquedas, [{ herramienta: 'Glob', patron: '**/*.ts', repo: 'otro (B)', ruta: '.' }]);
 });
