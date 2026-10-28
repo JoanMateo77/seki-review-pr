@@ -11,13 +11,14 @@ const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../..');
 export const TOPES = { responder: 0.5, explicar: 2, cambiar: 1.5, investigar: 1 };
 export const TURNOS = { responder: 4, explicar: 30, cambiar: 40, investigar: 25 };
 
-// Archivos que la IA no puede leer en ningún directorio que se le abra. Las reglas de Read también rigen Grep y Glob;
-// van con la ruta absoluta de cada directorio porque las relativas solo cubren el directorio de trabajo.
-const SECRETOS = ['*.env', '.env*', 'claves.txt', '*.pem', '*.key', '*.p12', '.npmrc', 'credentials*'];
-export const reglasSecretos = (dirs) => dirs.flatMap((d) => {
+// Archivos que la IA no puede leer en ningún directorio que se le abra; cada proyecto suma los suyos en `secretos`.
+// Las reglas de Read también rigen Grep y Glob; van con la ruta absoluta de cada directorio porque las relativas solo
+// cubren el directorio de trabajo.
+const SECRETOS = ['*.env', '.env*', '*.pem', '*.key', '*.p12', '*.pfx', '.npmrc', 'credentials*', 'secrets*', 'id_rsa*', 'id_ed25519*'];
+export const reglasSecretos = (dirs, extra = []) => dirs.flatMap((d) => {
   let real = d;
   try { real = realpathSync(d); } catch { /* aún no existe */ }
-  return SECRETOS.map((s) => `Read(/${real}/**/${s})`);
+  return [...SECRETOS, ...extra].map((s) => `Read(/${real}/**/${s})`);
 });
 
 export const tope = (tipo) => Number(process.env[`SEKI_IA_TOPE_${tipo.toUpperCase()}`]) || TOPES[tipo];

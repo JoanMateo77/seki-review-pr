@@ -17,6 +17,9 @@
         "origen": "Ejemplo de regla propia del proyecto."
       }
     ],
+    "secretos": [
+      "config/local.json"
+    ],
     "repos": {
       "api": {
         "etiqueta": "Back",

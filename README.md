@@ -66,7 +66,7 @@ sus `lineas` (`portal`, `prod`, `pruebas`), `inactivas` y el `checkout` local op
 checkout, el estado frente a pruebas se comprueba aplicando el parche; sin él, comparando archivos).
 Opcionales: `contexto` (stack y reglas de texto o de código que la IA respeta en todo lo que escribe), `reglas`
 (verificaciones propias con expresiones como texto: `id`, `titulo`, `severidad`, `archivos`, `patron`, `flags`,
-`excluir`, `soloEnTexto`, `porArchivo`, `repos`, `mensaje`, `origen`), `lineamientos` (carpeta de una skill con
+`excluir`, `soloEnTexto`, `porArchivo`, `repos`, `mensaje`, `origen`), `secretos` (archivos extra que la IA no puede leer, además de `.env`, llaves y credenciales), `lineamientos` (carpeta de una skill con
 `SKILL.md` y `destilado/*.md` para los pedidos de cambio) y `copias`. Sin proyecto indicado se usa `SEKI_PROYECTO` o
 el primero del archivo.
 

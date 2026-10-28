@@ -132,7 +132,7 @@ export async function investigarPregunta(p, pr, id, { contexto = contextoPregunt
       modelo, sistema: sistemaDe(p, 'base', 'investigar'),
       prompt: `Investigar en el código la pregunta ${c.id}. Al citar código de otro repo, decir de qué repo y rama es.\n\nRepositorios disponibles (solo lectura):\n${repos}\n\n${ctx}`,
       schema: SCHEMA_INVESTIGAR, tools: ['Read', 'Grep', 'Glob'], tope: tope('investigar'), turnos: TURNOS.investigar,
-      dirs: otros.map((o) => o.dir), prohibidas: reglasSecretos([dir, ...otros.map((o) => o.dir)]), traza: true,
+      dirs: otros.map((o) => o.dir), prohibidas: reglasSecretos([dir, ...otros.map((o) => o.dir)], p.secretos), traza: true,
     }), { cwd: dir });
     const consultado = consultasDe(r.herramientas, [{ repo: pr.repo, dir }, ...otros.map((o) => ({ repo: o.portal && o.portal !== o.repo ? `${o.repo} (${o.portal})` : o.repo, dir: o.dir }))]);
     // Intentos que bloquearon los permisos (archivos de secretos, herramientas no habilitadas).

@@ -52,7 +52,7 @@ toda la PR. Las preguntas se envían al momento o se agregan a "Revisión pendie
 Las respuestas rápidas usan solo la explicación y el diff; "Investigar en el código" (o la casilla "Revisar el código")
 lanza a la IA con Read/Grep/Glob sobre una copia de solo lectura de la PR y copias de los otros repos en la rama
 equivalente (pruebas o producción, una por portal, traídas frescas de GitHub; nunca el checkout del usuario), sin
-acceso a archivos de secretos (.env, llaves, claves.txt). Cada respuesta guarda qué repo, rama y commit se leyó. Las
+acceso a archivos de secretos (.env, llaves, credenciales y los que liste `secretos` del proyecto). Cada respuesta guarda qué repo, rama y commit se leyó. Las
 copias de PRs cerradas o sin uso hace 7 días se borran al actualizar el estado. En Archivos, seleccionar código con el
 mouse abre la misma barra (Preguntar, Pedir cambio, Nota) sobre esas líneas. Repreguntar enlaza la pregunta a la anterior y la IA recibe el
 hilo completo.

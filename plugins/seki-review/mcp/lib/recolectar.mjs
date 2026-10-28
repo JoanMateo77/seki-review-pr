@@ -115,7 +115,7 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
     return cacheVerif[claveCache].lista;
   }
 
-  // Misma tarea en las otras líneas del repo (por ejemplo, el arreglo de Tienda en Admin).
+  // Misma tarea en las otras líneas del repo (por ejemplo, el mismo arreglo en la rama de otro portal).
   async function hermanas(repo, linea, titulo) {
     const otras = p.repos[repo].lineas.filter((l) => l.prod !== linea.prod);
     return Promise.all(otras.map(async (l) => {
