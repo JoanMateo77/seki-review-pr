@@ -103,3 +103,7 @@ tablero,
 aplica el parche, hace un commit con la identidad git de la máquina (sin trailers) y hace `git push` a la rama de la
 PR. Si GitHub rechaza la subida, la propuesta queda como parche para copiar. Medido el 27-10-2026: un cambio chico en
 api costó USD 0,11 con Sonnet y tardó 72 s, comprobaciones incluidas.
+
+## Licencia
+
+MIT. Ver [LICENSE](LICENSE). Historial de versiones en [CHANGELOG.md](CHANGELOG.md) y forma de trabajo en [CONTRIBUTING.md](CONTRIBUTING.md).
