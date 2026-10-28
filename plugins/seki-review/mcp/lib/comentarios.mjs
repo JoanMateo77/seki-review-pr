@@ -17,7 +17,7 @@ export const SECCIONES = {
 };
 const PENDIENTES = new Set(['en_cola', 'en_curso']);
 // Lo que el navegador puede escribir; respuesta, costo, propuesta y demás los pone solo el servidor.
-const CAMPOS = ['id', 'tipo', 'estado', 'ambito', 'seccion', 'citado', 'respondeA', 'investigar', 'archivo', 'lado', 'desde', 'hasta', 'claves', 'textoOriginal', 'texto', 'sugerido', 'headSha', 'creado', 'actualizado'];
+const CAMPOS = ['id', 'tipo', 'estado', 'ambito', 'seccion', 'citado', 'citadoDe', 'respondeA', 'investigar', 'archivo', 'lado', 'desde', 'hasta', 'claves', 'textoOriginal', 'texto', 'sugerido', 'headSha', 'creado', 'actualizado'];
 
 // Última escritura por PR, para que el tablero sepa cuándo recargar sin leer todos los archivos.
 const marcas = new Map();
@@ -39,6 +39,9 @@ function validar(c) {
   if (c.headSha !== undefined && (typeof c.headSha !== 'string' || !/^[0-9a-z]{0,64}$/i.test(c.headSha))) throw new Error(`Comentario ${c.id}: commit inválido`);
   if (c.respondeA !== undefined && (typeof c.respondeA !== 'string' || !/^c-[a-z0-9]{4,32}$/.test(c.respondeA))) throw new Error(`Comentario ${c.id}: responde a un comentario inválido`);
   if (c.investigar !== undefined && typeof c.investigar !== 'boolean') throw new Error(`Comentario ${c.id}: investigar debe ser verdadero o falso`);
+  if (c.citado !== undefined && (typeof c.citado !== 'string' || c.citado.length > 2000)) throw new Error(`Comentario ${c.id}: texto citado de más de 2000 caracteres`);
+  // Un fragmento citado de una respuesta solo tiene sentido como repregunta de ese hilo.
+  if (c.citadoDe !== undefined && (c.citadoDe !== 'respuesta' || c.citado === undefined || c.respondeA === undefined)) throw new Error(`Comentario ${c.id}: cita de respuesta sin texto o sin hilo`);
   if (c.ambito !== undefined) return validarDePr(c);
   if (!LADOS.has(c.lado)) throw new Error(`Comentario ${c.id}: lado desconocido`);
   if (!Number.isInteger(c.desde) || !Number.isInteger(c.hasta) || c.desde < 1 || c.hasta < c.desde) throw new Error(`Comentario ${c.id}: rango de líneas inválido`);
@@ -52,7 +55,6 @@ function validarDePr(c) {
   if (c.ambito !== 'pr') throw new Error(`Comentario ${c.id}: ámbito desconocido`);
   if (c.tipo !== 'pregunta') throw new Error(`Comentario ${c.id}: sobre la PR solo se admite una pregunta`);
   if (c.seccion !== undefined && !Object.hasOwn(SECCIONES, c.seccion)) throw new Error(`Comentario ${c.id}: sección desconocida`);
-  if (c.citado !== undefined && (typeof c.citado !== 'string' || c.citado.length > 2000)) throw new Error(`Comentario ${c.id}: texto citado de más de 2000 caracteres`);
 }
 
 const limpiar = (c) => Object.fromEntries(CAMPOS.filter((k) => c[k] !== undefined).map((k) => [k, c[k]]));

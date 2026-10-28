@@ -92,3 +92,13 @@ test('contextoPreguntas: una repregunta lleva el hilo completo, sin recortar la 
   assert.match(ctx, /FIN-1/);
   assert.match(ctx, /FIN-2/);
 });
+
+test('contextoPreguntas: la repregunta sobre un fragmento de la respuesta lo cita como tal, junto con el hilo', async () => {
+  const pr = { id: 'r#1', titulo: 'x', headSha: 'a' };
+  const padre = { id: 'c-0001', ambito: 'pr', texto: '¿Qué cambia?', respuesta: 'Usa un parámetro nombrado en L1002.' };
+  const hija = { id: 'c-0002', ambito: 'pr', respondeA: 'c-0001', citado: 'parámetro nombrado', citadoDe: 'respuesta', texto: '¿Por qué?' };
+  const ctx = await contextoPreguntas({}, pr, [hija], { archivos: [], todos: [padre, hija] });
+  assert.match(ctx, /Fragmento citado de la respuesta anterior .*«parámetro nombrado»/);
+  assert.match(ctx, /Respuesta: Usa un parámetro nombrado/);
+  assert.doesNotMatch(ctx, /Texto citado de la explicación/);
+});

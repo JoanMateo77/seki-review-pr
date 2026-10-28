@@ -7,6 +7,7 @@ import { actualizarComentario, leerComentarios, rescatarPendientes } from './com
 import { contextoPreguntas } from './contexto.mjs';
 import { argsClaude, dirVacio, ejecutarClaude, elegirModelo, reglasSecretos, registrarCosto, sistemaDe, tope, TURNOS } from './ia.mjs';
 import { copiaDeRama, crearCopia, ramasEquivalentes } from './copias.mjs';
+import { contarHerramienta, fijarAvance, quitarAvance } from './avance.mjs';
 import { ghJson } from './proceso.mjs';
 
 const PENDIENTES = new Set(['borrador', 'en_cola', 'en_curso', 'error']);
@@ -32,12 +33,14 @@ export async function responderPreguntas(p, pr, ids, { contexto = contextoPregun
   }
   if (!sinCache.length) return { ok: true, costo: 0, modelo: null };
 
-  for (const c of sinCache) actualizar(c.id, { estado: 'en_curso', motivo: null });
+  for (const c of sinCache) { actualizar(c.id, { estado: 'en_curso', motivo: null }); fijarAvance(`c:${c.id}`, { fase: 'redactando' }); }
   try {
     return await responder(p, pr, sinCache, { contexto, detalle });
   } catch (e) {
     rescatarPendientes(p, pr.repo, pr.numero, sinCache.map((c) => c.id), { estado: 'error', motivo: String(e.message).slice(0, 400) });
     throw e;
+  } finally {
+    for (const c of sinCache) quitarAvance(`c:${c.id}`);
   }
 }
 
@@ -118,6 +121,8 @@ export async function investigarPregunta(p, pr, id, { contexto = contextoPregunt
   if (!c) throw Object.assign(new Error('La pregunta no existe'), { codigo: 404 });
   const actualizar = (cambios) => actualizarComentario(p, pr.repo, pr.numero, id, cambios);
   actualizar({ estado: 'en_curso', motivo: null });
+  const clave = `c:${id}`;
+  fijarAvance(clave, { fase: 'copias' });
   try {
     const dir = await crearCopia(p, pr.repo, pr.numero, pr.headSha, { sufijo: '-lectura' });
     const { ambiente, lista } = await otrasRamas(p, pr);
@@ -128,12 +133,13 @@ export async function investigarPregunta(p, pr, id, { contexto = contextoPregunt
       ...otros.map((o) => `- ${o.repo} (${o.portal}): ${o.dir}, rama ${o.rama} de ${ambiente === 'prod' ? 'producción' : 'pruebas'} en ${o.sha.slice(0, 7)}, recién traída de GitHub.`),
       ...lista.filter((o) => o.falla).map((o) => `- ${o.repo} (${o.portal}), rama ${o.rama}: no disponible (${o.falla}).`)].join('\n');
     const modelo = elegirModelo({ tipo: 'investigar', pr });
+    fijarAvance(clave, { fase: 'leyendo', repos: 1 + otros.length });
     const r = await ejecutarClaude(argsClaude({
       modelo, sistema: sistemaDe(p, 'base', 'investigar'),
       prompt: `Investigar en el código la pregunta ${c.id}. Al citar código de otro repo, decir de qué repo y rama es.\n\nRepositorios disponibles (solo lectura):\n${repos}\n\n${ctx}`,
       schema: SCHEMA_INVESTIGAR, tools: ['Read', 'Grep', 'Glob'], tope: tope('investigar'), turnos: TURNOS.investigar,
       dirs: otros.map((o) => o.dir), prohibidas: reglasSecretos([dir, ...otros.map((o) => o.dir)], p.secretos), traza: true,
-    }), { cwd: dir });
+    }), { cwd: dir, alUsar: (h) => contarHerramienta(clave, h, [dir, ...otros.map((o) => o.dir)]) });
     const consultado = consultasDe(r.herramientas, [{ repo: pr.repo, dir }, ...otros.map((o) => ({ repo: o.portal && o.portal !== o.repo ? `${o.repo} (${o.portal})` : o.repo, dir: o.dir }))]);
     // Intentos que bloquearon los permisos (archivos de secretos, herramientas no habilitadas).
     const bloqueadas = r.denegadas.map((d) => ({ herramienta: d.nombre, ruta: String(d.entrada.file_path ?? d.entrada.path ?? d.entrada.pattern ?? '').slice(0, 200) }));
@@ -146,5 +152,7 @@ export async function investigarPregunta(p, pr, id, { contexto = contextoPregunt
   } catch (e) {
     rescatarPendientes(p, pr.repo, pr.numero, [id], { estado: 'error', motivo: String(e.message).slice(0, 400) });
     throw e;
+  } finally {
+    quitarAvance(clave);
   }
 }

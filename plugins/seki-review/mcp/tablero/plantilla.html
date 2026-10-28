@@ -292,6 +292,17 @@ h3.con-accion .btn-texto { display: inline-flex; align-items: center; gap: 4px; 
 @keyframes latido { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--acento) 55%, transparent); } 50% { box-shadow: 0 0 0 5px transparent; } }
 .hilo-progreso { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--linea); border-radius: 6px; background: var(--gris-bg); }
 .hilo-progreso .trabajando { font-size: 13px; }
+.etapas { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 4px; font-size: 12.5px; color: var(--texto-3); }
+.etapas li { display: flex; align-items: center; gap: 6px; }
+.etapas li .i { width: 14px; height: 14px; flex: none; }
+.etapas li.hecho { color: var(--texto-2); }
+.etapas li.hecho .i { color: var(--verde, var(--acento)); }
+.etapas li.actual { color: var(--texto); font-weight: 600; }
+.etapas li.actual .i { color: var(--acento); }
+.avance-cuenta { margin-top: 6px; overflow-wrap: anywhere; }
+.avance-cuenta code { font-size: 11.5px; }
+.aviso-lento { display: flex; align-items: flex-start; gap: 6px; margin-top: 8px; font-size: 12.5px; color: var(--ambar, var(--texto-2)); }
+.aviso-lento .i { flex: none; margin-top: 2px; }
 .hilo-progreso .transcurrido { font-variant-numeric: tabular-nums; color: var(--texto-3); }
 .hilo-progreso .muy-tenue { margin: 6px 0 0; font-size: 12px; }
 .anterior { opacity: .55; }
@@ -314,7 +325,8 @@ h3.con-accion .btn-texto { display: inline-flex; align-items: center; gap: 4px; 
 .prop-checks .check:last-child { border-bottom: 0; }
 .prop-acciones { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
 .prop-ajuste textarea { display: block; width: 100%; min-height: 56px; margin-top: 8px; padding: 7px 9px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--bg); color: var(--texto); font: 13px/1.5 var(--sans); }
-.hilo-pie { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; }
+.hilo-pie { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 6px; font-size: 12px; }
+.hilo-pie > *, .hilo-pie .btn-texto { white-space: nowrap; }
 .desact { padding: 8px 14px 4px; border-bottom: 1px solid var(--linea); }
 .desact table { width: 100%; border-collapse: collapse; }
 .barra-pendiente { position: sticky; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 12px; padding: 10px 14px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--panel); box-shadow: 0 -4px 12px rgb(0 0 0 / .06); }
@@ -485,6 +497,7 @@ const estado = {
   confirmarAprobar: null,
   ajustando: null,
   marcasComentarios: {},
+  avances: {},
   portal: null,
   filtros: new Set(),
   cerrados: new Set(almacen.leer('seki-review:cerrados', ['pruebas_automaticas'])),
@@ -642,7 +655,8 @@ function seccionCambios() {
 
 // Tiempo transcurrido que se actualiza cada segundo sin repintar la vista.
 const reloj = (desde) => { const s = Math.max(0, Math.floor((Date.now() - new Date(desde)) / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
-const transcurrido = (desde) => (desde ? `<span class="transcurrido" data-desde="${esc(desde)}">${reloj(desde)}</span>` : '');
+// aria-live="off": dentro de una región viva, el reloj se anunciaría cada segundo.
+const transcurrido = (desde) => (desde ? `<span class="transcurrido" data-desde="${esc(desde)}" aria-live="off">${reloj(desde)}</span>` : '');
 setInterval(() => { for (const el of document.querySelectorAll('[data-desde]')) el.textContent = reloj(el.dataset.desde); }, 1000);
 
 function check(icon, color, nombre, valor, detalle = '') {
@@ -726,7 +740,7 @@ function preguntaPrHtml(pr) {
     <textarea id="preguntaPr" rows="3" placeholder="Por ejemplo: ¿qué pasa con los webhooks que ya estaban configurados en producción?" aria-label="Pregunta sobre la PR"></textarea>
     <div class="prop-acciones"><select id="preguntaPrSeccion" aria-label="Sobre qué parte"><option value="">Toda la PR</option>${opciones}</select>
       <label class="muy-tenue"><input type="checkbox" id="preguntaPrCodigo"> Revisar el código</label>
-      <button type="button" class="btn chico primario" data-accion="preguntarPr">Preguntar</button><button type="button" class="btn chico" data-accion="agregarPreguntaPr">Agregar a la revisión</button><span class="muy-tenue">Ctrl + Enter pregunta · también puede seleccionar texto de la explicación · la respuesta es más útil si la pregunta no sugiere la conclusión</span></div></div>`;
+      <button type="button" class="btn chico primario" data-accion="preguntarPr">Preguntar</button><button type="button" class="btn chico" data-accion="agregarPreguntaPr">Agregar a la revisión</button><span class="muy-tenue">Ctrl + Enter pregunta · también puede seleccionar texto de la explicación o de una respuesta para preguntar por esa parte · la respuesta es más útil si la pregunta no sugiere la conclusión</span></div></div>`;
 }
 
 function coberturaHtml(e) {
@@ -743,7 +757,8 @@ function tabResumen(pr) {
   const e = pr.explicacion;
   if (!e) {
     const tr = trabajo(pr);
-    if (API && tr?.estado === 'en_curso') return `<div class="seccion" aria-live="polite"><p class="trabajando">${icono('actualizar', 'girando')} La IA está leyendo el diff y el código relacionado · ${transcurrido(tr.inicio)}</p>
+    if (API && tr?.estado === 'en_curso') return `<div class="seccion" aria-live="polite"><p class="trabajando">${icono('actualizar', 'girando')}<span>La IA está leyendo el diff y el código relacionado · ${transcurrido(tr.inicio)}</span></p>
+      <div class="progreso" aria-hidden="true"></div>${avanceHtml('explicar', estado.avances[`pr:${pr.id}`], tr.inicio)}
       <div class="esqueleto" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div></div>`;
     if (API && tr?.estado === 'en_cola') return `<div class="seccion"><p class="trabajando">${icono('reloj')} En cola: empieza cuando termine el análisis en curso.</p></div>`;
     if (API) return `<div class="seccion"><p class="tenue">Esta PR todavía no tiene explicación.</p>
@@ -897,6 +912,11 @@ const RAPIDAS = [
   ['Dar un ejemplo', 'Dar un ejemplo concreto tomado del diff.'],
   ['Ampliar', 'Ampliar este punto con más detalle y ejemplos del diff.'],
 ];
+const RAPIDAS_RESPUESTA = [
+  ['¿Por qué?', '¿En qué se basa esta parte? Indicar el archivo y las líneas.'],
+  ['Dar un ejemplo', 'Dar un ejemplo concreto de esta parte tomado del diff.'],
+  ['Ampliar', 'Ampliar esta parte con más detalle.'],
+];
 let seleccionResumen = null;
 
 function cerrarBarraSel() {
@@ -938,10 +958,11 @@ function abrirBarraSel() {
   const sel = window.getSelection();
   const texto = sel?.toString().replace(/\s+/g, ' ').trim();
   if (!texto || sel.rangeCount === 0) return;
+  if (API && barraEnRespuesta(sel, texto)) return;
   if (estado.tab === 'archivos') {
     const lineas = lineasDeSeleccion(sel.getRangeAt(0));
     if (!lineas) return;
-    seleccionResumen = { lineas };
+    seleccionResumen = { lineas, tab: 'archivos' };
     $('barraSel')?.remove();
     const barra = document.createElement('div');
     barra.id = 'barraSel';
@@ -962,22 +983,38 @@ function abrirBarraSel() {
   const nodo = rango.commonAncestorContainer.nodeType === 1 ? rango.commonAncestorContainer : rango.commonAncestorContainer.parentElement;
   const seccion = nodo?.closest('[data-seccion]');
   if (!seccion || nodo.closest('.hilos-pr, textarea, button')) return;
-  seleccionResumen = { seccion: seccion.dataset.seccion, citado: texto.slice(0, 2000) };
-  const caja = rango.getBoundingClientRect();
+  seleccionResumen = { seccion: seccion.dataset.seccion, citado: texto.slice(0, 2000), tab: 'resumen' };
+  ponerBarraPregunta(rango.getBoundingClientRect(), 'Preguntar sobre el texto seleccionado', 'Pregunta o comentario sobre este fragmento');
+}
+
+// Texto seleccionado en la respuesta de la IA de un hilo (Resumen o Archivos): se repregunta en ese hilo sobre esa parte.
+function barraEnRespuesta(sel, texto) {
+  const rango = sel.getRangeAt(0);
+  const nodo = rango.commonAncestorContainer.nodeType === 1 ? rango.commonAncestorContainer : rango.commonAncestorContainer.parentElement;
+  const md = nodo?.closest('.hilo-respuesta .md');
+  const hilo = md?.closest('[data-hilo]');
+  const c = hilo && comentarios(prSel() ?? {}).find((x) => x.id === hilo.dataset.hilo);
+  if (!c?.respuesta || c.estado === 'en_cola' || c.estado === 'en_curso') return false;
+  seleccionResumen = { hilo: c.id, citado: texto.slice(0, 2000), tab: estado.tab };
+  ponerBarraPregunta(rango.getBoundingClientRect(), 'Repreguntar sobre el fragmento de la respuesta', 'Qué quiere saber de esta parte de la respuesta');
+  return true;
+}
+
+function ponerBarraPregunta(caja, etiqueta, ayuda) {
   $('barraSel')?.remove();
   const barra = document.createElement('div');
   barra.id = 'barraSel';
   barra.className = 'barra-sel';
   barra.setAttribute('role', 'dialog');
-  barra.setAttribute('aria-label', 'Preguntar sobre el texto seleccionado');
+  barra.setAttribute('aria-label', etiqueta);
   barra.innerHTML = `<div class="barra-sel-botones">
       <button type="button" class="btn chico primario" data-bsel="preguntar">${icono('chispa')} Preguntar</button>
-      ${RAPIDAS.map(([e], i) => `<button type="button" class="btn chico" data-bsel-rapida="${i}">${esc(e)}</button>`).join('')}
+      ${(seleccionResumen.hilo ? RAPIDAS_RESPUESTA : RAPIDAS).map(([e], i) => `<button type="button" class="btn chico" data-bsel-rapida="${i}">${esc(e)}</button>`).join('')}
       <button type="button" class="btn-texto" data-bsel="cerrar" aria-label="Cerrar">Esc</button>
     </div>
     <div class="barra-sel-caja" hidden>
       <blockquote class="cita">${esc(seleccionResumen.citado.length > 180 ? `${seleccionResumen.citado.slice(0, 180)}…` : seleccionResumen.citado)}</blockquote>
-      <textarea id="barraSelTexto" rows="3" placeholder="Pregunta o comentario sobre este fragmento" aria-label="Pregunta sobre el fragmento"></textarea>
+      <textarea id="barraSelTexto" rows="3" placeholder="${esc(ayuda)}" aria-label="${esc(ayuda)}"></textarea>
       <label class="muy-tenue" style="display:block;margin-bottom:6px"><input type="checkbox" id="barraSelCodigo"> Revisar el código del repositorio</label>
       <div class="prop-acciones"><button type="button" class="btn chico primario" data-bsel="enviar">Enviar ahora</button><button type="button" class="btn chico" data-bsel="agregar">Agregar a la revisión</button><span class="muy-tenue">Ctrl + Enter agrega</span></div>
     </div>`;
@@ -988,7 +1025,8 @@ function accionBarraSel(accion, rapida) {
   const pr = prSel();
   const s = seleccionResumen;
   if (!pr || !s) return cerrarBarraSel();
-  if (rapida !== undefined) { cerrarBarraSel(); return preguntarPr(pr, s.seccion, RAPIDAS[rapida][1], { citado: s.citado, enviar: false }); }
+  const preguntar = (texto, opciones) => (s.hilo ? preguntarSobreRespuesta(pr, s.hilo, texto, opciones) : preguntarPr(pr, s.seccion, texto, opciones));
+  if (rapida !== undefined) { cerrarBarraSel(); return preguntar((s.hilo ? RAPIDAS_RESPUESTA : RAPIDAS)[rapida][1], { citado: s.citado, enviar: false }); }
   if (accion === 'cerrar') return cerrarBarraSel();
   if (accion === 'preguntar') { $('barraSel').querySelector('.barra-sel-caja').hidden = false; return $('barraSelTexto').focus(); }
   const texto = $('barraSelTexto')?.value.trim();
@@ -996,15 +1034,30 @@ function accionBarraSel(accion, rapida) {
   const investigar = !!$('barraSelCodigo')?.checked;
   cerrarBarraSel();
   window.getSelection()?.removeAllRanges();
-  return preguntarPr(pr, s.seccion, texto, { citado: s.citado, enviar: accion === 'enviar', investigar });
+  return preguntar(texto, { citado: s.citado, enviar: accion === 'enviar', investigar });
+}
+
+// La repregunta hereda dónde vive el hilo (sección de la PR o líneas del diff) para quedar colgada de él.
+async function preguntarSobreRespuesta(pr, padreId, texto, { citado, enviar, investigar }) {
+  const padre = comentarios(pr).find((x) => x.id === padreId);
+  if (!padre) return;
+  const lugar = padre.ambito === 'pr'
+    ? { ambito: 'pr', seccion: padre.seccion }
+    : { archivo: padre.archivo, lado: padre.lado, desde: padre.desde, hasta: padre.hasta, claves: padre.claves, textoOriginal: padre.textoOriginal };
+  const c = { id: nuevoIdComentario(), creado: new Date().toISOString(), tipo: 'pregunta', estado: 'borrador', ...lugar, citado, citadoDe: 'respuesta', respondeA: padre.id, investigar: investigar || undefined, texto, headSha: pr.headSha };
+  guardarComentario(pr, c);
+  if (enviar) await enviarRevision(pr, [c.id]);
+  else { repintarDetalle(); pintarCola(); }
 }
 
 // Resalta en la explicación los fragmentos citados por preguntas (CSS Highlight API; sin ella no se resalta).
 function resaltarCitas(pr) {
   if (!globalThis.CSS?.highlights || !globalThis.Highlight) return;
   const rangos = [];
-  for (const c of vivos(pr).filter((x) => x.ambito === 'pr' && x.citado)) {
-    const el = document.querySelector(`[data-seccion="${c.seccion}"]`);
+  for (const c of vivos(pr).filter((x) => x.citado && (x.ambito === 'pr' || x.citadoDe === 'respuesta'))) {
+    const el = c.citadoDe === 'respuesta'
+      ? document.querySelector(`[data-hilo="${CSS.escape(c.respondeA)}"] > .hilo-respuesta .md, [data-hilo="${CSS.escape(c.respondeA)}"] > .anterior .md`)
+      : document.querySelector(`[data-seccion="${c.seccion}"]`);
     const rg = el && rangoDeTexto(el, c.citado);
     if (rg) rangos.push(rg);
   }
@@ -1013,7 +1066,10 @@ function resaltarCitas(pr) {
 
 function rangoDeTexto(el, buscado) {
   const nodos = [];
-  const andar = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.parentElement.closest('.hilos-pr, h3') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
+  const andar = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => {
+    const fuera = n.parentElement.closest('.hilos-pr, h3');
+    return fuera && el.contains(fuera) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+  } });
   let texto = '';
   const mapa = [];
   for (let n = andar.nextNode(); n; n = andar.nextNode()) {
@@ -1214,11 +1270,42 @@ const PROGRESO = {
   pregunta: ['La IA está redactando la respuesta', 'Suele tardar unos segundos.'],
   cambio: ['La IA está aplicando el cambio en una copia y corriendo las comprobaciones', 'Suele tardar entre 1 y 3 minutos.'],
 };
+// Etapas que informa el servidor (mcp/lib/avance.mjs). Las de corrección solo aparecen si la primera comprobación falló.
+const PASOS = {
+  investigar: [['copias', 'Preparar las copias del código'], ['leyendo', 'Leer el código y redactar la respuesta']],
+  cambio: [['editando', 'Aplicar el cambio en una copia'], ['comprobando', 'Correr las comprobaciones'], ['corrigiendo', 'Corregir lo que falló'], ['recomprobando', 'Volver a comprobar']],
+  explicar: [['preparando', 'Obtener el diff y la descripción'], ['leyendo', 'Leer el diff y el código relacionado']],
+};
+// Segundos a partir de los cuales se avisa que tarda más de lo habitual.
+const LENTO = { investigar: 150, pregunta: 60, cambio: 240, explicar: 240 };
+
+function avanceHtml(tipo, av, desde) {
+  let pasos = PASOS[tipo] ?? [];
+  if (!av?.corrigio) pasos = pasos.filter(([f]) => f !== 'corrigiendo' && f !== 'recomprobando');
+  const actual = pasos.findIndex(([f]) => f === av?.fase);
+  const lista = av && pasos.length > 1 ? `<ol class="etapas">${pasos.map(([, nombre], i) => {
+    const clase = i < actual ? 'hecho' : i === actual ? 'actual' : '';
+    return `<li class="${clase}"${i === actual ? ' aria-current="step"' : ''}>${icono(i < actual ? 'ok' : i === actual ? 'actualizar' : 'circulo', i === actual ? 'girando' : '')} ${nombre}</li>`;
+  }).join('')}</ol>` : '';
+  const cuentas = [
+    av?.archivos ? plural(av.archivos, 'archivo leído', 'archivos leídos') : '',
+    av?.busquedas ? plural(av.busquedas, 'búsqueda', 'búsquedas') : '',
+    av?.ediciones ? plural(av.ediciones, 'edición', 'ediciones') : '',
+  ].filter(Boolean).join(' · ');
+  const leido = cuentas ? `<p class="muy-tenue avance-cuenta">${cuentas}${av.ultimo ? ` · último: <code>${esc(av.ultimo)}</code>` : ''}</p>` : '';
+  const seg = desde ? (Date.now() - new Date(desde)) / 1000 : 0;
+  const lento = seg > (LENTO[tipo] ?? 120)
+    ? `<p class="aviso-lento">${icono('reloj')} Tarda más de lo habitual, pero sigue en curso. Si llega a 10 minutos se detiene y queda marcado con error.</p>` : '';
+  return lista + leido + lento;
+}
+
 function progresoHtml(c) {
   if (c.estado === 'en_cola') return `<div class="hilo-progreso" aria-live="polite"><p class="trabajando">${icono('reloj')} En cola: empieza cuando termine el trabajo en curso.</p></div>`;
-  const [texto, ayuda] = PROGRESO[c.investigar ? 'investigar' : c.tipo] ?? PROGRESO.pregunta;
-  return `<div class="hilo-progreso" aria-live="polite"><p class="trabajando">${icono('actualizar', 'girando')} ${texto} · ${transcurrido(c.actualizado ?? c.creado)}</p>
-    <div class="progreso" aria-hidden="true"></div><p class="muy-tenue">${ayuda} Se puede seguir usando el tablero mientras tanto.</p></div>`;
+  const tipo = c.investigar ? 'investigar' : c.tipo;
+  const [texto, ayuda] = PROGRESO[tipo] ?? PROGRESO.pregunta;
+  const desde = c.actualizado ?? c.creado;
+  return `<div class="hilo-progreso" aria-live="polite"><p class="trabajando">${icono('actualizar', 'girando')}<span>${texto} · ${transcurrido(desde)}</span></p>
+    <div class="progreso" aria-hidden="true"></div>${avanceHtml(tipo, estado.avances[`c:${c.id}`], desde)}<p class="muy-tenue">${ayuda} Se puede seguir usando el tablero mientras tanto.</p></div>`;
 }
 
 function hiloCuerpo(c, nivel = 0) {
@@ -1227,10 +1314,10 @@ function hiloCuerpo(c, nivel = 0) {
   const [txt, cls] = revisando ? ['Revisando el código', 'azul'] : ESTADOS_COMENTARIO[c.estado] ?? [c.estado, ''];
   const editable = (c.estado === 'borrador' || c.estado === 'nota') && !c.ambito;
   const donde = c.ambito === 'pr' ? (c.seccion ? esc(SECCIONES[c.seccion] ?? '') : 'Toda la PR') : rangoTexto(c);
-  return `<div class="hilo-com${nivel ? ' respuesta-a' : ''}" style="${nivel ? `margin-left:${Math.min(nivel, 3) * 18}px` : ''}">
+  return `<div class="hilo-com${nivel ? ' respuesta-a' : ''}" data-hilo="${esc(c.id)}" style="${nivel ? `margin-left:${Math.min(nivel, 3) * 18}px` : ''}">
     <div class="hilo-cab">${nivel ? '<span class="muy-tenue">Sigue</span>' : ''}<strong>${TIPOS_COMENTARIO[c.tipo]?.etiqueta ?? esc(c.tipo)}</strong><span class="mono muy-tenue">${donde}</span><span class="punto-estado ${cls}${trabajando ? ' vivo' : ''}">${esc(txt)}</span>
       ${editable ? `<span class="der"><button type="button" class="btn-texto" data-com-editar="${esc(c.id)}">Editar</button><button type="button" class="btn-texto" data-com-borrar="${esc(c.id)}">Borrar</button></span>` : ''}${c.ambito && c.estado === 'borrador' ? `<span class="der"><button type="button" class="btn-texto" data-com-borrar="${esc(c.id)}">Borrar</button></span>` : ''}</div>
-    ${c.citado ? `<blockquote class="cita">${esc(c.citado)}</blockquote>` : ''}
+    ${c.citado ? `<blockquote class="cita"${c.citadoDe === 'respuesta' ? ' title="Fragmento de la respuesta anterior"' : ''}>${esc(c.citado)}</blockquote>` : ''}
     <div class="hilo-texto">${esc(c.texto)}</div>
     ${c.sugerido !== undefined ? `<pre class="sugerido" aria-label="Código sugerido">${esc(c.sugerido)}</pre>` : ''}
     ${trabajando ? progresoHtml(c) : ''}
@@ -1584,8 +1671,8 @@ function pintarDetalle() {
     <div role="tabpanel">${CUERPOS[estado.tab](pr)}</div>
   </article>`;
   if (estado.tab === 'archivos') marcarSeleccion();
-  if (estado.tab === 'resumen') resaltarCitas(pr);
-  if (seleccionResumen && estado.tab !== (seleccionResumen.lineas ? 'archivos' : 'resumen')) cerrarBarraSel();
+  if (estado.tab === 'resumen' || estado.tab === 'archivos') resaltarCitas(pr);
+  if (seleccionResumen && estado.tab !== seleccionResumen.tab) cerrarBarraSel();
   pintarDiagramas();
 }
 
@@ -1658,6 +1745,7 @@ async function sondear() {
       if (pr && estado.marcasComentarios[id] !== marca && estado.comentariosCargados.has(id)) sincronizarComentarios(pr);
     }
     estado.marcasComentarios = marcas;
+    estado.avances = e.avances ?? {};
     const termino = e.trabajos.some((t) => t.estado === 'terminado' && previo.get(t.id) !== 'terminado') || (eraRefresco && !e.refrescando);
     if (termino) FOTO = await api('/api/foto');
     // Si la persona está escribiendo en el detalle, no se repinta: perdería el foco y el texto a medio escribir.
@@ -1680,6 +1768,15 @@ function pintarTodo({ detalle = true } = {}) {
   pintarLateral();
   pintarCola();
   if (detalle) pintarDetalle();
+  sincronizarAnimaciones();
+}
+
+// Cada sondeo repinta el detalle y las animaciones en bucle volverían a empezar: la barra y el ícono saltarían cada 3 s.
+// Atadas al origen del reloj de la página, una animación nueva sigue en la misma fase que la que reemplaza.
+function sincronizarAnimaciones() {
+  for (const a of document.getAnimations?.() ?? []) {
+    if (a.effect?.getTiming().iterations === Infinity && a.startTime !== 0) a.startTime = 0;
+  }
 }
 
 function seleccionar(id, { enfocar = false } = {}) {

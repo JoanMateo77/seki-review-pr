@@ -137,3 +137,11 @@ test('una pregunta puede responder a otra y pedir revisar el código', () => {
   assert.throws(() => guardarComentarios(p(), 'r', 1, [{ id: 'c-0003', tipo: 'pregunta', estado: 'borrador', ambito: 'pr', respondeA: '../x', texto: 'x' }]), /responde/);
   assert.throws(() => guardarComentarios(p(), 'r', 1, [{ id: 'c-0003', tipo: 'pregunta', estado: 'borrador', ambito: 'pr', investigar: 'si', texto: 'x' }]), /investigar/);
 });
+
+test('una cita de respuesta exige el texto citado y el hilo al que responde', () => {
+  const base = { tipo: 'pregunta', estado: 'borrador', ambito: 'pr', texto: '¿Por qué?' };
+  const [c] = guardarComentarios(p(), 'r', 1, [{ ...base, id: 'c-0003', respondeA: 'c-0001', citado: 'fragmento', citadoDe: 'respuesta' }]);
+  assert.equal(c.citadoDe, 'respuesta');
+  assert.throws(() => guardarComentarios(p(), 'r', 1, [{ ...base, id: 'c-0004', citado: 'fragmento', citadoDe: 'respuesta' }]), /cita de respuesta/);
+  assert.throws(() => guardarComentarios(p(), 'r', 1, [{ ...base, id: 'c-0005', respondeA: 'c-0001', citado: 'f', citadoDe: 'otro' }]), /cita de respuesta/);
+});

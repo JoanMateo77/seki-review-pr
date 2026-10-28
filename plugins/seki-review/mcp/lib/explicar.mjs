@@ -2,6 +2,7 @@
 // diff) para que la IA no gaste turnos pidiéndolo y solo lea del checkout lo que falte.
 import { escribirJson, leerJson, rutaExplicacion, rutaVerificacion } from './cache.mjs';
 import { asegurarDiff } from './diffs.mjs';
+import { contarHerramienta, fijarAvance, quitarAvance } from './avance.mjs';
 import { argsClaude, dirVacio, ejecutarClaude, elegirModelo, registrarCosto, sistemaDe, tope, TURNOS } from './ia.mjs';
 import { expandir } from './config.mjs';
 import { ghJson } from './proceso.mjs';
@@ -42,6 +43,16 @@ export function promptExplicar({ pr, proyecto, detalle, archivos, verificaciones
 }
 
 export async function explicarConIa(p, pr) {
+  const clave = `pr:${pr.id}`;
+  fijarAvance(clave, { fase: 'preparando' });
+  try {
+    return await explicar(p, pr, clave);
+  } finally {
+    quitarAvance(clave);
+  }
+}
+
+async function explicar(p, pr, clave) {
   const [detalle, archivos] = await Promise.all([
     ghJson(['pr', 'view', String(pr.numero), '-R', `${p.owner}/${pr.repo}`, '--json', 'body,commits']).catch(() => null),
     asegurarDiff(p, pr.repo, pr.numero, pr.headSha),
@@ -53,10 +64,12 @@ export async function explicarConIa(p, pr) {
     checkout: expandir(p.repos[pr.repo]?.checkout ?? ''),
   });
   const modelo = elegirModelo({ tipo: 'explicar', pr });
+  const checkout = expandir(p.repos[pr.repo]?.checkout ?? '');
+  fijarAvance(clave, { fase: 'leyendo' });
   const r = await ejecutarClaude(argsClaude({
     modelo, prompt, sistema: sistemaDe(p, 'base', 'explicar'),
-    tools: ['Read', 'Grep', 'Glob'], mcp: true, tope: tope('explicar'), turnos: TURNOS.explicar,
-  }), { cwd: dirVacio(p) });
+    tools: ['Read', 'Grep', 'Glob'], mcp: true, tope: tope('explicar'), turnos: TURNOS.explicar, traza: true,
+  }), { cwd: dirVacio(p), alUsar: (h) => contarHerramienta(clave, h, checkout) });
   const ok = r.ok && /listo/i.test(r.texto);
   if (ok) {
     const ruta = rutaExplicacion(p.salida, pr.repo, pr.numero);

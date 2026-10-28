@@ -11,6 +11,7 @@ import { actualizarComentario, guardarComentarios, leerComentarios, marcasComent
 import { investigarPregunta, responderPreguntas } from './preguntas.mjs';
 import { ajustarPropuesta, aprobar, descartar, leerPropuesta, proponerCambios } from './propuestas.mjs';
 import { explicarConIa } from './explicar.mjs';
+import { avances } from './avance.mjs';
 import { costosDelDia, registrarCosto, resumenCostos } from './ia.mjs';
 import { servidorActivo, tokenDe } from './acceso.mjs';
 import { limpiarCopias } from './copias.mjs';
@@ -184,7 +185,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true 
         return responder(res, 200, diffParaTablero(await asegurarDiff(p, pr.repo, pr.numero, pr.headSha)));
       }
       if (req.method === 'GET' && url.pathname === '/api/estado') {
-        return responder(res, 200, { refrescando: !!refresco, ultimoRefresco, trabajos: cola.lista(), comentarios: marcasComentarios(), costoHoy: costosDelDia(p) });
+        return responder(res, 200, { refrescando: !!refresco, ultimoRefresco, trabajos: cola.lista(), comentarios: marcasComentarios(), avances: avances(), costoHoy: costosDelDia(p) });
       }
       if (req.method === 'POST' && url.pathname === '/api/refrescar') {
         refrescar();

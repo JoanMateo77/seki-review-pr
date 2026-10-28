@@ -85,13 +85,21 @@ export function herramientasUsadas(salida) {
   return usadas;
 }
 
-export function ejecutarClaude(args, { cwd, limiteMs = 10 * 60 * 1000 }) {
+export function ejecutarClaude(args, { cwd, limiteMs = 10 * 60 * 1000, alUsar }) {
   return new Promise((resolver) => {
     const hijo = spawn(process.env.SEKI_CLAUDE ?? 'claude', args, { cwd, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
     let salida = '';
+    let pendiente = '';
     let errores = '';
     let vencido = false;
-    hijo.stdout.on('data', (d) => { salida += d; });
+    hijo.stdout.on('data', (d) => {
+      salida += d;
+      if (!alUsar) return;
+      // Con stream-json cada línea completa es un evento: se avisa cada herramienta apenas la IA la pide.
+      const lineas = (pendiente + d).split('\n');
+      pendiente = lineas.pop();
+      for (const h of herramientasUsadas(lineas.join('\n'))) { try { alUsar(h); } catch { /* el avance no frena el trabajo */ } }
+    });
     hijo.stderr.on('data', (d) => { errores += d; });
     const reloj = setTimeout(() => { vencido = true; hijo.kill('SIGTERM'); }, limiteMs);
     const cerrar = (codigo) => {

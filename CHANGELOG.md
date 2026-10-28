@@ -4,6 +4,14 @@ Cada versión tiene su etiqueta `seki-review-vX.Y.Z` en el commit que la publica
 
 ## seki-review
 
+### 0.18.0 (2026-10-28)
+- Seleccionar texto en la respuesta de la IA de un hilo (Resumen o Archivos) abre la barra para repreguntar sobre ese fragmento: la pregunta queda en el mismo hilo, cita el fragmento y lo resalta en la respuesta. La IA recibe el fragmento como parte de la respuesta anterior, no de la explicación. La caja de pregunta sobre toda la PR se mantiene.
+- Avance real mientras la IA trabaja: etapas (copias, lectura, cambio, comprobaciones, corrección) y cuántos archivos leyó y buscó, con el último archivo abierto; también en el análisis de la PR.
+- Aviso cuando un trabajo tarda más de lo habitual, con el límite de 10 minutos.
+- La barra y el ícono de progreso ya no se reinician con cada actualización del tablero (cada 3 s).
+- El reloj de los trabajos en curso no se anuncia cada segundo en lectores de pantalla.
+- El pie de las respuestas pasa a otra línea en lugar de cortar las palabras.
+
 ### 0.17.1 (2026-10-28)
 - Mientras la IA trabaja en una pregunta o un cambio, el hilo muestra qué está haciendo, el tiempo transcurrido, una barra en movimiento y cuánto suele tardar; la respuesta anterior queda atenuada. El estado late en lugar de quedarse quieto.
 - El tablero se titula Seki Review.

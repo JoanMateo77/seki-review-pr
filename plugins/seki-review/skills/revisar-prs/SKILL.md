@@ -48,7 +48,8 @@ queda en `revision-prs/datos/costos.jsonl`. Un pedido de cambio genera una propu
 comprobaciones de reglas, tipos y tests). Solo el botón Aprobar la sube a la rama de la PR, y nunca hace merge.
 En el Resumen, al seleccionar texto de la explicación aparece una barra para preguntar sobre ese fragmento (o
 "¿Por qué?", "Dar un ejemplo", "Ampliar"); cada sección tiene "Ampliar" y al final hay una caja para preguntar sobre
-toda la PR. Las preguntas se envían al momento o se agregan a "Revisión pendiente" para mandarlas juntas.
+toda la PR. Seleccionar texto de una respuesta de la IA (en Resumen o Archivos) repregunta en ese hilo sobre el
+fragmento elegido. Las preguntas se envían al momento o se agregan a "Revisión pendiente" para mandarlas juntas.
 Las respuestas rápidas usan solo la explicación y el diff; "Investigar en el código" (o la casilla "Revisar el código")
 lanza a la IA con Read/Grep/Glob sobre una copia de solo lectura de la PR y copias de los otros repos en la rama
 equivalente (pruebas o producción, una por portal, traídas frescas de GitHub; nunca el checkout del usuario), sin

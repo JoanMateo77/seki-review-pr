@@ -12,6 +12,7 @@ import { borrarCopia, crearCopia, diffCopia, reiniciarCopia } from './copias.mjs
 import { argsClaude, ejecutarClaude, elegirModelo, registrarCosto, sistemaDe, tope, TURNOS } from './ia.mjs';
 import { ghJson, git } from './proceso.mjs';
 import { archivosDeDiff } from './verificar.mjs';
+import { contarHerramienta, fijarAvance, quitarAvance } from './avance.mjs';
 
 const PENDIENTES = new Set(['borrador', 'en_cola', 'en_curso', 'error']);
 const HERRAMIENTAS = ['Read', 'Grep', 'Glob', 'Edit', 'Write'];
@@ -73,21 +74,26 @@ async function generar(p, pr, c, dir, { sistema, avisos, contexto, cuerpo, previ
   const ctx = await contexto(p, { ...pr, cuerpo }, [c]);
   let prompt = `Pedido ${c.id} sobre ${c.archivo} ${rango}: ${c.texto}\n\n${ctx}`;
   if (previa) prompt += `\n\nPropuesta anterior (ya aplicada en la copia):\n${previa.patch}\n\nAjuste pedido: ${indicacion}`;
-  const correr = (args) => ejecutarClaude(argsClaude({ modelo, sistema, schema: SCHEMA, tools: HERRAMIENTAS, tope: tope('cambiar'), turnos: TURNOS.cambiar, persistir: true, ...args }), { cwd: dir });
+  const clave = `c:${c.id}`;
+  const correr = (args) => ejecutarClaude(argsClaude({ modelo, sistema, schema: SCHEMA, tools: HERRAMIENTAS, tope: tope('cambiar'), turnos: TURNOS.cambiar, persistir: true, traza: true, ...args }), { cwd: dir, alUsar: (h) => contarHerramienta(clave, h, dir) });
+  fijarAvance(clave, { fase: 'editando' });
   let r = await correr({ prompt, sesion: previa?.sesion ?? undefined });
   let costo = r.costo ?? 0;
   registrarCosto(p, { tipo: 'cambiar', prId: pr.id, modelo: r.modelo ?? modelo, uso: r.uso, costo: r.costo, ok: r.ok });
   if (!r.ok) return { error: r.motivo, costo };
   let patch = await diffCopia(dir);
   if (!r.salida.hecho || !patch.trim()) return { error: r.salida.resumen || 'La IA no hizo cambios', costo };
+  fijarAvance(clave, { fase: 'comprobando' });
   let comp = await comprobar(p, pr.repo, dir, patch, pr.headSha);
   if (conFallos(comp)) {
+    fijarAvance(clave, { fase: 'corrigiendo', corrigio: true });
     const segunda = await correr({ prompt: `Las comprobaciones fallaron. Corregir sin ampliar el alcance del pedido.\n\n${textoFallos(comp)}`, sesion: r.sesion });
     costo += segunda.costo ?? 0;
     registrarCosto(p, { tipo: 'cambiar', prId: pr.id, modelo: segunda.modelo ?? modelo, uso: segunda.uso, costo: segunda.costo, ok: segunda.ok, reintento: true });
     if (segunda.ok) {
       r = { ...segunda, salida: segunda.salida.hecho ? segunda.salida : r.salida };
       patch = await diffCopia(dir);
+      fijarAvance(clave, { fase: 'recomprobando' });
       comp = await comprobar(p, pr.repo, dir, patch, pr.headSha);
     }
   }
@@ -149,6 +155,7 @@ async function proponerCambiosSinSerie(p, pr, ids, deps = {}) {
     } catch (e) {
       actualizar(c.id, { estado: 'error', motivo: recortar(e.message) });
     } finally {
+      quitarAvance(`c:${c.id}`);
       await reiniciarCopia(ctx.dir, pr.headSha).catch(() => {});
     }
   }
@@ -186,6 +193,7 @@ async function ajustarPropuestaSinSerie(p, pr, propuestaId, indicacion, deps = {
     volver(e.message);
     throw e;
   } finally {
+    quitarAvance(`c:${c.id}`);
     await reiniciarCopia(ctx.dir, pr.headSha).catch(() => {});
   }
 }
