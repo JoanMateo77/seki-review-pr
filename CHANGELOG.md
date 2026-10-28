@@ -4,6 +4,10 @@ Cada versión tiene su etiqueta `seki-review-vX.Y.Z` en el commit que la publica
 
 ## seki-review
 
+### 0.17.1 (2026-10-28)
+- Mientras la IA trabaja en una pregunta o un cambio, el hilo muestra qué está haciendo, el tiempo transcurrido, una barra en movimiento y cuánto suele tardar; la respuesta anterior queda atenuada. El estado late en lugar de quedarse quieto.
+- El tablero se titula Seki Review.
+
 ### 0.17.0 (2026-10-28)
 - Nuevo nombre: Seki Review (`seki-review`, antes `pw-revision`). Comando `/seki-review:revisar-prs`; variables de entorno `SEKI_*`.
 - Herramienta general: la configuración de proyectos, su contexto (stack y reglas de texto) y sus reglas propias viven en `~/.config/seki-review/proyectos.json`; el plugin trae solo un ejemplo.

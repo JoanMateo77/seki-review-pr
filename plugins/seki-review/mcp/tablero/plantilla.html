@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Revisión de PRs</title>
+<title>Seki Review</title>
 <style>
 :root {
   --bg: #fbfbfa; --panel: #ffffff; --lateral: #f4f4f2; --hover: #efefec; --sel: #e9eef8;
@@ -287,7 +287,15 @@ h3.con-accion .btn-texto { display: inline-flex; align-items: center; gap: 4px; 
 .caja-acciones { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
 .punto-estado { display: inline-flex; align-items: center; gap: 5px; color: var(--texto-2); font-size: 12px; }
 .punto-estado::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--linea-fuerte); }
-.punto-estado.azul::before { background: var(--acento); } .punto-estado.verde::before { background: var(--verde); }
+.punto-estado.azul::before { background: var(--acento); }
+.punto-estado.vivo::before { animation: latido 1.4s ease-in-out infinite; }
+@keyframes latido { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--acento) 55%, transparent); } 50% { box-shadow: 0 0 0 5px transparent; } }
+.hilo-progreso { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--linea); border-radius: 6px; background: var(--gris-bg); }
+.hilo-progreso .trabajando { font-size: 13px; }
+.hilo-progreso .transcurrido { font-variant-numeric: tabular-nums; color: var(--texto-3); }
+.hilo-progreso .muy-tenue { margin: 6px 0 0; font-size: 12px; }
+.anterior { opacity: .55; }
+.anterior .etiqueta-anterior { display: block; margin-bottom: 4px; font-size: 12px; color: var(--texto-3); } .punto-estado.verde::before { background: var(--verde); }
 .punto-estado.ambar::before { background: var(--ambar); } .punto-estado.rojo::before { background: var(--rojo); } .punto-estado.violeta::before { background: var(--violeta); }
 .hilo-cab .der { margin-left: auto; display: inline-flex; gap: 4px; }
 .btn-texto { border: 0; background: none; padding: 2px 6px; border-radius: 4px; color: var(--texto-2); font-size: 12px; cursor: pointer; }
@@ -353,7 +361,7 @@ h3.con-accion .btn-texto { display: inline-flex; align-items: center; gap: 4px; 
 }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
-  .girando, .progreso::after, .esqueleto span { animation: none !important; }
+  .girando, .progreso::after, .esqueleto span, .punto-estado.vivo::before { animation: none !important; }
   .progreso::after { width: 100%; opacity: .5; }
 }
 </style>
@@ -394,7 +402,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   <header class="barra">
     <button class="btn-lateral" data-accion="lateral" aria-label="Mostrar u ocultar el menú lateral" aria-pressed="true" title="Menú lateral ( [ )"><svg class="i" aria-hidden="true"><use href="#i-lateral"/></svg></button>
     <button class="btn-lateral" data-accion="cola" aria-label="Mostrar u ocultar la cola de PRs" aria-pressed="true" title="Cola de PRs ( ] )" style="margin-left:-12px"><svg class="i" aria-hidden="true"><use href="#i-cola"/></svg></button>
-    <h1 id="titulo">Revisión de PRs</h1>
+    <h1 id="titulo">Seki Review</h1>
     <span class="foto" id="foto"></span>
     <label class="buscar">
       <svg class="i" aria-hidden="true"><use href="#i-buscar"/></svg>
@@ -1200,18 +1208,33 @@ function mdTexto(t) {
   }).join('');
 }
 
+// Qué hace la IA mientras trabaja en un comentario, con el tiempo que lleva: un punto quieto parece una app pegada.
+const PROGRESO = {
+  investigar: ['La IA está buscando y leyendo el código de la PR y de los otros repos', 'Suele tardar entre 30 segundos y 2 minutos.'],
+  pregunta: ['La IA está redactando la respuesta', 'Suele tardar unos segundos.'],
+  cambio: ['La IA está aplicando el cambio en una copia y corriendo las comprobaciones', 'Suele tardar entre 1 y 3 minutos.'],
+};
+function progresoHtml(c) {
+  if (c.estado === 'en_cola') return `<div class="hilo-progreso" aria-live="polite"><p class="trabajando">${icono('reloj')} En cola: empieza cuando termine el trabajo en curso.</p></div>`;
+  const [texto, ayuda] = PROGRESO[c.investigar ? 'investigar' : c.tipo] ?? PROGRESO.pregunta;
+  return `<div class="hilo-progreso" aria-live="polite"><p class="trabajando">${icono('actualizar', 'girando')} ${texto} · ${transcurrido(c.actualizado ?? c.creado)}</p>
+    <div class="progreso" aria-hidden="true"></div><p class="muy-tenue">${ayuda} Se puede seguir usando el tablero mientras tanto.</p></div>`;
+}
+
 function hiloCuerpo(c, nivel = 0) {
   const revisando = c.investigar && (c.estado === 'en_cola' || c.estado === 'en_curso');
+  const trabajando = c.estado === 'en_cola' || c.estado === 'en_curso';
   const [txt, cls] = revisando ? ['Revisando el código', 'azul'] : ESTADOS_COMENTARIO[c.estado] ?? [c.estado, ''];
   const editable = (c.estado === 'borrador' || c.estado === 'nota') && !c.ambito;
   const donde = c.ambito === 'pr' ? (c.seccion ? esc(SECCIONES[c.seccion] ?? '') : 'Toda la PR') : rangoTexto(c);
   return `<div class="hilo-com${nivel ? ' respuesta-a' : ''}" style="${nivel ? `margin-left:${Math.min(nivel, 3) * 18}px` : ''}">
-    <div class="hilo-cab">${nivel ? '<span class="muy-tenue">Sigue</span>' : ''}<strong>${TIPOS_COMENTARIO[c.tipo]?.etiqueta ?? esc(c.tipo)}</strong><span class="mono muy-tenue">${donde}</span><span class="punto-estado ${cls}">${esc(txt)}</span>
+    <div class="hilo-cab">${nivel ? '<span class="muy-tenue">Sigue</span>' : ''}<strong>${TIPOS_COMENTARIO[c.tipo]?.etiqueta ?? esc(c.tipo)}</strong><span class="mono muy-tenue">${donde}</span><span class="punto-estado ${cls}${trabajando ? ' vivo' : ''}">${esc(txt)}</span>
       ${editable ? `<span class="der"><button type="button" class="btn-texto" data-com-editar="${esc(c.id)}">Editar</button><button type="button" class="btn-texto" data-com-borrar="${esc(c.id)}">Borrar</button></span>` : ''}${c.ambito && c.estado === 'borrador' ? `<span class="der"><button type="button" class="btn-texto" data-com-borrar="${esc(c.id)}">Borrar</button></span>` : ''}</div>
     ${c.citado ? `<blockquote class="cita">${esc(c.citado)}</blockquote>` : ''}
     <div class="hilo-texto">${esc(c.texto)}</div>
     ${c.sugerido !== undefined ? `<pre class="sugerido" aria-label="Código sugerido">${esc(c.sugerido)}</pre>` : ''}
-    ${c.respuesta ? respuestaHtml(c) : ''}
+    ${trabajando ? progresoHtml(c) : ''}
+    ${c.respuesta ? (trabajando ? `<div class="anterior"><span class="etiqueta-anterior">Respuesta anterior</span>${respuestaHtml(c)}</div>` : respuestaHtml(c)) : ''}
     ${c.propuestaId ? propuestaHtml(c) : ''}
     ${c.estado === 'error' && c.motivo ? `<div class="hilo-motivo">${esc(c.motivo)}${API && c.tipo !== 'nota' ? ` <button type="button" class="btn-texto" data-com-reintentar="${esc(c.id)}">Reintentar</button>` : ''}</div>` : ''}
   </div>`;
@@ -1961,7 +1984,7 @@ document.addEventListener('keydown', (ev) => {
   if (ev.key === 'o') { const pr = FOTO.prs.find((p) => p.id === estado.seleccion); if (pr) window.open(pr.url, '_blank', 'noopener'); }
 });
 
-$('titulo').textContent = `Revisión de PRs · ${FOTO.proyecto}`;
+$('titulo').textContent = `Seki Review · ${FOTO.proyecto}`;
 $('foto').textContent = `Datos de GitHub del ${new Date(FOTO.generado).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })}`;
 document.querySelectorAll('[data-rol]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.rol === estado.rol)));
 aplicarLateral(almacen.leer('seki-review:sin-lateral', false));
