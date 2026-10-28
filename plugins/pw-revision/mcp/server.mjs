@@ -38,7 +38,7 @@ async function atender(msg) {
       return responder(id, {
         protocolVersion: params?.protocolVersion ?? VERSION_PROTOCOLO,
         capabilities: { tools: {} },
-        serverInfo: { name: 'pw-revision', version: '0.14.0' },
+        serverInfo: { name: 'pw-revision', version: '0.15.0' },
       });
     case 'ping':
       return responder(id, {});

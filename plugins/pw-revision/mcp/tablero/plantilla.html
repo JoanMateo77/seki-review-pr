@@ -246,6 +246,12 @@ body[data-enfoque] .lateral, body[data-enfoque] .cola { display: none; }
 .md ul, .md ol { margin: 0 0 8px; padding-left: 20px; }
 .md li { margin: 2px 0; }
 .md code { padding: 1px 4px; border-radius: 4px; background: var(--gris-bg); font-family: var(--mono); font-size: .9em; }
+.md-titulo { font-size: 1em; font-weight: 600; margin: 12px 0 4px; }
+.md-desc a { color: var(--acento); }
+.commits { margin: 0; padding-left: 0; list-style: none; }
+.commits li { padding: 6px 0; border-bottom: 1px solid var(--linea); }
+.commits li:last-child { border-bottom: 0; }
+.commits details { margin-top: 4px; }
 .md-codigo { margin: 6px 0 8px; padding: 8px 10px; border-radius: 6px; background: var(--gris-bg); font-family: var(--mono); font-size: .88em; overflow-x: auto; white-space: pre; }
 .md.plegada { max-height: 15em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 70%, transparent); mask-image: linear-gradient(#000 70%, transparent); }
 .barra-sel { position: fixed; z-index: 20; box-sizing: border-box; padding: 8px; border: 1px solid var(--linea-fuerte); border-radius: 8px; background: var(--panel); box-shadow: var(--sombra), 0 8px 24px rgba(0, 0, 0, .25); }
@@ -753,6 +759,23 @@ function tabVerificaciones(pr) {
   <p class="nota-pie">Una línea se excluye de una regla con el comentario <span class="mono">pw-revision: ignorar &lt;regla&gt;</span>.</p>`;
 }
 
+function tabDescripcion(pr) {
+  const texto = (pr.descripcion ?? '').replace(/<!--[\s\S]*?-->/g, '').trim();
+  let cuerpo = `<div class="md-desc lectura">${md(texto)}</div>`;
+  if (pr.descripcion === undefined) cuerpo = '<p class="sin-dato">Estos datos no traen la descripción. Use «Actualizar estado».</p>';
+  else if (!texto) cuerpo = `<p class="sin-dato">La PR no tiene descripción.${pr.seguridad ? ' Es una PR de seguridad: conviene pedir al autor qué cambia, por qué y en qué orden se despliega.' : ''}</p>`;
+  const commits = pr.commits ?? [];
+  const lista = commits.length
+    ? `<ol class="commits">${commits.map((c) => `<li>
+        <a class="mono" href="${esc(pr.url)}/commits/${esc(c.sha)}" target="_blank" rel="noopener">${esc(c.sha.slice(0, 7))}</a>
+        ${esc(c.titulo)}
+        <span class="muy-tenue">${esc(c.autor ?? '')}${c.fecha ? ` · ${esc(new Date(c.fecha).toLocaleString('es-CO'))}` : ''}</span>
+        ${c.cuerpo ? `<details><summary class="muy-tenue">Mensaje completo</summary><div class="tenue">${md(c.cuerpo)}</div></details>` : ''}
+      </li>`).join('')}</ol>`
+    : '<p class="sin-dato">Sin commits en estos datos.</p>';
+  return `${sec('Descripción del autor', cuerpo)}${sec('Commits', lista)}`;
+}
+
 function tabProbar(pr) {
   const pasos = pr.explicacion?.como_probar ?? [];
   if (!pasos.length) return '<p class="sin-dato">La explicación no trae pasos de prueba.</p>';
@@ -1091,23 +1114,38 @@ function md(texto) {
     ? `<pre class="md-codigo">${esc(b.replace(/^[a-zA-Z]*\n/, '').replace(/\n$/, ''))}</pre>`
     : mdTexto(b))).join('');
 }
-const mdEnLinea = (t) => esc(t).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+// Solo enlaces http(s): esc() ya quitó las comillas, así que el href no puede salirse del atributo.
+const mdEnLinea = (t) => esc(t).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+  .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 function mdTexto(t) {
   return t.split(/\n\s*\n/).map((par) => {
     const partes = [];
     let lista = null;
+    const agregar = (tipo, valor) => {
+      if (!lista || lista.tipo !== tipo) { lista = { tipo, items: [] }; partes.push(lista); }
+      lista.items.push(valor);
+    };
     for (const linea of par.split('\n')) {
       const item = /^\s*(?:[-*•]|(\d+)[.)])\s+(.*)$/.exec(linea);
-      if (item) {
-        const tipo = item[1] ? 'ol' : 'ul';
-        if (!lista || lista.tipo !== tipo) { lista = { tipo, items: [] }; partes.push(lista); }
-        lista.items.push(item[2]);
+      const titulo = /^\s*#{1,6}\s+(.*)$/.exec(linea);
+      if (/^\s*\|/.test(linea)) {
+        agregar('pre', linea);
+      } else if (item) {
+        agregar(item[1] ? 'ol' : 'ul', item[2]);
+      } else if (titulo) {
+        lista = null;
+        partes.push({ tipo: 'h', items: [titulo[1]] });
       } else if (linea.trim()) {
         lista = null;
         partes.push(linea);
       }
     }
-    return partes.map((x) => (typeof x === 'string' ? `<p>${mdEnLinea(x)}</p>` : `<${x.tipo}>${x.items.map((i) => `<li>${mdEnLinea(i)}</li>`).join('')}</${x.tipo}>`)).join('');
+    return partes.map((x) => {
+      if (typeof x === 'string') return `<p>${mdEnLinea(x)}</p>`;
+      if (x.tipo === 'pre') return `<pre class="md-codigo">${esc(x.items.join('\n'))}</pre>`;
+      if (x.tipo === 'h') return `<h4 class="md-titulo">${mdEnLinea(x.items[0])}</h4>`;
+      return `<${x.tipo}>${x.items.map((i) => `<li>${mdEnLinea(i)}</li>`).join('')}</${x.tipo}>`;
+    }).join('');
   }).join('');
 }
 
@@ -1431,12 +1469,13 @@ function tabArchivos(pr) {
 
 const TABS = [
   ['resumen', 'Resumen', () => null],
+  ['descripcion', 'Descripción', (pr) => pr.commits?.length || null],
   ['archivos', 'Archivos', (pr) => pr.archivos ?? DIFFS[pr.id]?.length ?? null],
   ['verificaciones', 'Verificaciones', (pr) => pr.verificaciones?.hallazgos.length || null],
   ['probar', 'Cómo probar', (pr) => pr.explicacion?.como_probar?.length || null],
   ['revision', 'Revisión', () => null],
 ];
-const CUERPOS = { resumen: tabResumen, archivos: tabArchivos, verificaciones: tabVerificaciones, probar: tabProbar, revision: tabRevision };
+const CUERPOS = { resumen: tabResumen, descripcion: tabDescripcion, archivos: tabArchivos, verificaciones: tabVerificaciones, probar: tabProbar, revision: tabRevision };
 
 function pintarDetalle() {
   leerCaja();

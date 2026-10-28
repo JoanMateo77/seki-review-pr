@@ -9,7 +9,7 @@ import { verificar } from './verificar.mjs';
 import { compararFotos, hayCambios } from './cambios.mjs';
 import { asegurarDiff } from './diffs.mjs';
 
-const CAMPOS = 'number,title,url,baseRefName,headRefName,createdAt,updatedAt,additions,deletions,changedFiles,isDraft,headRefOid,author,reviewDecision';
+const CAMPOS = 'number,title,url,baseRefName,headRefName,createdAt,updatedAt,additions,deletions,changedFiles,isDraft,headRefOid,author,reviewDecision,body';
 
 export const ACCIONES = {
   pruebas_sin_prod: 'En pruebas sin PR hacia producción',
@@ -54,6 +54,7 @@ async function prsDeBase(owner, repo, base, cache) {
           baseSha: x.base.sha,
           headSha: x.head.sha,
           rama: x.head.ref,
+          body: x.body,
         })));
         if (lote.length < 100) break;
       }
@@ -101,6 +102,16 @@ export async function recolectar({ proyecto: clave = 'demo', repos, incluirInact
     const r = { headSha, ...verificar({ repo, archivos, commits, omitidas: p.repos[repo]?.reglas_omitidas }) };
     cacheVerif[claveCache] = r;
     return r;
+  }
+
+  // Cacheados por commit de la PR en el mismo archivo que las verificaciones, con su propio prefijo.
+  async function commitsDe(repo, numero, headSha) {
+    const claveCache = `commits:${repo}#${numero}`;
+    if (cacheVerif[claveCache]?.headSha !== headSha) {
+      const lista = (await commitsPr(p.owner, repo, numero)).map((c) => ({ sha: c.oid, titulo: c.messageHeadline, cuerpo: c.messageBody, autor: c.autor, fecha: c.fecha }));
+      cacheVerif[claveCache] = { headSha, lista };
+    }
+    return cacheVerif[claveCache].lista;
   }
 
   // Misma tarea en las otras líneas del repo (por ejemplo, el arreglo de Tienda en Admin).
@@ -161,6 +172,7 @@ export async function recolectar({ proyecto: clave = 'demo', repos, incluirInact
       eliminaciones: pr.deletions,
       archivos: pr.changedFiles,
       headSha: pr.headRefOid,
+      descripcion: pr.body ?? '',
       revisionGithub: pr.reviewDecision || null,
       seguridad: esSeguridad(pr.title),
       esfuerzoTamano: esfuerzoPorTamano(pr.additions + pr.deletions, pr.changedFiles),
@@ -183,7 +195,10 @@ export async function recolectar({ proyecto: clave = 'demo', repos, incluirInact
       item.sinProd = ausenteEnProd(item.estadoProd) && !item.cubiertaPor;
     }
 
-    if (linea.ambiente !== 'inactiva') item.verificaciones = await verificaciones(repo, pr.number, pr.headRefOid);
+    if (linea.ambiente !== 'inactiva') {
+      item.verificaciones = await verificaciones(repo, pr.number, pr.headRefOid);
+      item.commits = await commitsDe(repo, pr.number, pr.headRefOid);
+    }
 
     const explicacion = leerJson(rutaExplicacion(p.salida, repo, pr.number));
     if (explicacion) item.explicacion = { ...explicacion, desactualizada: explicacion.headSha !== pr.headRefOid };
@@ -227,12 +242,14 @@ export async function recolectar({ proyecto: clave = 'demo', repos, incluirInact
           creada: x.creada,
           dias: diasDesde(x.creada),
           headSha: x.headSha,
+          descripcion: x.body ?? '',
           seguridad: esSeguridad(x.title),
           adiciones,
           eliminaciones,
           archivos: archivos.length,
           esfuerzoTamano: esfuerzoPorTamano(adiciones + eliminaciones, archivos.length),
           verificaciones: await verificaciones(repo, x.number, x.headSha),
+          commits: await commitsDe(repo, x.number, x.headSha),
           estadoProd,
           sinProd: true,
           explicacion: explicacion && { ...explicacion, desactualizada: explicacion.headSha !== x.headSha },

@@ -30,7 +30,7 @@ export function archivosPr(owner, repo, numero) {
 export const commitsPr = async (owner, repo, numero) =>
   (await ghApiLista(`repos/${owner}/${repo}/pulls/${numero}/commits?per_page=100`)).map((c) => {
     const [titulo, ...cuerpo] = c.commit.message.split('\n');
-    return { oid: c.sha, messageHeadline: titulo, messageBody: cuerpo.join('\n').trim() };
+    return { oid: c.sha, messageHeadline: titulo, messageBody: cuerpo.join('\n').trim(), autor: c.author?.login ?? c.commit.author?.name, fecha: c.commit.author?.date };
   });
 
 // Un fetch a la vez por repo: git no tolera bien fetches concurrentes en el mismo .git.

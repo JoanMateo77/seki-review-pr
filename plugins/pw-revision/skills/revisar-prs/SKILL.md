@@ -57,6 +57,9 @@ copias de PRs cerradas o sin uso hace 7 días se borran al actualizar el estado.
 mouse abre la misma barra (Preguntar, Pedir cambio, Nota) sobre esas líneas. Repreguntar enlaza la pregunta a la anterior y la IA recibe el
 hilo completo.
 
+**Pestaña Descripción:** muestra la descripción de la PR tal como la escribió el autor (con formato) y la lista de
+commits con enlace, autor y fecha. Se llena al actualizar el estado; una PR de seguridad sin descripción se avisa.
+
 **"archivo":** `tablero_generar` solo cuando se necesita el archivo suelto (sin acciones) para enviarlo a quien
 revisa. El tablero servido vive mientras dure la sesión de Claude Code; su enlace es fijo por máquina. Fuera de Claude Code:
 `sh <plugin>/bin/tablero.sh`.
