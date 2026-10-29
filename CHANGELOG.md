@@ -4,6 +4,11 @@ Cada versión tiene su etiqueta `seki-review-vX.Y.Z` en el commit que la publica
 
 ## seki-review
 
+### 0.19.3 (2026-10-28)
+- Relevo entre sesiones: las sesiones de Claude Code que no sirven el tablero quedan de reserva y, si la que lo sirve se cierra, una de ellas lo toma en el mismo enlace a los pocos segundos.
+- Solo una versión más nueva pide el puerto (comparación numérica): una sesión vieja ya no le quita el tablero a una nueva.
+- La página se reconecta sola: sin servidor muestra "Sin conexión: reintentando" y vuelve a consultar cada 5 segundos.
+
 ### 0.19.2 (2026-10-28)
 - Con varias sesiones de Claude Code abiertas, el tablero lo servía la primera que lo abrió, aunque tuviera una versión vieja del plugin. Ahora, si el tablero abierto es de otra versión y no tiene trabajos en curso, la sesión nueva le pide el puerto y lo sirve en el mismo enlace. Con trabajos en curso, o si la versión vieja no sabe ceder, se avisa qué hacer.
 

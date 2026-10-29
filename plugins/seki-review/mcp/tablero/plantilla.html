@@ -1794,7 +1794,7 @@ function pintarBarra() {
   $('filtrarIa').hidden = false;
   const r = estado.ultimoRefresco;
   const gasto = estado.costoHoy?.trabajos ? `Gasto de IA hoy: ${usd(estado.costoHoy.total)} · ${plural(estado.costoHoy.trabajos, 'trabajo', 'trabajos')}` : '';
-  const texto = estado.refrescando ? 'Consultando GitHub y git' : r && !r.ok ? 'La última actualización falló' : gasto;
+  const texto = estado.refrescando ? 'Consultando GitHub y git' : r?.sinConexion ? 'Sin conexión: reintentando' : r && !r.ok ? 'La última actualización falló' : gasto;
   $('accionesBarra').innerHTML = `<span class="estado-texto" title="${esc(textoResumenCostos(estado.resumenCostos))}">${texto}</span>
     <button class="btn chico" data-accion="refrescar" ${estado.refrescando ? 'disabled' : ''} title="${esc(r && !r.ok ? r.mensaje : 'Vuelve a consultar GitHub y git: qué se mergeó, qué es nuevo y dónde está cada PR')}">${icono('actualizar', estado.refrescando ? 'girando' : '')} ${estado.refrescando ? 'Actualizando' : 'Actualizar estado'}</button>`;
 }
@@ -1837,8 +1837,10 @@ async function sondear() {
     const activo = e.refrescando || e.trabajos.some((t) => t.estado === 'en_cola' || t.estado === 'en_curso');
     if (activo) sondeo = setTimeout(sondear, 3000);
   } catch (err) {
-    estado.ultimoRefresco = { ok: false, mensaje: `Sin conexión con el servidor local: ${err.message}. Vuelva a abrirlo con tablero_servir.` };
+    // Si la sesión que servía el tablero se cerró, otra sesión abierta lo toma en el mismo enlace: se reintenta solo.
+    estado.ultimoRefresco = { ok: false, sinConexion: true, mensaje: `Sin conexión con el servidor local (${err.message}). Se reintenta cada 5 segundos; si no hay otra sesión de Claude Code abierta, ábralo con /seki-review:revisar-prs.` };
     pintarBarra();
+    sondeo = setTimeout(sondear, 5000);
   }
 }
 

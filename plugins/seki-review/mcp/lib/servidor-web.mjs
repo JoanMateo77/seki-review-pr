@@ -40,7 +40,32 @@ const responder = (res, codigo, cuerpo, tipo = 'application/json; charset=utf-8'
   res.end(typeof cuerpo === 'string' ? cuerpo : JSON.stringify(cuerpo));
 };
 
-export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true } = {}) {
+// Versión "x.y.z" comparada por números; sin versión (anteriores a 0.19.1) cuenta como la más vieja.
+export function esMasNueva(a, b) {
+  const partes = (v) => String(v ?? '0').split('.').map((x) => Number(x) || 0);
+  const [x, y] = [partes(a), partes(b)];
+  for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0);
+  return false;
+}
+
+// Sesión de reserva: mientras el tablero lo sirva otra sesión, se revisa cada pocos segundos. Si esa sesión se cierra
+// (puerto libre) o queda libre una versión más vieja, esta toma el puerto en el mismo enlace.
+const vigilantes = new Map();
+function vigilar(proyecto, puerto) {
+  if (vigilantes.has(proyecto)) return;
+  let revisando = false;
+  const reloj = setInterval(async () => {
+    if (servidores.has(proyecto)) { clearInterval(reloj); vigilantes.delete(proyecto); return; }
+    if (revisando) return;
+    revisando = true;
+    try { await iniciarServidor({ proyecto, puerto, abrir: false, soloPuerto: true }); } catch { /* otra sesión ganó el puerto; se sigue vigilando */ }
+    revisando = false;
+  }, Number(process.env.SEKI_VIGILANCIA_MS) || 5000);
+  reloj.unref();
+  vigilantes.set(proyecto, reloj);
+}
+
+export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true, soloPuerto = false } = {}) {
   if (servidores.has(proyecto)) {
     const s = servidores.get(proyecto);
     if (abrir) execFile('open', [s.url]);
@@ -48,17 +73,20 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true 
   }
   const p = cargarProyecto(proyecto);
   const token = tokenDe(p);
-  // Otra sesión de Claude Code puede tener el tablero con otra versión del plugin: si está libre, se le pide el puerto.
+  // Otra sesión de Claude Code puede tener el tablero. Si es de una versión más vieja y está libre, se le pide el
+  // puerto; si no, se usa ese y esta sesión queda de reserva por si aquella se cierra.
   const otro = await estadoServidor(puerto, token);
   if (otro) {
     const url = `http://127.0.0.1:${puerto}/?t=${token}`;
+    const vieja = esMasNueva(VERSION, otro.version);
     const ocupado = otro.refrescando || (otro.trabajos ?? []).some((t) => t.estado === 'en_cola' || t.estado === 'en_curso');
-    const cedio = otro.version !== VERSION && !ocupado && await pedirCeder(puerto, token);
+    const cedio = vieja && !ocupado && await pedirCeder(puerto, token);
     if (!cedio) {
+      vigilar(proyecto, puerto);
       if (abrir && process.platform === 'darwin') execFile('open', [url]);
-      const aviso = otro.version === VERSION ? null
-        : ocupado ? `Lo sirve otra sesión de Claude Code con la versión ${otro.version ?? 'anterior'} y tiene trabajos en curso; al terminar, vuelva a abrir el tablero para pasar a la ${VERSION}.`
-          : `Lo sirve otra sesión de Claude Code con una versión anterior que no sabe ceder el puerto: cierre o reinicie esa sesión para usar la ${VERSION}.`;
+      const aviso = !vieja ? null
+        : ocupado ? `Lo sirve otra sesión de Claude Code con la versión ${otro.version ?? 'anterior'} y tiene trabajos en curso; al terminar, esta sesión toma el tablero con la ${VERSION}.`
+          : `Lo sirve otra sesión de Claude Code con una versión anterior que no sabe ceder el puerto: cierre o reinicie esa sesión y esta toma el tablero con la ${VERSION}.`;
       return { url, yaEstaba: true, aviso };
     }
   }
@@ -245,7 +273,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true 
       return conReintento(n, intentos - 1);
     }
   };
-  const real = await conReintento(puerto, otro ? 10 : 1).catch((e) => (e.code === 'EADDRINUSE' ? escuchar(0) : Promise.reject(e)));
+  const real = await conReintento(puerto, otro ? 10 : 1).catch((e) => (e.code === 'EADDRINUSE' && !soloPuerto ? escuchar(0) : Promise.reject(e)));
   const url = `http://127.0.0.1:${real}/?t=${token}`;
   servidores.set(proyecto, { url, servidor });
   if (abrir && process.platform === 'darwin') execFile('open', [url]);

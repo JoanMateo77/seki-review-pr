@@ -75,7 +75,7 @@ commit ya subido y no lo repite. Prueba real de permisos (unos centavos): `SEKI_
 antes de publicar una versión o tras actualizar Claude Code.
 
 **"archivo":** `tablero_generar` solo cuando se necesita el archivo suelto (sin acciones) para enviarlo a quien
-revisa. El tablero servido vive mientras dure la sesión de Claude Code; su enlace es fijo por máquina. Fuera de Claude Code:
+revisa. El tablero servido vive mientras haya una sesión de Claude Code abierta; su enlace es fijo por máquina. Con varias sesiones, lo sirve la de versión más nueva y las demás quedan de reserva: si esa se cierra, otra lo toma en el mismo enlace y la página se reconecta sola. Fuera de Claude Code:
 `sh <plugin>/bin/tablero.sh`.
 
 **"qué se mergeó" / "qué cambió":** `prs_pendientes` compara con la foto anterior y abre su salida con
