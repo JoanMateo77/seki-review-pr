@@ -238,11 +238,11 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         return responder(res, 202, { refrescando: true });
       }
       if (req.method === 'POST' && url.pathname === '/api/analizar') {
-        const { prs = [] } = await leerCuerpo(req);
+        const { prs = [], completar = false } = await leerCuerpo(req);
         const validas = fotoConExplicaciones(p).prs;
         const items = validas
           .filter((v) => prs.some((x) => v.repo === x.repo && v.numero === x.numero))
-          .map((pr) => ({ id: pr.id, tipo: 'explicar', prId: pr.id, ejecutar: () => explicarConIa(p, pr) }));
+          .map((pr) => ({ id: pr.id, tipo: 'explicar', prId: pr.id, ejecutar: () => explicarConIa(p, pr, { completar: completar === true }) }));
         return responder(res, 202, { encolados: cola.encolar(items) });
       }
       if (req.method === 'POST' && url.pathname === '/api/cancelar-cola') return responder(res, 200, { cancelados: cola.vaciar() });

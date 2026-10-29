@@ -16,6 +16,7 @@ export default {
       proyecto: { type: 'string', description: 'Clave del proyecto en proyectos.json; si se omite, el predeterminado' },
       repo: { type: 'string' },
       numero: { type: 'integer' },
+      headSha: { type: 'string', description: 'Commit de la PR que se analizó, si el mensaje lo indica; si se omite, el commit actual en GitHub' },
       resumen: { type: 'string', description: 'Una frase: qué resuelve la PR' },
       que_cambia: { ...lista, description: 'Cambios concretos, uno por elemento' },
       por_que: { type: 'string', description: 'Problema o hallazgo que origina el cambio' },
@@ -60,11 +61,13 @@ export default {
       },
     },
   },
-  async handler({ proyecto, repo, numero, ...campos }) {
+  // La explicación se ata al commit que se leyó: si la PR avanzó mientras tanto, el tablero la marca desactualizada.
+  async handler({ proyecto, repo, numero, headSha, ...campos }) {
     const p = cargarProyecto(proyecto);
-    const { headRefOid } = await ghJson(['pr', 'view', String(numero), '-R', `${p.owner}/${repo}`, '--json', 'headRefOid']);
+    const sha = /^[0-9a-f]{40}$/i.test(headSha ?? '') ? headSha
+      : (await ghJson(['pr', 'view', String(numero), '-R', `${p.owner}/${repo}`, '--json', 'headRefOid'])).headRefOid;
     const ruta = rutaExplicacion(p.salida, repo, numero);
-    escribirJson(ruta, { repo, numero, headSha: headRefOid, fecha: new Date().toISOString(), ...campos });
-    return `Explicación guardada en ${ruta} (commit ${headRefOid.slice(0, 7)}).`;
+    escribirJson(ruta, { repo, numero, headSha: sha, fecha: new Date().toISOString(), ...campos });
+    return `Explicación guardada en ${ruta} (commit ${sha.slice(0, 7)}).`;
   },
 };

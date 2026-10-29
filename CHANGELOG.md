@@ -4,6 +4,13 @@ Cada versión tiene su etiqueta `seki-review-vX.Y.Z` en el commit que la publica
 
 ## seki-review
 
+### 0.20.0 (2026-10-29)
+- Explicaciones con más cobertura del diff: el cupo de líneas se reparte por prioridad (esquema y código primero; pantallas, pruebas y documentación después; archivos generados fuera) y por archivo, de modo que un archivo enorme ya no deja sin revisar a los demás.
+- Lo que no entra en el mensaje queda como parche en disco, y la IA lo lee sobre una copia de solo lectura de la PR, con los mismos bloqueos de secretos que Investigar.
+- La cobertura se mide con lo que la IA leyó de verdad (traza de herramientas), no con lo que declara. Si quedan archivos de código sin ver, una segunda pasada los completa sola.
+- Botón "Revisar lo que faltó" en el aviso de cobertura parcial: amplía la explicación con los archivos pendientes.
+- La explicación se guarda atada al commit analizado; antes tomaba el commit actual de GitHub y, si la PR avanzaba durante el análisis, la marcaba como vigente sin serlo.
+
 ### 0.19.4 (2026-10-28)
 - Filtro con IA más preciso: cada PR se clasifica como directa (su propósito es la necesidad) o relacionada (toca el área con otro propósito, como corregir un texto del login). Por defecto se ven solo las directas; "Mostrar relacionadas" agrega las demás con su etiqueta.
 - Las instrucciones del filtro ya no traen una lista de temas de seguridad que hacía entrar cualquier PR del área. Los resultados guardados con las instrucciones anteriores se descartan.

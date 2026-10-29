@@ -835,14 +835,19 @@ function preguntaPrHtml(pr) {
       <button type="button" class="btn chico primario" data-accion="preguntarPr">Preguntar</button><button type="button" class="btn chico" data-accion="agregarPreguntaPr">Agregar a la revisión</button><span class="muy-tenue">Ctrl + Enter pregunta · también puede seleccionar texto de la explicación o de una respuesta para preguntar por esa parte · la respuesta es más útil si la pregunta no sugiere la conclusión</span></div></div>`;
 }
 
-function coberturaHtml(e) {
+function coberturaHtml(e, pr) {
   const c = e.cobertura;
-  if (!c || c.completa) return '';
+  if (!c) return '';
+  const gen = c.generados ?? [];
+  const aparte = c.leidosAparte ?? [];
+  const extra = [aparte.length ? `${plural(aparte.length, 'archivo leído', 'archivos leídos')} fuera del mensaje` : '', gen.length ? `${plural(gen.length, 'archivo generado omitido', 'archivos generados omitidos')}` : ''].filter(Boolean).join(' · ');
+  if (c.completa) return extra ? `<p class="origen">${icono('ok')} <span>La IA revisó todo el diff (${extra}).</span></p>` : '';
   const sin = c.sinDiff ?? [];
   const rec = c.recortados ?? [];
-  const items = [...sin.map((a) => `<li><span class="mono">${esc(a)}</span> · sin revisar</li>`), ...rec.map((a) => `<li><span class="mono">${esc(a)}</span> · revisado en parte</li>`)];
-  return `<details class="seccion cobertura"><summary><span class="estado ambar">${icono('alerta')} Cobertura parcial: la IA no vio el diff completo (${plural(sin.length, 'archivo sin revisar', 'archivos sin revisar')}${rec.length ? `, ${plural(rec.length, 'recortado', 'recortados')}` : ''})</span></summary>
-    ${items.length ? `<ul class="tenue">${items.slice(0, 80).join('')}</ul>` : ''}</details>`;
+  const items = [...sin.map((a) => `<li><span class="mono">${esc(a)}</span> · sin revisar</li>`), ...rec.map((a) => `<li><span class="mono">${esc(a)}</span> · revisado en parte</li>`), ...gen.map((a) => `<li><span class="mono">${esc(a)}</span> · generado, no se revisa</li>`)];
+  const boton = API ? `<p style="margin-top:8px"><button type="button" class="btn chico" data-accion="completarCobertura" ${trabajoActivo(pr) ? 'disabled' : ''}>${icono('chispa')} Revisar lo que faltó</button> <span class="muy-tenue">Analiza solo esos archivos y amplía la explicación</span></p>` : '';
+  return `<details class="seccion cobertura"><summary><span class="estado ambar">${icono('alerta')} Cobertura parcial: la IA no vio el diff completo (${plural(sin.length, 'archivo sin revisar', 'archivos sin revisar')}${rec.length ? `, ${plural(rec.length, 'recortado', 'recortados')}` : ''})</span>${extra ? ` <span class="muy-tenue">${extra}</span>` : ''}</summary>
+    ${boton}${items.length ? `<ul class="tenue">${items.slice(0, 80).join('')}</ul>` : ''}</details>`;
 }
 
 function tabResumen(pr) {
@@ -861,7 +866,7 @@ function tabResumen(pr) {
   return `
     <p class="origen">${icono('chispa')} <span><strong>Explicación de IA.</strong> Ayuda para leer la PR, no reemplaza revisar el diff. Las reglas fijas están en Verificaciones.</span></p>
     ${e.desactualizada ? `<div class="seccion"><span class="estado ambar">${icono('alerta')} La PR recibió commits después de esta explicación</span></div>` : ''}
-    ${coberturaHtml(e)}
+    ${coberturaHtml(e, pr)}
     ${sec('Qué resuelve', `<p>${esc(e.resumen)}</p>`, 'resumen')}
     ${sec('Por qué', `<p>${esc(e.por_que)}</p>`, 'por_que')}
     ${e.impacto_usuario ? sec('Qué nota quien usa el portal', `<p>${esc(e.impacto_usuario)}</p>`, 'impacto_usuario') : ''}
@@ -1366,7 +1371,7 @@ const PROGRESO = {
 const PASOS = {
   investigar: [['copias', 'Preparar las copias del código'], ['leyendo', 'Leer el código y redactar la respuesta']],
   cambio: [['editando', 'Aplicar el cambio en una copia'], ['comprobando', 'Correr las comprobaciones'], ['corrigiendo', 'Corregir lo que falló'], ['recomprobando', 'Volver a comprobar']],
-  explicar: [['preparando', 'Obtener el diff y la descripción'], ['leyendo', 'Leer el diff y el código relacionado']],
+  explicar: [['preparando', 'Obtener el diff y la descripción'], ['leyendo', 'Leer el diff y el código relacionado'], ['completando', 'Leer lo que faltó y ampliar la explicación']],
 };
 // Segundos a partir de los cuales se avisa que tarda más de lo habitual.
 const LENTO = { investigar: 150, pregunta: 60, cambio: 240, explicar: 240 };
@@ -2120,6 +2125,12 @@ document.addEventListener('click', (ev) => {
   if (d.accion === 'enfoque') { document.body.toggleAttribute('data-enfoque'); return pintarDetalle(); }
   if (d.accion === 'plegarTodo') { document.querySelectorAll('.archivo').forEach((a) => a.setAttribute('data-plegado', '')); return; }
   if (d.accion === 'refrescar') { estado.refrescando = true; pintarBarra(); return accionApi('/api/refrescar', {}); }
+  if (d.accion === 'completarCobertura') {
+    const pr = FOTO.prs.find((p) => p.id === estado.seleccion);
+    estado.trabajos.set(pr.id, { id: pr.id, estado: 'en_cola' });
+    pintarTodo();
+    return accionApi('/api/analizar', { prs: [{ repo: pr.repo, numero: pr.numero }], completar: true });
+  }
   if (d.accion === 'analizar') {
     const pr = FOTO.prs.find((p) => p.id === estado.seleccion);
     estado.trabajos.set(pr.id, { id: pr.id, estado: 'en_cola' });
