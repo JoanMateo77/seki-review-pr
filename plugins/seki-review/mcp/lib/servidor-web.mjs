@@ -16,7 +16,7 @@ import { explicarConIa } from './explicar.mjs';
 import { avances } from './avance.mjs';
 import { filtrarPrs } from './filtrar.mjs';
 import { costosDelDia, registrarCosto, resumenCostos } from './ia.mjs';
-import { servidorActivo, tokenDe } from './acceso.mjs';
+import { estadoServidor, pedirCeder, tokenDe } from './acceso.mjs';
 import { limpiarCopias } from './copias.mjs';
 
 const PUERTO = 4317;
@@ -48,10 +48,19 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true 
   }
   const p = cargarProyecto(proyecto);
   const token = tokenDe(p);
-  if (await servidorActivo(puerto, token)) {
+  // Otra sesión de Claude Code puede tener el tablero con otra versión del plugin: si está libre, se le pide el puerto.
+  const otro = await estadoServidor(puerto, token);
+  if (otro) {
     const url = `http://127.0.0.1:${puerto}/?t=${token}`;
-    if (abrir && process.platform === 'darwin') execFile('open', [url]);
-    return { url, yaEstaba: true };
+    const ocupado = otro.refrescando || (otro.trabajos ?? []).some((t) => t.estado === 'en_cola' || t.estado === 'en_curso');
+    const cedio = otro.version !== VERSION && !ocupado && await pedirCeder(puerto, token);
+    if (!cedio) {
+      if (abrir && process.platform === 'darwin') execFile('open', [url]);
+      const aviso = otro.version === VERSION ? null
+        : ocupado ? `Lo sirve otra sesión de Claude Code con la versión ${otro.version ?? 'anterior'} y tiene trabajos en curso; al terminar, vuelva a abrir el tablero para pasar a la ${VERSION}.`
+          : `Lo sirve otra sesión de Claude Code con una versión anterior que no sabe ceder el puerto: cierre o reinicie esa sesión para usar la ${VERSION}.`;
+      return { url, yaEstaba: true, aviso };
+    }
   }
   let refresco = null;
   let ultimoRefresco = null;
@@ -209,6 +218,15 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true 
         return responder(res, 202, { encolados: cola.encolar(items) });
       }
       if (req.method === 'POST' && url.pathname === '/api/cancelar-cola') return responder(res, 200, { cancelados: cola.vaciar() });
+      // Otra sesión con otra versión pide el puerto: se suelta solo si no hay trabajos que se cortarían.
+      if (req.method === 'POST' && url.pathname === '/api/ceder') {
+        if (refresco || cola.lista().some((t) => t.estado === 'en_cola' || t.estado === 'en_curso')) return responder(res, 409, { error: 'Hay trabajos en curso' });
+        responder(res, 200, { ok: true });
+        servidores.delete(proyecto);
+        servidor.close();
+        servidor.closeAllConnections?.();
+        return;
+      }
       return responder(res, 404, { error: 'No existe' });
     } catch (e) {
       return responder(res, e.codigo ?? 400, { error: e.message });
@@ -219,7 +237,15 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true 
     servidor.once('error', falla);
     servidor.listen(n, '127.0.0.1', () => { servidor.off('error', falla); ok(servidor.address().port); });
   });
-  const real = await escuchar(puerto).catch((e) => (e.code === 'EADDRINUSE' ? escuchar(0) : Promise.reject(e)));
+  // Tras ceder, el puerto puede tardar un instante en quedar libre.
+  const conReintento = async (n, intentos = 10) => {
+    try { return await escuchar(n); } catch (e) {
+      if (e.code !== 'EADDRINUSE' || intentos <= 1) throw e;
+      await new Promise((ok) => setTimeout(ok, 200));
+      return conReintento(n, intentos - 1);
+    }
+  };
+  const real = await conReintento(puerto, otro ? 10 : 1).catch((e) => (e.code === 'EADDRINUSE' ? escuchar(0) : Promise.reject(e)));
   const url = `http://127.0.0.1:${real}/?t=${token}`;
   servidores.set(proyecto, { url, servidor });
   if (abrir && process.platform === 'darwin') execFile('open', [url]);

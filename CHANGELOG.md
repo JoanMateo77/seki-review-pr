@@ -4,6 +4,9 @@ Cada versión tiene su etiqueta `seki-review-vX.Y.Z` en el commit que la publica
 
 ## seki-review
 
+### 0.19.2 (2026-10-28)
+- Con varias sesiones de Claude Code abiertas, el tablero lo servía la primera que lo abrió, aunque tuviera una versión vieja del plugin. Ahora, si el tablero abierto es de otra versión y no tiene trabajos en curso, la sesión nueva le pide el puerto y lo sirve en el mismo enlace. Con trabajos en curso, o si la versión vieja no sabe ceder, se avisa qué hacer.
+
 ### 0.19.1 (2026-10-28)
 - Si el plugin se actualiza con el tablero abierto, la página (que se lee del disco) es más nueva que el servidor (que sigue en memoria): el tablero lo avisa con ambas versiones y pide reiniciar Claude Code, en vez de responder "No existe" al usar una función nueva.
 

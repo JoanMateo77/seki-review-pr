@@ -15,7 +15,7 @@ export default {
     },
   },
   async handler({ proyecto, puerto = 4317, abrir = true }) {
-    const { url, yaEstaba } = await iniciarServidor({ proyecto, puerto, abrir });
-    return `${yaEstaba ? 'El tablero ya estaba servido' : 'Tablero servido'} en ${url} (solo este equipo; el enlace incluye el token de acceso).`;
+    const { url, yaEstaba, aviso } = await iniciarServidor({ proyecto, puerto, abrir });
+    return `${yaEstaba ? 'El tablero ya estaba servido' : 'Tablero servido'} en ${url} (solo este equipo; el enlace incluye el token de acceso).${aviso ? ` ${aviso}` : ''}`;
   },
 };

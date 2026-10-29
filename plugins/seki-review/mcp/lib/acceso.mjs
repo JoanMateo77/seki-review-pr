@@ -18,12 +18,30 @@ export function tokenDe(p) {
 }
 
 // Otra sesión de Claude Code puede estar sirviendo ya el mismo tablero en el puerto.
-export const servidorActivo = (puerto, token) => new Promise((ok) => {
+// Estado del tablero que ya escucha en el puerto con el mismo token, o null si no hay ninguno.
+export const estadoServidor = (puerto, token) => new Promise((ok) => {
   const req = request({ host: '127.0.0.1', port: puerto, path: '/api/estado', headers: { 'x-seki-token': token }, timeout: 1500 }, (res) => {
+    let cuerpo = '';
+    res.on('data', (d) => { cuerpo += d; });
+    res.on('end', () => {
+      if (res.statusCode !== 200) return ok(null);
+      try { ok(JSON.parse(cuerpo)); } catch { ok({}); }
+    });
+  });
+  req.on('timeout', () => req.destroy());
+  req.on('error', () => ok(null));
+  req.end();
+});
+
+export const servidorActivo = async (puerto, token) => (await estadoServidor(puerto, token)) !== null;
+
+// Pide al tablero de otra sesión que suelte el puerto; responde si lo soltó (los anteriores a 0.19.2 no saben).
+export const pedirCeder = (puerto, token) => new Promise((ok) => {
+  const req = request({ host: '127.0.0.1', port: puerto, path: '/api/ceder', method: 'POST', headers: { 'x-seki-token': token, 'content-type': 'application/json' }, timeout: 3000 }, (res) => {
     res.resume();
     ok(res.statusCode === 200);
   });
   req.on('timeout', () => req.destroy());
   req.on('error', () => ok(false));
-  req.end();
+  req.end('{}');
 });
