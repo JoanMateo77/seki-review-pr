@@ -9,7 +9,7 @@ It has two parts: an MCP server (tools any MCP client can call) and a skill (the
 those tools).
 
 **Client support.** The MCP server is client-agnostic and works with any MCP client. The install command below is the
-Claude Code plugin install. The guided workflow (the `revisar-prs` skill) and the dashboard's AI analysis queue
+Claude Code plugin install. The guided workflow (the `review-prs` skill) and the dashboard's AI analysis queue
 (which runs `claude -p`) currently run on Claude Code.
 
 ## Installation
@@ -20,7 +20,7 @@ claude plugin install seki-review@seki
 ```
 
 Then copy `plugins/seki-review/config/proyectos.ejemplo.json` to `~/.config/seki-review/proyectos.json` and
-fill it in with your repos and branches. In Claude Code, `/seki-review:revisar-prs` opens the dashboard.
+fill it in with your repos and branches. In Claude Code, `/seki-review:review-prs` opens the dashboard.
 
 After editing the plugin: `claude plugin marketplace update seki` and restart the session.
 
@@ -37,7 +37,7 @@ sets it explicitly). No npm dependencies.
 | Generic verification rules | `plugins/seki-review/mcp/lib/reglas.mjs` |
 | Dashboard template | `plugins/seki-review/mcp/tablero/plantilla.html` |
 | Projects, repos, branches, context and custom rules | `~/.config/seki-review/proyectos.json` (example in `config/proyectos.ejemplo.json`) |
-| Workflow for the agent | `plugins/seki-review/skills/revisar-prs/SKILL.md` |
+| Workflow for the agent | `plugins/seki-review/skills/review-prs/SKILL.md` |
 | Dashboard server with actions (127.0.0.1, token in the URL) | `plugins/seki-review/mcp/lib/servidor-web.mjs`, `bin/tablero.sh` |
 | AI analysis queue (`claude -p`, sonnet, read-only) | `plugins/seki-review/mcp/lib/trabajos.mjs` |
 | Smoke test | `node plugins/seki-review/test/humo.mjs [tool] ['{"arg":1}']` |

@@ -22,7 +22,7 @@ Unlike GitHub's PR list, it checks with git whether the code is already in testi
 ## Operating Context
 
 - Local HTML file (`revision-prs/tablero.html`) opened in the browser. Never published online; shared as a file.
-- Regenerated from Claude Code with `/seki-review:revisar-prs`; the data is a dated snapshot.
+- Regenerated from Claude Code with `/seki-review:review-prs`; the data is a dated snapshot.
 - Used at the office, on a laptop, during the workday; short, repeated sessions.
 
 ## Capabilities and Constraints

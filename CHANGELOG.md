@@ -4,6 +4,10 @@ Each version has its `seki-review-vX.Y.Z` tag on the commit that releases it.
 
 ## seki-review
 
+### Unreleased
+- The command is now `/seki-review:review-prs` (skill `review-prs`, formerly `revisar-prs`).
+- Code, dashboard, AI prompts and docs are in English; the AI answers in English.
+
 ### 0.20.0 (2026-10-29)
 - Explanations with more diff coverage: the line budget is split by priority (schema and code first; screens, tests and documentation after; generated files left out) and per file, so one huge file no longer leaves the others unreviewed.
 - Whatever does not fit in the message is kept as a patch on disk, and the AI reads it over a read-only copy of the PR, with the same secret blocks as Investigate.

@@ -1,5 +1,5 @@
 ---
-name: revisar-prs
+name: review-prs
 description: Use when asked to review which PRs are pending promotion to testing or production, to understand or explain a PR (what changes, technologies, why, alternatives, how to test), or to open the local PR review dashboard (Seki Review). With no argument it opens the served dashboard. Optional arguments - "pending", "explain <repo>#<n>", "explain pending", "verify <repo>#<n>", "file" (the Spanish forms "pendientes", "explicar", "verificar", "archivo" are also accepted).
 ---
 

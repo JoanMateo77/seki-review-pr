@@ -861,7 +861,7 @@ function tabResumen(pr) {
     if (API) return `<div class="seccion"><p class="tenue">This PR doesn’t have an explanation yet.</p>
       <p style="margin-top:12px"><button class="btn chico" data-accion="analizar" ${trabajoActivo(pr) ? 'disabled' : ''}>${trabajoActivo(pr) ? `${icono('actualizar', 'girando')} Analyzing` : `${icono('chispa')} Analyze with AI`}</button></p></div>`;
     return `<div class="seccion"><p class="tenue">This PR doesn’t have an explanation yet. It is generated from Claude Code and appears here when the dashboard is regenerated.</p>
-      <p style="margin-top:12px"><button class="btn chico" data-copiar="/seki-review:revisar-prs explicar ${esc(pr.repo)}#${pr.numero}">${icono('copiar')} Copy the command</button></p></div>`;
+      <p style="margin-top:12px"><button class="btn chico" data-copiar="/seki-review:review-prs explain ${esc(pr.repo)}#${pr.numero}">${icono('copiar')} Copy the command</button></p></div>`;
   }
   return `
     <p class="origen">${icono('chispa')} <span><strong>AI explanation.</strong> A reading aid for the PR; it does not replace reviewing the diff. The fixed rules are under Checks.</span></p>
@@ -1765,7 +1765,7 @@ function pintarDetalle() {
       <button class="btn" data-copiar="/plannotator-review ${esc(pr.url)}">${icono('copiar')} Review line by line</button>
       ${API
         ? `<button class="btn" data-accion="analizar" ${trabajoActivo(pr) ? 'disabled' : ''}>${trabajoActivo(pr) ? `${icono('actualizar', 'girando')} Analyzing` : `${icono('chispa')} ${pr.explicacion ? 'Analyze again with AI' : 'Analyze with AI'}`}</button>`
-        : `<button class="btn" data-copiar="/seki-review:revisar-prs explicar ${esc(pr.repo)}#${pr.numero}">${icono('copiar')} ${pr.explicacion ? 'Regenerate explanation' : 'Explain'}</button>`}
+        : `<button class="btn" data-copiar="/seki-review:review-prs explain ${esc(pr.repo)}#${pr.numero}">${icono('copiar')} ${pr.explicacion ? 'Regenerate explanation' : 'Explain'}</button>`}
     </div>
     ${pilaEstados(pr)}
     <div class="tabs" role="tablist">${TABS.map(([k, nombre, n]) => { const c = n(pr); return `<button class="tab" role="tab" data-tab="${k}" aria-selected="${estado.tab === k}">${nombre}${c ? `<span class="n">${c}</span>` : ''}</button>`; }).join('')}</div>
@@ -1858,7 +1858,7 @@ async function sondear() {
     if (activo) sondeo = setTimeout(sondear, 3000);
   } catch (err) {
     // If the session serving the dashboard closed, another open session takes it over on the same link: it retries on its own.
-    estado.ultimoRefresco = { ok: false, sinConexion: true, mensaje: `No connection to the local server (${err.message}). Retrying every 5 seconds; if no other Claude Code session is open, open it with /seki-review:revisar-prs.` };
+    estado.ultimoRefresco = { ok: false, sinConexion: true, mensaje: `No connection to the local server (${err.message}). Retrying every 5 seconds; if no other Claude Code session is open, open it with /seki-review:review-prs.` };
     pintarBarra();
     sondeo = setTimeout(sondear, 5000);
   }
