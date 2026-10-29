@@ -5,7 +5,7 @@ import { repoConPr } from './util/repo.mjs';
 
 const lineas = (n, f = (i) => `linea ${i}`) => Array.from({ length: n }, (_, i) => f(i + 1)).join('\n') + '\n';
 
-test('fragmento recorta con margen y numera', () => {
+test('fragmento trims with margin and numbers lines', () => {
   const f = fragmento(lineas(200), 100, 101, 2);
   assert.equal(f.desde, 98);
   assert.equal(f.hasta, 103);
@@ -13,19 +13,19 @@ test('fragmento recorta con margen y numera', () => {
   assert.equal(f.texto.split('\n').length, 6);
 });
 
-test('fragmento no se sale del archivo', () => {
+test('fragmento does not go past the file', () => {
   const f = fragmento(lineas(5), 1, 2, 40);
   assert.equal(f.desde, 1);
   assert.equal(f.hasta, 5);
 });
 
-test('archivoEnSha trae la versión de la PR aunque el checkout no tenga el commit', async () => {
+test('archivoEnSha fetches the PR version even if the checkout does not have the commit', async () => {
   const r = repoConPr({ antes: 'a\n', despues: 'b\n' });
   const p = { repos: { x: { checkout: r.checkout } } };
   assert.equal(await archivoEnSha(p, 'x', 7, r.head, 'a.ts'), 'b\n');
 });
 
-test('contextoPreguntas incluye el hunk y el fragmento de cada comentario', async () => {
+test('contextoPreguntas includes the hunk and the fragment of each comment', async () => {
   const antes = lineas(600);
   const despues = lineas(600, (i) => (i === 60 ? 'linea 60 cambiada' : `linea ${i}`));
   const r = repoConPr({ antes, despues });
@@ -41,7 +41,7 @@ test('contextoPreguntas incluye el hunk y el fragmento de cada comentario', asyn
   assert.match(t, /Cambia la línea 60\./);
 });
 
-test('contextoPreguntas manda el archivo completo si es corto', async () => {
+test('contextoPreguntas sends the full file if it is short', async () => {
   const r = repoConPr({ antes: lineas(300), despues: lineas(300, (i) => (i === 200 ? 'nueva' : `linea ${i}`)) });
   const p = { repos: { x: { checkout: r.checkout } } };
   const pr = { id: 'x#7', repo: 'x', numero: 7, titulo: 'Cambio', headSha: r.head };
@@ -50,7 +50,7 @@ test('contextoPreguntas manda el archivo completo si es corto', async () => {
   assert.match(t, /300│ linea 300/);
 });
 
-test('contextoPreguntas respeta el tope de 60000 caracteres', async () => {
+test('contextoPreguntas respects the 60000 character cap', async () => {
   const enorme = lineas(3000, (i) => `${'x'.repeat(80)} ${i}`);
   const r = repoConPr({ antes: 'a\n', despues: enorme });
   const p = { repos: { x: { checkout: r.checkout } } };
@@ -62,24 +62,24 @@ test('contextoPreguntas respeta el tope de 60000 caracteres', async () => {
   for (const c of coms) assert.match(t, new RegExp(c.id));
 });
 
-test('contextoPreguntas: una pregunta sobre la PR lleva la explicación y el diff completo', async () => {
+test('contextoPreguntas: a question about the PR carries the explanation and the full diff', async () => {
   const archivos = [{ filename: 'a.ts', patch: '@@ -1 +1 @@\n-viejo\n+nuevo' }, { filename: 'b.ts', patch: '@@ -0,0 +1 @@\n+otro' }];
   const pr = { id: 'x#7', titulo: 'T', explicacion: { resumen: 'Cierra rutas', por_que: 'Hallazgo H-031', que_cambia: ['La ruta exige apikey'] } };
   const ctx = await contextoPreguntas({}, pr, [{ id: 'c-0001', ambito: 'pr', seccion: 'por_que', texto: '¿Cuál hallazgo?' }], { archivos });
-  assert.match(ctx, /Pregunta c-0001 sobre la PR \(sección «Por qué»\)/);
+  assert.match(ctx, /Question c-0001 about the PR \(section «Why»\)/);
   assert.match(ctx, /Hallazgo H-031/);
   assert.match(ctx, /La ruta exige apikey/);
   assert.match(ctx, /### a\.ts\n@@ -1 \+1 @@\n-viejo\n\+nuevo/);
   assert.match(ctx, /### b\.ts/);
 });
 
-test('contextoPreguntas: la pregunta sobre la PR incluye el texto citado', async () => {
+test('contextoPreguntas: the question about the PR includes the quoted text', async () => {
   const pr = { id: 'x#7', titulo: 'T', explicacion: { resumen: 'R' } };
   const ctx = await contextoPreguntas({}, pr, [{ id: 'c-0001', ambito: 'pr', seccion: 'resumen', citado: 'apaga los webhooks', texto: '¿Cuáles?' }], { archivos: [] });
-  assert.match(ctx, /Texto citado de la explicación: «apaga los webhooks»/);
+  assert.match(ctx, /Text quoted from the explanation: «apaga los webhooks»/);
 });
 
-test('contextoPreguntas: una repregunta lleva el hilo completo, sin recortar la respuesta anterior', async () => {
+test('contextoPreguntas: a follow-up question carries the full thread, without truncating the previous answer', async () => {
   const larga = `Primera respuesta ${'detalle '.repeat(60)}FIN-1`;
   const todos = [
     { id: 'c-0001', ambito: 'pr', texto: '¿Validó en el código?', respuesta: larga },
@@ -87,18 +87,18 @@ test('contextoPreguntas: una repregunta lleva el hilo completo, sin recortar la 
     { id: 'c-0003', ambito: 'pr', respondeA: 'c-0002', texto: '¿Y el otro proveedor?' },
   ];
   const ctx = await contextoPreguntas({}, { id: 'x#7', titulo: 'T' }, [todos[2]], { archivos: [], todos });
-  assert.match(ctx, /Conversación previa/);
+  assert.match(ctx, /Previous conversation/);
   assert.ok(ctx.indexOf('¿Validó en el código?') < ctx.indexOf('Valide a nivel de código'));
   assert.match(ctx, /FIN-1/);
   assert.match(ctx, /FIN-2/);
 });
 
-test('contextoPreguntas: la repregunta sobre un fragmento de la respuesta lo cita como tal, junto con el hilo', async () => {
+test('contextoPreguntas: a follow-up about a fragment of the answer quotes it as such, along with the thread', async () => {
   const pr = { id: 'r#1', titulo: 'x', headSha: 'a' };
   const padre = { id: 'c-0001', ambito: 'pr', texto: '¿Qué cambia?', respuesta: 'Usa un parámetro nombrado en L1002.' };
   const hija = { id: 'c-0002', ambito: 'pr', respondeA: 'c-0001', citado: 'parámetro nombrado', citadoDe: 'respuesta', texto: '¿Por qué?' };
   const ctx = await contextoPreguntas({}, pr, [hija], { archivos: [], todos: [padre, hija] });
-  assert.match(ctx, /Fragmento citado de la respuesta anterior .*«parámetro nombrado»/);
-  assert.match(ctx, /Respuesta: Usa un parámetro nombrado/);
-  assert.doesNotMatch(ctx, /Texto citado de la explicación/);
+  assert.match(ctx, /Fragment quoted from the previous answer .*«parámetro nombrado»/);
+  assert.match(ctx, /Answer: Usa un parámetro nombrado/);
+  assert.doesNotMatch(ctx, /Text quoted from the explanation/);
 });

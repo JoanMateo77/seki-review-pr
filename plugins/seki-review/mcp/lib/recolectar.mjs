@@ -1,5 +1,5 @@
-// Arma la foto de PRs de un proyecto: ambiente, gemelas, estado frente a pruebas y producción,
-// verificaciones fijas y acción sugerida.
+// Builds a project's PR snapshot: environment, twins, status against testing and production,
+// fixed checks and suggested action.
 import { clasificarBase, proyecto as cargarProyecto } from './config.mjs';
 import { escribirJson, leerJson, rutaCacheEstados, rutaCacheVerificaciones, rutaExplicacion, rutaInstantanea } from './cache.mjs';
 import { archivosPr, arbolRama, commitsPr, estadoFrentePruebas } from './estado.mjs';
@@ -13,23 +13,23 @@ import { asegurarDiff } from './diffs.mjs';
 const CAMPOS = 'number,title,url,baseRefName,headRefName,createdAt,updatedAt,additions,deletions,changedFiles,isDraft,headRefOid,author,reviewDecision,body';
 
 export const ACCIONES = {
-  pruebas_sin_prod: 'En pruebas sin PR hacia producción',
-  solo_prod: 'Ya está en pruebas: falta producción',
-  revisar_diferencias: 'En pruebas hay otra versión: revisar diferencias',
-  pruebas_abierta: 'No está en pruebas: su PR de pruebas está abierta',
-  sin_pruebas: 'No está en pruebas y no tiene PR de pruebas',
-  hacia_pruebas: 'PR hacia pruebas',
-  pruebas_automaticas: 'Solo pruebas automáticas',
-  inactiva: 'Rama que ya no se usa',
-  otra: 'Rama fuera de las líneas configuradas',
+  pruebas_sin_prod: 'In testing with no PR to production',
+  solo_prod: 'Already in testing: production pending',
+  revisar_diferencias: 'Testing has a different version: review differences',
+  pruebas_abierta: 'Not in testing: its testing PR is open',
+  sin_pruebas: 'Not in testing and has no testing PR',
+  hacia_pruebas: 'PR to testing',
+  pruebas_automaticas: 'Automated tests only',
+  inactiva: 'Branch no longer in use',
+  otra: 'Branch outside the configured lines',
 };
 
 const PAGINAS_GEMELAS = 3;
 const DIAS_HUERFANAS = 30;
-const SOLO_PRUEBAS = /solo pruebas|pruebas only|ambiente de pruebas|^test(\(|:)|sincroniz|traer lo que ya est/i;
+const SOLO_PRUEBAS = /solo pruebas|pruebas only|ambiente de pruebas|staging only|testing only|^test(\(|:)|sincroniz|traer lo que ya est/i;
 const diasDesde = (fecha) => Math.floor((Date.now() - new Date(fecha)) / 86400000);
 const esSoloPruebasAutomaticas = (titulo) => /^test(\(|:)/i.test(titulo);
-const esSeguridad = (titulo) => /seguridad|sqli|xss|csrf|inyecci/i.test(titulo);
+const esSeguridad = (titulo) => /seguridad|security|sqli|xss|csrf|inyecci|injection/i.test(titulo);
 
 export function esfuerzoPorTamano(lineas, archivos) {
   const base = lineas <= 30 ? 1 : lineas <= 150 ? 2 : lineas <= 500 ? 3 : lineas <= 1500 ? 4 : 5;
@@ -40,7 +40,7 @@ async function prsDeBase(owner, repo, base, cache) {
   const clave = `${repo}@${base}`;
   if (!cache.has(clave)) {
     cache.set(clave, (async () => {
-      // REST y no GraphQL: `gh pr list --state all` da 504 en repos con muchas PRs.
+      // REST rather than GraphQL: `gh pr list --state all` returns 504 on repos with many PRs.
       const todas = [];
       for (let pagina = 1; pagina <= PAGINAS_GEMELAS; pagina++) {
         const lote = await ghJson(['api', `repos/${owner}/${repo}/pulls?base=${encodeURIComponent(base)}&state=all&sort=created&direction=desc&per_page=100&page=${pagina}`]);
@@ -84,7 +84,7 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
   const nombres = repos?.length ? repos : Object.keys(p.repos);
   const login = p.autor === '@me' ? (await ghJson(['api', 'user'])).login : p.autor;
 
-  // ¿El código de la PR ya está en `destino`? Cacheado por commit de la PR y commit del destino.
+  // Is the PR's code already in `destino`? Cached by PR commit and target commit.
   async function estadoEn({ repo, numero, headSha, origen, destino, baseSha }) {
     const claveCache = `${repo}#${numero}->${destino}`;
     const destinoSha = (await arbolRama(p.owner, repo, destino)).sha;
@@ -105,7 +105,7 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
     return r;
   }
 
-  // Cacheados por commit de la PR en el mismo archivo que las verificaciones, con su propio prefijo.
+  // Cached by PR commit in the same file as the checks, under their own prefix.
   async function commitsDe(repo, numero, headSha) {
     const claveCache = `commits:${repo}#${numero}`;
     if (cacheVerif[claveCache]?.headSha !== headSha) {
@@ -115,7 +115,7 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
     return cacheVerif[claveCache].lista;
   }
 
-  // Misma tarea en las otras líneas del repo (por ejemplo, el mismo arreglo en la rama de otro portal).
+  // Same task on the repo's other lines (for example, the same fix on another portal's branch).
   async function hermanas(repo, linea, titulo) {
     const otras = p.repos[repo].lineas.filter((l) => l.prod !== linea.prod);
     return Promise.all(otras.map(async (l) => {
@@ -124,12 +124,12 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
     }));
   }
 
-  // Ausente en producción solo con evidencia fuerte: ningún archivo coincide. Con coincidencias parciales
-  // lo normal es que el cambio llegó por otra PR y luego producción siguió cambiando esas líneas.
+  // Missing from production only with strong evidence: no file matches. With partial matches the
+  // change usually arrived through another PR and production kept changing those lines afterwards.
   const ausenteEnProd = (e) => e.estado === 'no_en_pruebas' && e.iguales === 0;
 
-  // Una PR abierta hacia producción que trae al menos la mitad de los archivos de la PR de pruebas,
-  // idénticos, la cubre aunque el título sea otro (por ejemplo, #463 lleva lo de #459 y #460).
+  // An open PR to production that carries at least half of the testing PR's files, identical,
+  // covers it even under a different title (for example, #463 carries the content of #459 and #460).
   async function cubiertaPor(repo, linea, numero) {
     const propios = await archivosPr(p.owner, repo, numero);
     if (!propios.length) return null;
@@ -208,7 +208,7 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
     return item;
   });
 
-  // PRs ya mergeadas en pruebas cuyo código nunca llegó a producción y que no tienen PR hacia producción.
+  // PRs already merged into testing whose code never reached production and that have no PR to production.
   const huerfanas = [];
   for (const repo of nombres) {
     for (const linea of p.repos[repo].lineas) {
@@ -264,7 +264,7 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
   const visibles = incluirInactivas ? todas : todas.filter((x) => x.ambiente !== 'inactiva');
   visibles.sort((a, b) => a.repo.localeCompare(b.repo) || b.numero - a.numero);
   const instantanea = { proyecto: p.nombre ?? clave, clave, generado: new Date().toISOString(), owner: p.owner, acciones: ACCIONES, prs: visibles };
-  // Si esta foto no trae cambios se conservan los últimos detectados, para que dos actualizaciones seguidas no los borren.
+  // If this snapshot has no changes, the last detected ones are kept so two refreshes in a row do not wipe them.
   const anterior = repos?.length ? null : leerJson(rutaInstantanea(p.salida));
   const cambios = await compararFotos(anterior, instantanea, p.owner).catch(() => null);
   instantanea.cambios = hayCambios(cambios) ? cambios : anterior?.cambios ?? null;

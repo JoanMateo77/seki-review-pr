@@ -1,4 +1,4 @@
-// Diff de cada PR guardado en disco por commit, para mostrarlo en el tablero sin volver a GitHub.
+// Each PR's diff saved to disk per commit, to show it on the dashboard without going back to GitHub.
 import { escribirJson, leerJson, rutaDiff } from './cache.mjs';
 import { archivosPr } from './estado.mjs';
 
@@ -21,7 +21,7 @@ export async function asegurarDiff(p, repo, numero, headSha) {
   return archivos;
 }
 
-// Recorta para incrustar en el HTML: un tope de líneas por PR; lo que sobra queda marcado como recortado.
+// Truncates for embedding in the HTML: a line cap per PR; anything beyond it is marked as truncated.
 export function diffParaTablero(archivos) {
   let restantes = MAX_LINEAS_PR;
   return archivos.map(({ sha, ...a }) => {

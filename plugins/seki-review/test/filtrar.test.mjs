@@ -14,7 +14,7 @@ const prs = [
 const exito = (coincidencias) => ({ type: 'result', is_error: false, subtype: 'success', structured_output: { coincidencias }, total_cost_usd: 0.01, modelUsage: { 'claude-sonnet-5-5': { inputTokens: 1, outputTokens: 1 } } });
 const preparar = () => ({ salida: mkdtempSync(join(tmpdir(), 'seki-filtrar-')) });
 
-test('devuelve solo ids de la cola, sin repetir, y guarda el resultado', async () => {
+test('returns only queue ids, without duplicates, and stores the result', async () => {
   const p = preparar();
   process.env.SEKI_CLAUDE = falsoClaude(exito([{ id: 'api#1', relacion: 'directa', motivo: 'SQLi en el título' }, { id: 'api#1', relacion: 'directa', motivo: 'otra' }, { id: 'ajena#9', relacion: 'directa', motivo: 'x' }, { id: 'web#2', relacion: 'otra cosa', motivo: 'toca el listado' }]));
   const r = await filtrarPrs(p, prs, '  PRs de   ciberseguridad ');
@@ -24,7 +24,7 @@ test('devuelve solo ids de la cola, sin repetir, y guarda el resultado', async (
   assert.equal(r.desdeCache, false);
 });
 
-test('la misma necesidad sobre la misma cola no vuelve a llamar a la IA; si una PR cambia de commit, sí', async () => {
+test('the same need on the same queue does not call the AI again; if a PR changes commit, it does', async () => {
   const p = preparar();
   process.env.SEKI_CLAUDE = falsoClaude(exito([{ id: 'api#1', motivo: 'm' }]));
   await filtrarPrs(p, prs, 'seguridad');
@@ -36,7 +36,7 @@ test('la misma necesidad sobre la misma cola no vuelve a llamar a la IA; si una 
   assert.equal(llamadas(process.env.SEKI_CLAUDE), 2);
 });
 
-test('dos pedidos simultáneos con la misma necesidad comparten una sola llamada', async () => {
+test('two simultaneous requests with the same need share a single call', async () => {
   const p = preparar();
   process.env.SEKI_CLAUDE = falsoClaude(exito([]));
   const [a, b] = await Promise.all([filtrarPrs(p, prs, 'login'), filtrarPrs(p, prs, 'login')]);
@@ -44,18 +44,18 @@ test('dos pedidos simultáneos con la misma necesidad comparten una sola llamada
   assert.equal(llamadas(process.env.SEKI_CLAUDE), 1);
 });
 
-test('rechaza una necesidad vacía o demasiado larga y avisa si la IA falla', async () => {
+test('rejects an empty or too long need and reports if the AI fails', async () => {
   const p = preparar();
-  await assert.rejects(filtrarPrs(p, prs, '   '), /Escriba/);
+  await assert.rejects(filtrarPrs(p, prs, '   '), /Describe/);
   await assert.rejects(filtrarPrs(p, prs, 'x'.repeat(301)), /300/);
   process.env.SEKI_CLAUDE = falsoClaude({ type: 'result', is_error: true, subtype: 'error_max_budget_usd', total_cost_usd: 0.5 }, 1);
-  await assert.rejects(filtrarPrs(p, prs, 'seguridad'), /no pudo filtrar/);
+  await assert.rejects(filtrarPrs(p, prs, 'seguridad'), /could not filter/);
 });
 
-test('la línea de cada PR lleva los archivos del diff guardado solo si es del commit actual', () => {
+test('each PR line carries the stored diff files only if it is from the current commit', () => {
   const p = preparar();
   escribirJson(rutaDiff(p.salida, 'api', 1), { headSha: 'a1', archivos: [{ filename: 'src/Buscar.ts' }] });
   escribirJson(rutaDiff(p.salida, 'web', 2), { headSha: 'viejo', archivos: [{ filename: 'src/Viejo.ts' }] });
-  assert.match(lineaDePr(p, prs[0]), /archivos: src\/Buscar\.ts$/);
-  assert.match(lineaDePr(p, prs[1]), /archivos: sin datos$/);
+  assert.match(lineaDePr(p, prs[0]), /files: src\/Buscar\.ts$/);
+  assert.match(lineaDePr(p, prs[1]), /files: no data$/);
 });

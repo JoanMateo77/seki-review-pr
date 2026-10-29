@@ -1,5 +1,5 @@
-// Cola de trabajos de IA del tablero. Cada trabajo trae su propia función `ejecutar`, que devuelve
-// { ok, motivo, costo, modelo }; la cola solo ordena, limita el paralelismo y guarda el resultado.
+// The dashboard's AI job queue. Each job brings its own `ejecutar` function, which returns
+// { ok, motivo, costo, modelo }; the queue only orders jobs, limits parallelism and stores the result.
 const PARALELO = Math.min(2, Math.max(1, Number(process.env.SEKI_IA_PARALELO) || 1));
 
 export function crearCola({ alTerminar } = {}) {
@@ -27,7 +27,7 @@ export function crearCola({ alTerminar } = {}) {
     Object.assign(t, {
       estado: r?.ok === false ? 'error' : 'terminado',
       fin: new Date().toISOString(),
-      mensaje: r?.ok === false ? String(r.motivo ?? 'El trabajo falló').slice(0, 400) : null,
+      mensaje: r?.ok === false ? String(r.motivo ?? 'The job failed').slice(0, 400) : null,
       costo: r?.costo ?? null,
       modelo: r?.modelo ?? null,
     });
@@ -55,7 +55,7 @@ export function crearCola({ alTerminar } = {}) {
         if (t.estado !== 'en_cola') continue;
         t.estado = 'cancelado';
         funciones.delete(t.id);
-        try { cancelaciones.get(t.id)?.(); } catch { /* el aviso no debe frenar la cancelación */ }
+        try { cancelaciones.get(t.id)?.(); } catch { /* the notification must not stop the cancellation */ }
         cancelaciones.delete(t.id);
         n++;
       }

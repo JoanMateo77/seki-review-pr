@@ -1,10 +1,10 @@
-// Reglas fijas que se corren sobre las líneas que agrega una PR. Cada una nace de un incidente o
-// una regla del proyecto; el campo `origen` lo dice para que quien revisa entienda por qué importa.
-// Una línea se excluye de una regla con el comentario `seki-review: ignorar <id>`.
+// Fixed rules run on the lines a PR adds. Each one comes from an incident or a project rule;
+// the `origen` field says which, so the reviewer understands why it matters.
+// A line is excluded from a rule with the comment `seki-review: ignore <id>` (`ignorar` also works).
 //
-// Campos: id, titulo, severidad (bloqueante | alto | medio | aviso), archivos (regex sobre la ruta),
-// repos (opcional), patron (regex sobre la línea agregada), excluir (opcional), cuando(linea, archivo)
-// (opcional, filtro extra), mensaje, origen.
+// Fields: id, titulo, severidad (bloqueante | alto | medio | aviso), archivos (regex on the path),
+// repos (optional), patron (regex on the added line), excluir (optional), cuando(linea, archivo)
+// (optional, extra filter), mensaje, origen.
 
 const VISTAS = /\.(ejs|html)$/;
 const CODIGO = /\.(ts|js|mjs|cjs)$/;
@@ -16,123 +16,123 @@ export const SEVERIDADES = ['bloqueante', 'alto', 'medio', 'aviso'];
 export const REGLAS = [
   {
     id: 'sql-interpolado',
-    titulo: 'SQL armado con valores pegados',
+    titulo: 'SQL built with inlined values',
     severidad: 'bloqueante',
     archivos: CODIGO,
     patron: /(\b(where|andWhere|orWhere|having|query|innerJoin|leftJoin)\s*\(\s*`[^`]*\$\{)|(`[^`]*\b(SELECT|UPDATE|DELETE|INSERT|WHERE|AND|OR)\b[^`]*\$\{)/,
     excluir: PRUEBAS,
-    // `${n}` es un marcador posicional de PostgreSQL armado con un número: no inyecta nada.
-    // Un fragmento con nombre de cláusula (filtro, where, orden) baja a aviso: hay que mirar cómo se arma.
+    // `${n}` is a PostgreSQL positional placeholder built from a number: it injects nothing.
+    // A fragment named like a clause (filtro, where, orden) drops to aviso: check how it is built.
     severidadPara: (linea) => {
       const valores = [...linea.matchAll(/(\$?)\$\{\s*([^}]*)\}/g)].filter((m) => !m[1]).map((m) => m[2].trim());
       if (!valores.length) return null;
       return valores.every((v) => FRAGMENTO_SQL.test(v)) ? 'aviso' : 'bloqueante';
     },
-    mensaje: 'Pasar el valor como parámetro (`:nombre`, { nombre }) en lugar de interpolarlo en el SQL.',
-    origen: 'Inyección SQL: el valor interpolado viaja dentro de la consulta.',
+    mensaje: 'Pass the value as a parameter (`:nombre`, { nombre }) instead of interpolating it into the SQL.',
+    origen: 'SQL injection: the interpolated value travels inside the query.',
   },
   {
     id: 'secreto-en-codigo',
-    titulo: 'Posible secreto escrito en el código',
+    titulo: 'Possible secret hardcoded in the code',
     severidad: 'bloqueante',
     archivos: /./,
     patron: /\b(api[_-]?key|secret|secreto|password|passwd|token|aws_secret_access_key|redis_password)\b\s*[:=]\s*['"][^'"\s]{8,}['"]/i,
     excluir: PRUEBAS,
-    mensaje: 'Mover el valor a variables de entorno; nunca commitearlo.',
-    origen: 'Una credencial commiteada queda en el historial aunque luego se borre.',
+    mensaje: 'Move the value to environment variables; never commit it.',
+    origen: 'A committed credential stays in the history even if it is deleted later.',
   },
   {
     id: 'archivo-env',
-    titulo: 'Archivo de entorno en la PR',
+    titulo: 'Environment file in the PR',
     severidad: 'bloqueante',
     archivos: /(^|\/)(\.env(\..*)?|[a-z]+\.env)$/,
     porArchivo: true,
-    mensaje: 'Los archivos .env contienen secretos reales y no deben viajar en una PR.',
-    origen: 'Los archivos de entorno suelen tener credenciales reales.',
+    mensaje: '.env files contain real secrets and must not travel in a PR.',
+    origen: 'Environment files usually hold real credentials.',
   },
   {
     id: 'ejs-sin-escapar',
-    titulo: 'Salida EJS sin escapar (<%-)',
+    titulo: 'Unescaped EJS output (<%-)',
     severidad: 'alto',
     archivos: /\.ejs$/,
     patron: /<%-(?!\s*include\b)/,
-    // JSON embebido con < escapado es la forma segura de pasar datos a un <script type="application/json">.
+    // Embedded JSON with < escaped is the safe way to pass data to a <script type="application/json">.
     excluir: /<%-\s*JSON\.stringify\(.*\.replace\(\/<\/g/,
-    mensaje: 'Usar <%= %> salvo que el valor sea HTML de confianza; confirmar que no llega de la petición.',
-    origen: 'XSS: <%- inserta el valor como HTML.',
+    mensaje: 'Use <%= %> unless the value is trusted HTML; confirm it does not come from the request.',
+    origen: 'XSS: <%- inserts the value as HTML.',
   },
   {
     id: 'ejs-comentario-en-template',
-    titulo: 'Comentario EJS dentro de template literal',
+    titulo: 'EJS comment inside a template literal',
     severidad: 'alto',
     archivos: /\.ejs$/,
     patron: /`[^`]*<%#|<%#[^%]*%>[^`]*`/,
-    mensaje: '<%# %> dentro de un template literal de JS rompe la vista con un 500.',
-    origen: 'EJS interpreta el comentario dentro del JS y la vista falla al compilar.',
+    mensaje: '<%# %> inside a JS template literal breaks the view with a 500.',
+    origen: 'EJS parses the comment inside the JS and the view fails to compile.',
   },
   {
     id: 'inner-html-variable',
-    titulo: 'innerHTML con valor dinámico',
+    titulo: 'innerHTML with a dynamic value',
     severidad: 'medio',
     archivos: /\.(js|ejs|html)$/,
     patron: /\.(innerHTML|outerHTML)\s*[+]?=\s*(?!['"]\s*['"]\s*;?$)[^;]*(\$\{|\+\s*[a-zA-Z_])/,
     excluir: /DOMPurify|escapeHtml|esc\(/,
-    mensaje: 'Escapar o sanitizar (DOMPurify) antes de insertar HTML con datos.',
-    origen: 'XSS: un valor dinámico en innerHTML se interpreta como HTML.',
+    mensaje: 'Escape or sanitize (DOMPurify) before inserting HTML with data.',
+    origen: 'XSS: a dynamic value in innerHTML is interpreted as HTML.',
   },
   {
     id: 'as-any',
-    titulo: 'Tipado con `as any`',
+    titulo: 'Typing with `as any`',
     severidad: 'medio',
     archivos: /\.ts$/,
     patron: /\bas any\b/,
     excluir: PRUEBAS,
-    mensaje: 'Estrechar el tipo en lugar de silenciarlo.',
-    origen: '`as any` apaga la comprobación de tipos en ese punto.',
+    mensaje: 'Narrow the type instead of silencing it.',
+    origen: '`as any` turns off type checking at that point.',
   },
   {
     id: 'log-dato-sensible',
-    titulo: 'Log con dato sensible',
+    titulo: 'Log with sensitive data',
     severidad: 'alto',
     archivos: CODIGO,
     patron: /\b(console\.(log|info|warn|error|debug)|logger\.\w+)\s*\(.*\b(password|contrase|apikey|api_key|token|secret|cedula|documento|tarjeta|cvv)\b/i,
     excluir: PRUEBAS,
-    mensaje: 'No registrar credenciales ni datos personales.',
-    origen: 'Los logs se copian a otros sistemas y personas con menos controles.',
+    mensaje: 'Do not log credentials or personal data.',
+    origen: 'Logs are copied to other systems and people with fewer controls.',
   },
   {
     id: 'variable-entorno-nueva',
-    titulo: 'Variable de entorno nueva o leída',
+    titulo: 'New or newly read environment variable',
     severidad: 'aviso',
     archivos: CODIGO,
     patron: /process\.env\.([A-Z][A-Z0-9_]+)/,
     excluir: PRUEBAS,
-    mensaje: 'Confirmar que existe en pruebas y producción antes del despliegue.',
-    origen: 'Una variable que falta en un ambiente rompe el despliegue o cambia el comportamiento en silencio.',
+    mensaje: 'Confirm it exists in testing and production before deploying.',
+    origen: 'A variable missing from an environment breaks the deployment or silently changes behavior.',
   },
   {
     id: 'ddl',
-    titulo: 'Cambio de esquema (DDL)',
+    titulo: 'Schema change (DDL)',
     severidad: 'aviso',
     archivos: /\.(sql|ts)$/,
     patron: /\b(CREATE|ALTER|DROP)\s+(TABLE|INDEX|COLUMN|TYPE|SEQUENCE)\b|\bADD\s+COLUMN\b/i,
     excluir: PRUEBAS,
-    mensaje: 'El SQL debe correr antes del despliegue y el código debe tolerar que aún no exista.',
-    origen: 'Si el código sale antes que el SQL, falla contra un esquema que aún no cambió.',
+    mensaje: 'The SQL must run before the deployment and the code must tolerate it not existing yet.',
+    origen: 'If the code ships before the SQL, it fails against a schema that has not changed yet.',
   },
   {
     id: 'dependencias',
-    titulo: 'Cambio de dependencias',
+    titulo: 'Dependency change',
     severidad: 'aviso',
     archivos: /(^|\/)(package\.json|package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$/,
     porArchivo: true,
-    mensaje: 'Validar el build y las pruebas en CI con las dependencias nuevas.',
-    origen: 'Un cambio de dependencias afecta a todo el proyecto, no solo a las líneas de la PR.',
+    mensaje: 'Validate the build and tests in CI with the new dependencies.',
+    origen: 'A dependency change affects the whole project, not just the PR\'s lines.',
   },
 ];
 
-// Reglas propias de un proyecto, en `reglas` de proyectos.json, con las expresiones como texto.
-// soloEnTexto: la línea cuenta solo en vistas o si el patrón aparece dentro de una cadena (texto visible).
+// Project-specific rules, under `reglas` in proyectos.json, with the expressions as strings.
+// soloEnTexto: the line counts only in views or if the pattern appears inside a string literal (visible text).
 export function reglasDeConfig(lista = []) {
   return lista.map((r) => {
     const re = (x) => (x ? new RegExp(x, r.flags ?? '') : undefined);
@@ -145,7 +145,7 @@ export function reglasDeConfig(lista = []) {
       patron,
       excluir: re(r.excluir),
       ...(r.soloEnTexto ? { cuando: (linea, archivo) => VISTAS.test(archivo) || enCadena.test(linea) } : {}),
-      origen: r.origen ?? 'Regla del proyecto.',
+      origen: r.origen ?? 'Project rule.',
     };
   });
 }

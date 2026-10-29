@@ -1,21 +1,21 @@
-# Cómo contribuir
+# Contributing
 
-## Ramas
-- `main` tiene solo versiones publicadas. El trabajo va en una rama por tema (`feat/...`, `fix/...`) y entra por PR.
-- Una PR por cambio coherente; las pruebas deben pasar antes de pedir revisión.
+## Branches
+- `main` holds only released versions. Work goes in one branch per topic (`feat/...`, `fix/...`) and lands through a PR.
+- One PR per coherent change; tests must pass before requesting review.
 
 ## Commits
-- Mensaje en español, impersonal, en hechos: `<plugin|área>: qué cambia` (por ejemplo `tablero: botón para cerrar el menú lateral`).
-- El commit que publica una versión empieza con `<plugin> X.Y.Z:` y resume lo que trae.
-- Sin trailers ni firmas de herramientas de IA (`Co-Authored-By`, `Claude-Session` y similares).
-- Cada commit con su identidad git real; no forzar un autor compartido.
+- Messages in English, factual style: `<plugin|area>: what changes` (for example `dashboard: button to close the side menu`).
+- The commit that releases a version starts with `<plugin> X.Y.Z:` and summarizes what it brings.
+- No AI tool trailers or signatures (`Co-Authored-By`, `Claude-Session` and similar).
+- Each commit with its real git identity; do not force a shared author.
 
-## Versiones
-1. Subir la versión en `plugins/<plugin>/.claude-plugin/plugin.json` y en `mcp/server.mjs`.
-2. Agregar la entrada en `CHANGELOG.md`.
-3. Correr las pruebas: `node --test 'test/*.test.mjs'` y `node test/humo.mjs` desde `plugins/<plugin>`. Antes de publicar,
-   también la prueba real de permisos: `SEKI_PRUEBA_REAL=1 node --test test/permisos-real.test.mjs` (cuesta centavos).
-4. Commit de versión, etiqueta anotada `<plugin>-vX.Y.Z` y push con `--follow-tags`.
+## Versions
+1. Bump the version in `plugins/<plugin>/.claude-plugin/plugin.json` and in `mcp/server.mjs`.
+2. Add the entry in `CHANGELOG.md`.
+3. Run the tests: `node --test 'test/*.test.mjs'` and `node test/humo.mjs` from `plugins/<plugin>`. Before releasing,
+   also run the real permissions test: `SEKI_PRUEBA_REAL=1 node --test test/permisos-real.test.mjs` (costs a few cents).
+4. Version commit, annotated tag `<plugin>-vX.Y.Z` and push with `--follow-tags`.
 
-## Datos
-- Nada de secretos, archivos `.env`, tokens, datos de clientes ni salidas del tablero (`revision-prs/`) en el repo.
+## Data
+- No secrets, `.env` files, tokens, customer data or dashboard output (`revision-prs/`) in the repo.

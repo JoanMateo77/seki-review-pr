@@ -1,6 +1,6 @@
-// Explicación de una PR lanzada desde el tablero. El servidor arma el contexto (descripción, verificaciones,
-// diff) para que la IA no gaste turnos pidiéndolo. Lo que no cabe en el mensaje queda en disco, parche por parche, junto
-// a una copia de solo lectura de la PR; la cobertura se mide por lo que la IA de verdad leyó.
+// PR explanation launched from the dashboard. The server builds the context (description, checks,
+// diff) so the AI does not spend turns asking for it. Whatever does not fit in the message stays on disk, patch by patch, next
+// to a read-only copy of the PR; coverage is measured by what the AI actually read.
 import { mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { escribirJson, leerJson, rutaExplicacion, rutaVerificacion } from './cache.mjs';
@@ -12,7 +12,7 @@ import { ghJson } from './proceso.mjs';
 
 const MAX_LINEAS = 1500;
 
-// Orden del cupo: primero lo que define el cambio, al final pruebas y documentación. Lo generado nunca entra.
+// Budget order: first what defines the change, tests and documentation last. Generated files never go in.
 const GENERADO = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|composer\.lock|Cargo\.lock|poetry\.lock|go\.sum)$|\.min\.(js|css)$|\.map$|\.snap$|(^|\/)(dist|build|vendor|coverage)\//;
 const ESQUEMA = /(^|\/)(migrations?|db|sql)\/|\.sql$/i;
 const PRUEBA = /(__tests__|(^|\/)tests?\/|\.spec\.|\.test\.|_test\.)/;
@@ -27,9 +27,9 @@ export function prioridad(archivo) {
   return 1;
 }
 
-// Qué parte del diff entra en el mensaje y qué queda para leer aparte. El cupo se reparte en dos rondas para que un
-// archivo enorme no deje fuera a los demás: primero hasta POR_ARCHIVO líneas de cada uno, en orden de prioridad, y lo
-// que sobre amplía los recortados.
+// Which part of the diff goes in the message and which is left to read separately. The budget is split in two rounds so a
+// huge file does not crowd out the rest: first up to POR_ARCHIVO lines of each, in priority order, and whatever
+// is left extends the truncated ones.
 const POR_ARCHIVO = 300;
 export function recortarDiff(archivos, max = MAX_LINEAS) {
   const generados = [];
@@ -57,12 +57,12 @@ export function recortarDiff(archivos, max = MAX_LINEAS) {
   for (const { a, lineas, tomar } of candidatos) {
     if (!tomar) { sinDiff.push(a.filename); continue; }
     if (tomar < lineas.length) recortados.push(a.filename);
-    diffs.push(`### ${a.filename} (${a.status}, +${a.additions} −${a.deletions})\n${lineas.slice(0, tomar).join('\n')}${tomar < lineas.length ? `\n... (${lineas.length - tomar} líneas omitidas)` : ''}`);
+    diffs.push(`### ${a.filename} (${a.status}, +${a.additions} −${a.deletions})\n${lineas.slice(0, tomar).join('\n')}${tomar < lineas.length ? `\n... (${lineas.length - tomar} lines omitted)` : ''}`);
   }
   return { diffs, sinDiff, recortados, generados, cobertura: { completa: !sinDiff.length && !recortados.length, archivos: archivos.length, sinDiff, recortados, generados } };
 }
 
-// Un parche por archivo, con la misma ruta, para que la IA abra los que no vinieron en el mensaje.
+// One patch per file, with the same path, so the AI can open the ones that were not in the message.
 export function escribirParches(dir, archivos) {
   rmSync(dir, { recursive: true, force: true });
   const rutas = {};
@@ -78,11 +78,11 @@ export function escribirParches(dir, archivos) {
 
 const formas = (d) => {
   let real = d;
-  try { real = realpathSync(d); } catch { /* aún no existe */ }
+  try { real = realpathSync(d); } catch { /* does not exist yet */ }
   return [...new Set([d, real])];
 };
 
-// Archivos de la PR que la IA abrió: su parche o el archivo en la copia de la PR.
+// PR files the AI opened: their patch or the file in the PR copy.
 export function archivosLeidos(herramientas, { parches = {}, copia = null }) {
   const porParche = new Map();
   for (const [archivo, ruta] of Object.entries(parches)) for (const f of formas(ruta)) porParche.set(f, archivo);
@@ -98,7 +98,7 @@ export function archivosLeidos(herramientas, { parches = {}, copia = null }) {
   return leidos;
 }
 
-// Cobertura final: lo que no vino entero en el mensaje cuenta como revisado solo si la IA lo leyó aparte.
+// Final coverage: what did not come in full in the message counts as reviewed only if the AI read it separately.
 export function coberturaReal(base, leidos, previa = null) {
   const yaVistos = new Set(previa?.leidosAparte ?? []);
   const visto = (f) => leidos.has(f) || yaVistos.has(f);
@@ -113,24 +113,24 @@ export function promptExplicar({ pr, proyecto, detalle, archivos, verificaciones
   const { diffs, sinDiff, recortados, generados } = recortarDiff(elegidos);
   const hallazgos = (verificaciones?.hallazgos ?? []).map((h) => `- ${h.severidad} · ${h.titulo} · ${h.archivo}:${h.linea ?? '?'} · ${h.mensaje}`);
   const aparte = [...recortados, ...sinDiff];
-  const enDisco = aparte.map((f) => `- ${f}${recortados.includes(f) ? ' (recortado en el mensaje)' : ''}${parches[f] ? `: ${parches[f]}` : ': sin parche (binario o muy grande)'}`);
+  const enDisco = aparte.map((f) => `- ${f}${recortados.includes(f) ? ' (truncated in the message)' : ''}${parches[f] ? `: ${parches[f]}` : ': no patch (binary or too large)'}`);
   return [
-    `PR ${pr.id} del proyecto ${proyecto}: "${pr.titulo}". ${pr.base} ← ${pr.rama}, +${pr.adiciones} −${pr.eliminaciones}.`,
-    ...(previa ? [`## Explicación actual (completarla, no rehacerla)\n${JSON.stringify(previa, null, 1)}`] : []),
-    `## Descripción\n${detalle?.body?.trim() || '(sin descripción)'}`,
-    `## Commits\n${(detalle?.commits ?? []).map((c) => `- ${c.messageHeadline}`).join('\n') || '(sin datos)'}`,
-    `## Verificaciones automáticas\n${hallazgos.join('\n') || 'Sin hallazgos.'}`,
-    `## Diff${foco ? ' de los archivos que faltaban' : ''}\n${diffs.join('\n\n')}`,
-    ...(aparte.length ? [`## Parches que no vinieron completos en el mensaje\nLeerlos con Read antes de explicar, primero los de código y esquema, luego pantallas; las pruebas solo para saber qué cubren. Lo que no se lea, decirlo en riesgos y no afirmar nada sobre esos archivos.\n${enDisco.join('\n')}`] : []),
-    ...(generados.length ? [`## Archivos generados (no revisar)\n${generados.map((f) => `- ${f}`).join('\n')}`] : []),
-    copia ? `El directorio actual es una copia de solo lectura de la PR en su commit: para ver un archivo completo o quién usa algo, Read y Grep ahí.` : '',
+    `PR ${pr.id} in project ${proyecto}: "${pr.titulo}". ${pr.base} ← ${pr.rama}, +${pr.adiciones} −${pr.eliminaciones}.`,
+    ...(previa ? [`## Current explanation (complete it, do not redo it)\n${JSON.stringify(previa, null, 1)}`] : []),
+    `## Description\n${detalle?.body?.trim() || '(no description)'}`,
+    `## Commits\n${(detalle?.commits ?? []).map((c) => `- ${c.messageHeadline}`).join('\n') || '(no data)'}`,
+    `## Automated checks\n${hallazgos.join('\n') || 'No findings.'}`,
+    `## Diff${foco ? ' of the missing files' : ''}\n${diffs.join('\n\n')}`,
+    ...(aparte.length ? [`## Patches that did not come in full in the message\nRead them with Read before explaining: code and schema first, then screens; tests only to learn what they cover. Whatever is not read, say so in riesgos and do not claim anything about those files.\n${enDisco.join('\n')}`] : []),
+    ...(generados.length ? [`## Generated files (do not review)\n${generados.map((f) => `- ${f}`).join('\n')}`] : []),
+    copia ? `The current directory is a read-only copy of the PR at its commit: to see a full file or who uses something, use Read and Grep there.` : '',
     previa
-      ? `Guardar con pr_guardar_explicacion (proyecto "${proyecto}", repo "${pr.repo}", numero ${pr.numero}${pr.headSha ? `, headSha "${pr.headSha}"` : ''}) la explicación completa: conservar lo que sigue siendo cierto y sumar lo que muestran estos archivos (que_cambia, riesgos, orden_lectura, como_probar, dependencias). Responder "listo".`
-      : `Guardar con pr_guardar_explicacion (proyecto "${proyecto}", repo "${pr.repo}", numero ${pr.numero}${pr.headSha ? `, headSha "${pr.headSha}"` : ''}), incluidos esfuerzo y orden_lectura, y diagrama solo si cambia un flujo. Responder "listo".`,
+      ? `Save the full explanation with pr_guardar_explicacion (proyecto "${proyecto}", repo "${pr.repo}", numero ${pr.numero}${pr.headSha ? `, headSha "${pr.headSha}"` : ''}): keep what is still true and add what these files show (que_cambia, riesgos, orden_lectura, como_probar, dependencias). Reply "done".`
+      : `Save with pr_guardar_explicacion (proyecto "${proyecto}", repo "${pr.repo}", numero ${pr.numero}${pr.headSha ? `, headSha "${pr.headSha}"` : ''}), including esfuerzo and orden_lectura, and diagrama only if a flow changes. Reply "done".`,
   ].filter(Boolean).join('\n\n');
 }
 
-// completar: analiza solo los archivos que la explicación vigente no revisó y la amplía.
+// completar: analyzes only the files the current explanation did not review and extends it.
 export async function explicarConIa(p, pr, { completar = false } = {}) {
   const clave = `pr:${pr.id}`;
   fijarAvance(clave, { fase: 'preparando' });
@@ -142,7 +142,7 @@ export async function explicarConIa(p, pr, { completar = false } = {}) {
 }
 
 const faltantes = (c) => [...(c?.sinDiff ?? []), ...(c?.recortados ?? [])];
-// Vale la pena una segunda pasada si quedó sin ver algo que no es prueba ni documentación.
+// A second pass is worth it if something that is not a test or documentation was left unseen.
 const faltaCodigo = (c) => faltantes(c).some((f) => prioridad(f) <= 2);
 
 async function explicar(p, pr, clave, { completar }) {
@@ -152,7 +152,7 @@ async function explicar(p, pr, clave, { completar }) {
   ]);
   const ruta = rutaExplicacion(p.salida, pr.repo, pr.numero);
   const vigente = () => { const e = leerJson(ruta); return e?.headSha === pr.headSha ? e : null; };
-  // Sin checkout configurado no hay copia: la IA trabaja solo con el diff (mensaje y parches).
+  // Without a configured checkout there is no copy: the AI works only with the diff (message and patches).
   const copia = await crearCopia(p, pr.repo, pr.numero, pr.headSha, { sufijo: '-lectura' }).catch(() => null);
   const dirParches = join(p.copias ?? join(p.salida, 'copias'), 'diffs', `${pr.repo}-${pr.numero}`);
   const parches = escribirParches(dirParches, archivos);
@@ -175,7 +175,7 @@ async function explicar(p, pr, clave, { completar }) {
     }), { cwd: copia ?? dirVacio(p), alUsar: (h) => contarHerramienta(clave, h, [copia, dirParches].filter(Boolean)) });
     pasadas++;
     costo += r.costo ?? 0;
-    const ok = r.ok && /listo/i.test(r.texto);
+    const ok = r.ok && /\b(done|listo)\b/i.test(r.texto);
     registrarCosto(p, { tipo: 'explicar', prId: pr.id, modelo: r.modelo ?? modelo, uso: r.uso, costo: r.costo, ok, ...(previa ? { completar: true } : {}) });
     if (!ok) return { ok, r };
     const e = vigente();
@@ -189,7 +189,7 @@ async function explicar(p, pr, clave, { completar }) {
 
   const previa = completar ? vigente() : null;
   let res = await pasada(previa?.cobertura && !previa.cobertura.completa ? previa : null);
-  // Si tras la primera pasada quedó código sin ver, se amplía una vez sola.
+  // If code was left unseen after the first pass, it is extended exactly once.
   if (res.ok && !completar && faltaCodigo(vigente()?.cobertura)) res = await pasada(vigente());
   const { ok, r } = res;
   return { ok, motivo: ok ? null : r.motivo ?? r.texto.slice(0, 400), costo, modelo: r.modelo ?? modelo, pasadas };

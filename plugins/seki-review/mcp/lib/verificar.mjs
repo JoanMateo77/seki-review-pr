@@ -1,9 +1,10 @@
 import { SEVERIDADES, reglasDelRepo } from './reglas.mjs';
 
-const IGNORAR = /seki-review:\s*ignorar\s+([\w-]+)/;
+// Accepts both `ignore` and the original Spanish `ignorar`, so existing directives keep working.
+const IGNORAR = /seki-review:\s*(?:ignore|ignorar)\s+([\w-]+)/;
 const MAX_POR_REGLA_Y_ARCHIVO = 5;
 
-// Líneas agregadas de un parche unificado, con su número en la versión nueva del archivo.
+// Added lines of a unified patch, with their line number in the new version of the file.
 export function lineasAgregadas(patch = '') {
   const salida = [];
   let nueva = 0;
@@ -16,7 +17,7 @@ export function lineasAgregadas(patch = '') {
   return salida;
 }
 
-// `git diff` local -> misma forma que la API de archivos de GitHub ({ filename, status, patch }).
+// Local `git diff` -> same shape as GitHub's files API ({ filename, status, patch }).
 export function archivosDeDiff(diff) {
   return diff.split(/^diff --git /m).slice(1).map((bloque) => {
     const destino = /^\+\+\+ (?:b\/)?(.+)$/m.exec(bloque)?.[1];
@@ -60,12 +61,12 @@ export function verificar({ repo, archivos, commits = [], omitidas = [], extra =
     if (ATRIBUCION_IA.test(`${c.messageHeadline}\n${c.messageBody ?? ''}`)) {
       hallazgos.push({
         regla: 'atribucion-ia',
-        titulo: 'Commit con firma de Claude',
+        titulo: 'Commit with AI attribution',
         severidad: 'alto',
         archivo: `commit ${c.oid?.slice(0, 7) ?? ''}`.trim(),
         texto: c.messageHeadline,
-        mensaje: 'Quitar el trailer Co-Authored-By / Claude-Session antes de mergear.',
-        origen: 'Regla permanente: sin firma de Claude en commits ni PRs.',
+        mensaje: 'Remove the Co-Authored-By / Claude-Session trailer before merging.',
+        origen: 'Standing rule: no AI attribution in commits or PRs.',
       });
     }
   }

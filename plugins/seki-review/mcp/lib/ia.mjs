@@ -1,5 +1,5 @@
-// Trabajos de IA que lanza el tablero: `claude -p` en modo mínimo (sin CLAUDE.md, memoria, skills ni MCP ajenos)
-// y con el modelo según la dificultad. No afecta las sesiones normales de Claude Code.
+// AI jobs launched by the dashboard: `claude -p` in minimal mode (no CLAUDE.md, memory, skills or third-party MCP)
+// and with the model chosen by difficulty. Does not affect regular Claude Code sessions.
 import { spawn } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -11,13 +11,13 @@ const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../..');
 export const TOPES = { responder: 0.5, explicar: 2, cambiar: 1.5, investigar: 1, filtrar: 0.5 };
 export const TURNOS = { responder: 4, explicar: 30, cambiar: 40, investigar: 25, filtrar: 3 };
 
-// Archivos que la IA no puede leer en ningún directorio que se le abra; cada proyecto suma los suyos en `secretos`.
-// Las reglas de Read también rigen Grep y Glob; van con la ruta absoluta de cada directorio porque las relativas solo
-// cubren el directorio de trabajo.
+// Files the AI cannot read in any directory opened to it; each project adds its own in `secretos`.
+// Read rules also govern Grep and Glob; they use each directory's absolute path because relative ones only
+// cover the working directory.
 const SECRETOS = ['*.env', '.env*', '*.pem', '*.key', '*.p12', '*.pfx', '.npmrc', 'credentials*', 'secrets*', 'id_rsa*', 'id_ed25519*'];
 export const reglasSecretos = (dirs, extra = []) => dirs.flatMap((d) => {
   let real = d;
-  try { real = realpathSync(d); } catch { /* aún no existe */ }
+  try { real = realpathSync(d); } catch { /* does not exist yet */ }
   return [...SECRETOS, ...extra].map((s) => `Read(/${real}/**/${s})`);
 });
 
@@ -37,14 +37,14 @@ const ESCRITURA = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 
 const configMcp = () => JSON.stringify({ mcpServers: { 'seki-review': { command: 'sh', args: [join(RAIZ, 'bin/servidor.sh')] } } });
 
-// traza: salida stream-json para saber qué herramientas usó la IA; la última línea sigue siendo el resultado.
+// traza: stream-json output to know which tools the AI used; the last line is still the result.
 export function argsClaude({ modelo, sistema, prompt, schema, tools = [], mcp = false, tope: usd, turnos, sesion, persistir = false, dirs = [], prohibidas = [], traza = false }) {
   const args = ['-p', prompt, '--model', modelo, '--system-prompt', sistema,
     '--strict-mcp-config', '--tools', tools.join(','), '--disable-slash-commands', '--setting-sources', '',
     '--max-budget-usd', String(usd), '--max-turns', String(turnos), '--output-format', traza ? 'stream-json' : 'json'];
   if (traza) args.push('--verbose');
   if (mcp) args.push('--mcp-config', configMcp());
-  // Edit y Write en --allowedTools escriben en cualquier ruta; acceptEdits solo acepta dentro del cwd.
+  // Edit and Write in --allowedTools write to any path; acceptEdits only accepts inside the cwd.
   const edita = tools.some((t) => ESCRITURA.has(t));
   const permitidas = [...(mcp ? ['mcp__seki-review'] : []), ...tools.filter((t) => !ESCRITURA.has(t))];
   if (permitidas.length) args.push('--allowedTools', permitidas.join(' '));
@@ -58,8 +58,8 @@ export function argsClaude({ modelo, sistema, prompt, schema, tools = [], mcp = 
 }
 
 const MOTIVOS = {
-  error_max_budget_usd: 'Se alcanzó el tope de costo del trabajo',
-  error_max_turns: 'Se alcanzó el límite de turnos del trabajo',
+  error_max_budget_usd: 'The job reached its cost cap',
+  error_max_turns: 'The job reached its turn limit',
 };
 
 function uso(r) {
@@ -73,7 +73,7 @@ function uso(r) {
   return u;
 }
 
-// Llamadas a herramientas de una salida stream-json, en orden.
+// Tool calls from a stream-json output, in order.
 export function herramientasUsadas(salida) {
   const usadas = [];
   for (const linea of salida.split('\n')) {
@@ -95,25 +95,25 @@ export function ejecutarClaude(args, { cwd, limiteMs = 10 * 60 * 1000, alUsar })
     hijo.stdout.on('data', (d) => {
       salida += d;
       if (!alUsar) return;
-      // Con stream-json cada línea completa es un evento: se avisa cada herramienta apenas la IA la pide.
+      // With stream-json each complete line is an event: each tool is reported as soon as the AI requests it.
       const lineas = (pendiente + d).split('\n');
       pendiente = lineas.pop();
-      for (const h of herramientasUsadas(lineas.join('\n'))) { try { alUsar(h); } catch { /* el avance no frena el trabajo */ } }
+      for (const h of herramientasUsadas(lineas.join('\n'))) { try { alUsar(h); } catch { /* progress reporting does not stop the job */ } }
     });
     hijo.stderr.on('data', (d) => { errores += d; });
     const reloj = setTimeout(() => { vencido = true; hijo.kill('SIGTERM'); }, limiteMs);
     const cerrar = (codigo) => {
       clearTimeout(reloj);
       let r = null;
-      try { r = JSON.parse(salida.trim().split('\n').pop()); } catch { /* salida no JSON */ }
+      try { r = JSON.parse(salida.trim().split('\n').pop()); } catch { /* non-JSON output */ }
       const conSchema = args.includes('--json-schema');
       const ok = codigo === 0 && !!r && !r.is_error && (!conSchema || r.structured_output !== undefined);
       let motivo = null;
       if (!ok) {
-        motivo = vencido ? 'El trabajo superó el tiempo máximo'
+        motivo = vencido ? 'The job exceeded the maximum time'
           : MOTIVOS[r?.subtype]
-          ?? (r && !r.is_error && conSchema ? 'La respuesta no llegó con el formato esperado' : null)
-          ?? (r?.errors?.join(' ') || errores.trim() || r?.result || `claude terminó con código ${codigo}`).slice(0, 400);
+          ?? (r && !r.is_error && conSchema ? 'The response did not arrive in the expected format' : null)
+          ?? (r?.errors?.join(' ') || errores.trim() || r?.result || `claude exited with code ${codigo}`).slice(0, 400);
       }
       resolver({
         ok,
@@ -133,7 +133,7 @@ export function ejecutarClaude(args, { cwd, limiteMs = 10 * 60 * 1000, alUsar })
   });
 }
 
-// Directorio sin CLAUDE.md para los trabajos que no necesitan una copia del repo.
+// Directory without CLAUDE.md for jobs that do not need a copy of the repo.
 export function dirVacio(p) {
   const dir = join(p.salida, '.ia-vacio');
   mkdirSync(dir, { recursive: true });
@@ -143,8 +143,8 @@ export function dirVacio(p) {
 const PROMPTS = join(RAIZ, 'mcp/prompts');
 export const promptSistema = (...nombres) => nombres.map((n) => readFileSync(join(PROMPTS, `${n}.md`), 'utf8').trim()).join('\n\n');
 
-// Prompt de sistema con el contexto del proyecto (stack, reglas de texto y de código) de proyectos.json.
-export const sistemaDe = (p, ...nombres) => [promptSistema(...nombres), ...(p?.contexto ? [`# Contexto del proyecto\n\n${p.contexto}`] : [])].join('\n\n');
+// System prompt with the project context (stack, writing and code rules) from proyectos.json.
+export const sistemaDe = (p, ...nombres) => [promptSistema(...nombres), ...(p?.contexto ? [`# Project context\n\n${p.contexto}`] : [])].join('\n\n');
 
 export function registrarCosto(p, { fecha = new Date().toISOString(), ...datos }) {
   const ruta = rutaCostos(p.salida);
@@ -169,8 +169,8 @@ export function costosDelDia(p, dia = new Date().toISOString().slice(0, 10)) {
 
 const nombreCorto = (m) => (/opus/i.test(m) ? 'opus' : /haiku/i.test(m) ? 'haiku' : /sonnet/i.test(m) ? 'sonnet' : m || 'otro');
 
-// Costo por modelo de los últimos días frente a lo que la persona marcó como útil, para calibrar la elección de
-// modelo con datos propios. Un análisis repetido sobre la misma PR cuenta como reintento.
+// Cost per model over the last days versus what the person marked as useful, to calibrate model choice
+// with our own data. A repeated analysis of the same PR counts as a retry.
 export function resumenCostos(p, { dias = 30, ahora = Date.now() } = {}) {
   const ruta = rutaCostos(p.salida);
   const desde = new Date(ahora - dias * 86400000).toISOString();

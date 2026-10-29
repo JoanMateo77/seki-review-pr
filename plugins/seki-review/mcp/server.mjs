@@ -1,6 +1,6 @@
-// Servidor MCP por stdio sin dependencias: JSON-RPC 2.0, un mensaje por línea.
-// Cada archivo de tools/ exporta por defecto { name, description, inputSchema, handler }
-// y se registra solo al arrancar.
+// Dependency-free stdio MCP server: JSON-RPC 2.0, one message per line.
+// Each file in tools/ default-exports { name, description, inputSchema, handler }
+// and registers itself on startup.
 import { readdirSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -21,7 +21,7 @@ const fallar = (id, code, message) => enviar({ jsonrpc: '2.0', id, error: { code
 
 async function llamarTool(id, { name, arguments: args = {} }) {
   const tool = tools.get(name);
-  if (!tool) return fallar(id, -32602, `Herramienta desconocida: ${name}`);
+  if (!tool) return fallar(id, -32602, `Unknown tool: ${name}`);
   try {
     const salida = await tool.handler(args);
     const texto = typeof salida === 'string' ? salida : JSON.stringify(salida, null, 2);
@@ -49,7 +49,7 @@ async function atender(msg) {
     case 'tools/call':
       return llamarTool(id, params);
     default:
-      if (id !== undefined) fallar(id, -32601, `Método no soportado: ${method}`);
+      if (id !== undefined) fallar(id, -32601, `Unsupported method: ${method}`);
   }
 }
 
@@ -59,7 +59,7 @@ createInterface({ input: process.stdin }).on('line', (linea) => {
   try {
     msg = JSON.parse(linea);
   } catch {
-    return fallar(null, -32700, 'JSON inválido');
+    return fallar(null, -32700, 'Invalid JSON');
   }
   atender(msg).catch((err) => msg.id !== undefined && fallar(msg.id, -32603, err.message));
 });

@@ -19,30 +19,30 @@ function config(obj) {
   process.env.SEKI_REVIEW_CONFIG = ruta;
 }
 
-test('sin clave usa SEKI_PROYECTO o el primer proyecto, y las copias van fuera del proyecto', () => {
+test('without a key uses SEKI_PROYECTO or the first project, and copies live outside the project', () => {
   config({ uno: { salida: '/s/uno', repos: {} }, dos: { salida: '/s/dos', repos: {} } });
   delete process.env.SEKI_PROYECTO;
   assert.equal(proyecto().clave, 'uno');
   assert.match(proyecto().copias, /\.cache\/seki-review\/copias\/uno$/);
   process.env.SEKI_PROYECTO = 'dos';
   assert.equal(proyecto().clave, 'dos');
-  assert.throws(() => proyecto('tres'), /Proyecto "tres" no está/);
+  assert.throws(() => proyecto('tres'), /Project "tres" is not in/);
 });
 
-test('una regla propia del proyecto se aplica con soloEnTexto, exclusiones y repos', () => {
+test('a project-specific rule applies with soloEnTexto, exclusions and repos', () => {
   const extra = reglasDeConfig([
-    { id: 'palabra', titulo: 'Palabra vetada', severidad: 'alto', archivos: '\\.(ts|ejs)$', patron: '\\bcliente\\b', flags: 'i', excluir: '^\\s*//', soloEnTexto: true, mensaje: 'Decir usuario.' },
-    { id: 'solo-web', titulo: 'Solo web', severidad: 'raro', archivos: '\\.js$', patron: 'x', repos: ['web'], mensaje: 'm' },
+    { id: 'palabra', titulo: 'Banned word', severidad: 'alto', archivos: '\\.(ts|ejs)$', patron: '\\bcliente\\b', flags: 'i', excluir: '^\\s*//', soloEnTexto: true, mensaje: 'Say user.' },
+    { id: 'solo-web', titulo: 'Web only', severidad: 'raro', archivos: '\\.js$', patron: 'x', repos: ['web'], mensaje: 'm' },
   ]);
   assert.equal(extra[1].severidad, 'aviso');
   const archivos = [{ filename: 'a.ts', status: 'modified', patch: '@@ -1,0 +1,4 @@\n+const cliente = 1;\n+msg("Hola Cliente");\n+// cliente en comentario\n+x' }, { filename: 'v.ejs', status: 'added', patch: '@@ -0,0 +1 @@\n+<p>cliente</p>' }];
   const r = verificar({ repo: 'api', archivos, extra });
-  const propios = r.hallazgos.filter((h) => h.regla === 'palabra' || h.titulo === 'Palabra vetada');
+  const propios = r.hallazgos.filter((h) => h.regla === 'palabra' || h.titulo === 'Banned word');
   assert.deepEqual(propios.map((h) => `${h.archivo}:${h.linea}`), ['a.ts:2', 'v.ejs:1']);
-  assert.ok(!r.hallazgos.some((h) => h.titulo === 'Solo web'));
+  assert.ok(!r.hallazgos.some((h) => h.titulo === 'Web only'));
 });
 
-test('el prompt de sistema lleva el contexto del proyecto solo si existe', () => {
-  assert.match(sistemaDe({ contexto: 'Decir "usuario".' }, 'base'), /# Contexto del proyecto\n\nDecir "usuario"\./);
-  assert.doesNotMatch(sistemaDe({}, 'base'), /Contexto del proyecto/);
+test('the system prompt includes the project context only if it exists', () => {
+  assert.match(sistemaDe({ contexto: 'Decir "usuario".' }, 'base'), /# Project context\n\nDecir "usuario"\./);
+  assert.doesNotMatch(sistemaDe({}, 'base'), /Project context/);
 });

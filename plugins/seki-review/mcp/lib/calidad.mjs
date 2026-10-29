@@ -1,5 +1,5 @@
-// Comprobaciones sin IA de una propuesta de cambio: reglas del proyecto sobre las líneas agregadas, tipos y tests
-// relacionados. Los fallos que ya existían en el commit de la PR (baseline) no se atribuyen a la propuesta.
+// Non-AI checks of a change proposal: project rules on the added lines, types and related
+// tests. Failures that already existed in the PR commit (baseline) are not attributed to the proposal.
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { leerJson, escribirJson, rutaBaseline } from './cache.mjs';
@@ -15,7 +15,7 @@ import { reglasDeConfig } from './reglas.mjs';
 const LIMITE_MS = 5 * 60 * 1000;
 const MAX_SALIDA = 4000;
 
-// Un comando de tipos o tests a la vez en toda la máquina: jest y tsc consumen mucha memoria.
+// One types or tests command at a time across the whole machine: jest and tsc use a lot of memory.
 let turno = Promise.resolve();
 const enTurno = (fn) => { const t = turno.then(fn, fn); turno = t.catch(() => {}); return t; };
 
@@ -33,7 +33,7 @@ function correr(cmd, args, { cwd, env, limiteMs }) {
   }));
 }
 
-// Sin números de línea: el mismo error se reconoce aunque el cambio desplace líneas.
+// No line numbers: the same error is recognized even if the change shifts lines.
 export function fallosDe(salida) {
   const fallos = new Set();
   for (const l of salida.split('\n')) {
@@ -56,8 +56,8 @@ async function medir(cfg, clave, dir, archivos, limiteMs) {
 
 const claveArchivos = (archivos) => createHash('sha256').update([...archivos].sort().join('\n')).digest('hex').slice(0, 16);
 
-// Corre los mismos comandos sobre la copia sin el cambio y guarda el resultado por commit. No usa git stash:
-// la lista de stash es compartida con el checkout del usuario y sus worktrees.
+// Runs the same commands on the copy without the change and stores the result per commit. Does not use git stash:
+// the stash list is shared with the user's checkout and its worktrees.
 async function baseline(p, repo, dir, headSha, patch, archivos, limiteMs) {
   const cfg = p.repos[repo].comprobar;
   const ruta = rutaBaseline(p.salida, repo, headSha);
@@ -76,7 +76,7 @@ async function baseline(p, repo, dir, headSha, patch, archivos, limiteMs) {
       await git(dir, ['apply', '--whitespace=nowarn', parche]);
       rmSync(tmp, { recursive: true, force: true });
     }
-    // Un baseline vencido no se guarda: puede salir bien la próxima vez.
+    // A timed-out baseline is not stored: it may succeed next time.
     escribirJson(ruta, { tipos: guardado.tipos ?? undefined, tests: Object.fromEntries(Object.entries(guardado.tests).filter(([, v]) => v !== null)) });
   }
   return { tipos: guardado.tipos, tests: guardado.tests[k] };
@@ -84,13 +84,13 @@ async function baseline(p, repo, dir, headSha, patch, archivos, limiteMs) {
 
 function resultado(r, base) {
   if (!r) return null;
-  if (r.vencido) return { ok: false, nuevosFallos: [], salida: 'Se superó el tiempo máximo de la comprobación.', omitido: 'tiempo' };
+  if (r.vencido) return { ok: false, nuevosFallos: [], salida: 'The check exceeded the maximum time.', omitido: 'tiempo' };
   const conocidos = new Set(base ?? []);
   const nuevosFallos = r.fallos.filter((f) => !conocidos.has(f));
   const sinFallosLegibles = r.codigo !== 0 && !r.fallos.length;
   return {
     ok: !nuevosFallos.length && !sinFallosLegibles,
-    nuevosFallos: sinFallosLegibles ? [`El comando terminó con código ${r.codigo}`] : nuevosFallos,
+    nuevosFallos: sinFallosLegibles ? [`The command exited with code ${r.codigo}`] : nuevosFallos,
     salida: r.salida.slice(-MAX_SALIDA),
     ...(base == null ? { sinBaseline: true } : {}),
   };

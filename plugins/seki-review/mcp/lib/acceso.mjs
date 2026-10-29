@@ -1,4 +1,4 @@
-// Token del tablero servido, fijo por proyecto y máquina para que el enlace no cambie entre sesiones.
+// Token of the served dashboard, fixed per project and machine so the link does not change between sessions.
 import { randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
@@ -17,8 +17,8 @@ export function tokenDe(p) {
   return token;
 }
 
-// Otra sesión de Claude Code puede estar sirviendo ya el mismo tablero en el puerto.
-// Estado del tablero que ya escucha en el puerto con el mismo token, o null si no hay ninguno.
+// Another Claude Code session may already be serving the same dashboard on the port.
+// State of the dashboard already listening on the port with the same token, or null if there is none.
 export const estadoServidor = (puerto, token) => new Promise((ok) => {
   const req = request({ host: '127.0.0.1', port: puerto, path: '/api/estado', headers: { 'x-seki-token': token }, timeout: 1500 }, (res) => {
     let cuerpo = '';
@@ -35,7 +35,7 @@ export const estadoServidor = (puerto, token) => new Promise((ok) => {
 
 export const servidorActivo = async (puerto, token) => (await estadoServidor(puerto, token)) !== null;
 
-// Pide al tablero de otra sesión que suelte el puerto; responde si lo soltó (los anteriores a 0.19.2 no saben).
+// Asks another session's dashboard to release the port; returns whether it did (versions before 0.19.2 cannot).
 export const pedirCeder = (puerto, token) => new Promise((ok) => {
   const req = request({ host: '127.0.0.1', port: puerto, path: '/api/ceder', method: 'POST', headers: { 'x-seki-token': token, 'content-type': 'application/json' }, timeout: 3000 }, (res) => {
     res.resume();

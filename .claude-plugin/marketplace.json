@@ -7,7 +7,7 @@
     {
       "name": "seki-review",
       "source": "./plugins/seki-review",
-      "description": "Seki Review: revisión de PRs con IA. Pendientes por ambiente, estado real frente a pruebas, explicación del cambio, preguntas sobre el código y tablero local"
+      "description": "Seki Review: AI-assisted PR review. Pending PRs per environment, real status against testing, change explanations, questions about the code and a local dashboard"
     }
   ]
 }

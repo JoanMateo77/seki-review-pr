@@ -3,19 +3,19 @@ import { iniciarServidor } from '../lib/servidor-web.mjs';
 export default {
   name: 'tablero_servir',
   description:
-    'Abre el tablero de revisión con acciones, servido en 127.0.0.1 mientras dure esta sesión (enlace fijo por máquina; si otra sesión ya lo sirve, abre ese y queda de reserva; una versión más nueva le pide el puerto a una vieja): botón para actualizar el estado ' +
-    '(qué se mergeó, qué es nuevo, qué cambió de grupo) y botones para analizar con IA una PR o todas las pendientes ' +
-    '(lanza claude -p en segundo plano con modelo sonnet y solo herramientas de lectura). Nada se publica fuera del equipo.',
+    'Opens the interactive review dashboard, served on 127.0.0.1 for the duration of this session (fixed link per machine; if another session already serves it, that one is opened and this one stays on standby; a newer version takes the port over from an older one): a button to refresh the status ' +
+    '(what was merged, what is new, what changed group) and buttons to analyze one PR or all pending PRs with AI ' +
+    '(runs claude -p in the background with the sonnet model and read-only tools). Nothing is published outside this machine.',
   inputSchema: {
     type: 'object',
     properties: {
-      proyecto: { type: 'string', description: 'Clave del proyecto en proyectos.json; si se omite, el predeterminado' },
+      proyecto: { type: 'string', description: 'Project key in proyectos.json; defaults to the default project if omitted' },
       puerto: { type: 'integer', default: 4317 },
       abrir: { type: 'boolean', default: true },
     },
   },
   async handler({ proyecto, puerto = 4317, abrir = true }) {
     const { url, yaEstaba, aviso } = await iniciarServidor({ proyecto, puerto, abrir });
-    return `${yaEstaba ? 'El tablero ya estaba servido' : 'Tablero servido'} en ${url} (solo este equipo; el enlace incluye el token de acceso).${aviso ? ` ${aviso}` : ''}`;
+    return `${yaEstaba ? 'The dashboard was already being served' : 'Dashboard served'} at ${url} (this machine only; the link includes the access token).${aviso ? ` ${aviso}` : ''}`;
   },
 };

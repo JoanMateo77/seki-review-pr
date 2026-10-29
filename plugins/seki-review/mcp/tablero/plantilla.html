@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -54,7 +54,7 @@ input[type=checkbox], input[type=radio] { accent-color: var(--acento); }
 .muy-tenue { color: var(--texto-3); }
 svg.i { width: 14px; height: 14px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; vertical-align: -2px; }
 
-/* Estructura: barra superior + lateral + cola + detalle */
+/* Layout: top bar + sidebar + queue + detail */
 .app { --ancho-lateral: 232px; --ancho-cola: clamp(300px, 27vw, 440px); display: grid; grid-template-columns: var(--ancho-lateral) var(--ancho-cola) minmax(0, 1fr); grid-template-rows: 48px 1fr; height: 100vh; }
 .barra { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; padding: 0 16px; border-bottom: 1px solid var(--linea); background: var(--panel); }
 .btn-lateral { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; margin-left: -6px; border: 0; border-radius: 6px; background: none; color: var(--texto-2); cursor: pointer; }
@@ -82,7 +82,7 @@ kbd { font: 12px/1.2 var(--mono); padding: 1px 5px; border: 1px solid var(--line
 .punto { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--linea-fuerte); }
 .punto.rojo { background: var(--rojo); } .punto.ambar { background: var(--ambar); } .punto.verde { background: var(--verde); } .punto.violeta { background: var(--violeta); }
 
-/* Cola */
+/* Queue */
 .cola { overflow: auto; border-right: 1px solid var(--linea); background: var(--panel); }
 .grupo-cab { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 14px; background: var(--lateral); border: 0; border-bottom: 1px solid var(--linea); cursor: pointer; text-align: left; font-weight: 600; }
 .grupo-cab:hover { background: var(--hover); }
@@ -117,7 +117,7 @@ kbd { font: 12px/1.2 var(--mono); padding: 1px 5px; border: 1px solid var(--line
 .vacio p { max-width: 40ch; margin: 0 auto; }
 .vacio button { margin-top: 12px; }
 
-/* Detalle */
+/* Detail */
 .detalle { overflow: auto; background: var(--bg); }
 .det { max-width: 820px; padding: 20px 28px 56px; }
 .det-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; color: var(--texto-2); }
@@ -182,7 +182,7 @@ textarea { width: 100%; min-height: 96px; padding: 8px 10px; border: 1px solid v
 
 .girando { animation: girar 1s linear infinite; }
 @keyframes girar { to { transform: rotate(360deg); } }
-/* Trabajo de IA en curso: barra indeterminada, tiempo transcurrido y esqueleto de la explicación */
+/* AI work in progress: indeterminate bar, elapsed time and explanation skeleton */
 .progreso { position: relative; height: 3px; margin-top: 8px; border-radius: 2px; background: var(--sel); overflow: hidden; }
 .progreso::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 35%; border-radius: 2px; background: var(--acento); animation: progreso 1.6s cubic-bezier(.4, 0, .2, 1) infinite; }
 @keyframes progreso { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
@@ -394,11 +394,11 @@ h3.con-accion .btn-texto { display: inline-flex; align-items: center; gap: 4px; 
 </head>
 <body>
 <!--
-THESIS: una bandeja de trabajo ordenada por la acción que toca, no un muro de tarjetas; rechaza las fichas con números grandes y la sopa de etiquetas.
-OWN-WORLD: neutros cálidos de herramienta, color solo para estado (verde listo, ámbar revisar, rojo bloquea, violeta mergeada), sans del sistema a 13 px, mono solo para ids, ramas y rutas.
-STORY: el autor ve qué hacer hoy; el revisor entiende una PR, deja su decisión y la exporta como archivo.
-FIRST VIEWPORT: lateral con vistas y conteos, cola agrupada con filas de una línea, detalle con pila de estados y pestañas.
-FORM: bandeja de tres columnas (Linear, GitHub) y detalle tipo merge request (GitLab, Graphite); referencias de Mobbin.
+THESIS: a work inbox ordered by the next action, not a wall of cards; rejects big-number tiles and tag soup.
+OWN-WORLD: warm tool neutrals, color only for status (green ready, amber review, red blocks, violet merged), system sans at 13 px, mono only for ids, branches and paths.
+STORY: the author sees what to do today; the reviewer understands a PR, records a decision and exports it as a file.
+FIRST VIEWPORT: sidebar with views and counts, grouped queue with one-line rows, detail with status stack and tabs.
+FORM: three-column inbox (Linear, GitHub) and merge-request-style detail (GitLab, Graphite); Mobbin references.
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
 -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -426,63 +426,63 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 
 <div class="app">
   <header class="barra">
-    <button class="btn-lateral" data-accion="lateral" aria-label="Mostrar u ocultar el menú lateral" aria-pressed="true" title="Menú lateral ( [ )"><svg class="i" aria-hidden="true"><use href="#i-lateral"/></svg></button>
-    <button class="btn-lateral" data-accion="cola" aria-label="Mostrar u ocultar la cola de PRs" aria-pressed="true" title="Cola de PRs ( ] )" style="margin-left:-12px"><svg class="i" aria-hidden="true"><use href="#i-cola"/></svg></button>
+    <button class="btn-lateral" data-accion="lateral" aria-label="Show or hide the sidebar" aria-pressed="true" title="Sidebar ( [ )"><svg class="i" aria-hidden="true"><use href="#i-lateral"/></svg></button>
+    <button class="btn-lateral" data-accion="cola" aria-label="Show or hide the PR queue" aria-pressed="true" title="PR queue ( ] )" style="margin-left:-12px"><svg class="i" aria-hidden="true"><use href="#i-cola"/></svg></button>
     <h1 id="titulo">Seki Review</h1>
     <span class="foto" id="foto"></span>
     <label class="buscar">
       <svg class="i" aria-hidden="true"><use href="#i-buscar"/></svg>
-      <input type="search" id="buscar" placeholder="Buscar por número, título, rama o archivo" aria-label="Buscar PRs">
+      <input type="search" id="buscar" placeholder="Search by number, title, branch or file" aria-label="Search PRs">
       <kbd>/</kbd>
     </label>
-    <button type="button" class="btn chico filtrar-ia" id="filtrarIa" data-accion="filtrarIa" hidden aria-label="Filtrar con IA según lo escrito en el buscador" title="La IA deja en la cola solo las PRs que responden a lo escrito, por ejemplo «PRs de ciberseguridad» (Ctrl + Enter en el buscador)"><svg class="i" aria-hidden="true"><use href="#i-chispa"/></svg><span>Filtrar con IA</span></button>
+    <button type="button" class="btn chico filtrar-ia" id="filtrarIa" data-accion="filtrarIa" hidden aria-label="Filter with AI using the search text" title="AI keeps only the PRs that match what you typed, for example “cybersecurity PRs” (Ctrl + Enter in the search box)"><svg class="i" aria-hidden="true"><use href="#i-chispa"/></svg><span>Filter with AI</span></button>
     <div class="acciones-barra" id="accionesBarra"></div>
-    <div class="rol" role="group" aria-label="Vista">
-      <button data-rol="autor" aria-pressed="true">Autor</button>
-      <button data-rol="revisor" aria-pressed="false">Revisor</button>
+    <div class="rol" role="group" aria-label="View">
+      <button data-rol="autor" aria-pressed="true">Author</button>
+      <button data-rol="revisor" aria-pressed="false">Reviewer</button>
     </div>
   </header>
 
-  <nav class="lateral" id="lateral" aria-label="Vistas y filtros"></nav>
+  <nav class="lateral" id="lateral" aria-label="Views and filters"></nav>
 
-  <main class="cola" id="cola" aria-label="Cola de PRs"></main>
+  <main class="cola" id="cola" aria-label="PR queue"></main>
 
-  <section class="detalle" id="detalle" aria-label="Detalle de la PR"></section>
+  <section class="detalle" id="detalle" aria-label="PR detail"></section>
 </div>
 <input type="file" id="archivoRevision" accept="application/json,.json" hidden>
 
 <script>/*ANCLAJE*/</script>
 <script>
 let FOTO = /*DATOS*/null;
-// Con el servidor local (tablero_servir) llega { token } y aparecen las acciones; como archivo suelto es null.
+// With the local server (tablero_servir) this is { token } and actions appear; as a standalone file it is null.
 const API = /*API*/null;
 const VERSION_PAGINA = /*VERSION*/null;
-// Diffs por PR, ya recortados. En el servidor se piden a /api/diff si faltan.
+// Diffs per PR, already trimmed. When served, missing ones are fetched from /api/diff.
 const DIFFS = /*DIFFS*/null ?? {};
 
 const GRUPOS = {
-  pruebas_sin_prod: ['En pruebas, sin salir a producción', 'Código en pruebas que no aparece en producción ni en ninguna PR hacia producción'],
-  solo_prod: ['Listo para producción', 'El código ya está en pruebas; falta mergear hacia producción'],
-  revisar_diferencias: ['Revisar diferencias con pruebas', 'Pruebas tiene otra versión del cambio'],
-  pruebas_abierta: ['Esperando merge en pruebas', 'Su PR hacia pruebas sigue abierta'],
-  sin_pruebas: ['Sin pasar por pruebas', 'No hay PR hacia pruebas ni el código está allá'],
-  hacia_pruebas: ['Hacia pruebas', 'PRs abiertas contra las ramas de pruebas'],
-  pruebas_automaticas: ['Solo pruebas automáticas', 'No cambian el funcionamiento'],
-  otra: ['Otras ramas', 'Base fuera de las líneas configuradas'],
-  inactiva: ['Ramas que ya no se usan', 'Ramas marcadas como inactivas en la configuración del proyecto'],
+  pruebas_sin_prod: ['In testing, not in production', 'Code in testing that is not in production or in any PR to production'],
+  solo_prod: ['Ready for production', 'The code is already in testing; it still needs merging to production'],
+  revisar_diferencias: ['Review differences with testing', 'Testing has a different version of the change'],
+  pruebas_abierta: ['Waiting for merge in testing', 'Its PR to testing is still open'],
+  sin_pruebas: ['Not through testing', 'There is no PR to testing and the code is not there'],
+  hacia_pruebas: ['To testing', 'Open PRs against the testing branches'],
+  pruebas_automaticas: ['Automated tests only', 'They do not change behavior'],
+  otra: ['Other branches', 'Base outside the configured lines'],
+  inactiva: ['Branches no longer in use', 'Branches marked as inactive in the project configuration'],
 };
 const DECISIONES = {
-  aprobada: ['Aprobada', 'verde'],
-  probada: ['Probada en pruebas', 'verde'],
-  duda: ['Con preguntas', 'ambar'],
-  cambios: ['Pide cambios', 'rojo'],
+  aprobada: ['Approved', 'verde'],
+  probada: ['Verified in testing', 'verde'],
+  duda: ['Has questions', 'ambar'],
+  cambios: ['Requests changes', 'rojo'],
 };
 const GRUPOS_REVISOR = {
-  sin_revisar: ['Sin revisar', 'Aún sin decisión del revisor'],
-  cambios: ['Pide cambios', 'El revisor dejó observaciones'],
-  duda: ['Con preguntas', 'Falta una aclaración del autor'],
-  aprobada: ['Aprobadas', 'Listas desde el punto de vista del revisor'],
-  probada: ['Probadas en pruebas', 'Validadas funcionalmente'],
+  sin_revisar: ['Not reviewed', 'No reviewer decision yet'],
+  cambios: ['Requests changes', 'The reviewer left feedback'],
+  duda: ['Has questions', 'Waiting on a clarification from the author'],
+  aprobada: ['Approved', 'Ready from the reviewer’s point of view'],
+  probada: ['Verified in testing', 'Functionally validated'],
 };
 
 const $ = (id) => document.getElementById(id);
@@ -526,13 +526,13 @@ const estado = {
   confirmarPendientes: false,
 };
 const trabajo = (pr) => estado.trabajos.get(pr.id);
-const usd = (x) => { const n = Number(x) || 0; return `USD ${n.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: n < 0.01 ? 4 : 2 })}`; };
+const usd = (x) => { const n = Number(x) || 0; return `USD ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: n < 0.01 ? 4 : 2 })}`; };
 const nombreModelo = (m) => (m ?? '').replace(/^claude-/, '').replace(/-\d.*$/, '').replace(/^./, (c) => c.toUpperCase());
 const costoTexto = (t) => `${t.modelo ? ` · ${nombreModelo(t.modelo)}` : ''}${t.costo ? ` · ${usd(t.costo)}` : ''}`;
 const trabajoActivo = (pr) => ['en_cola', 'en_curso'].includes(trabajo(pr)?.estado);
 const pendientesDeAnalisis = () => FOTO.prs.filter((p) => p.ambiente !== 'inactiva' && (!p.explicacion || p.explicacion.desactualizada) && !trabajoActivo(p));
 
-// Un solo tono por PR, el más grave que aplique: rojo bloquea, ámbar pide mirar, verde listo, violeta mergeada.
+// One tone per PR, the most severe that applies: red blocks, amber needs a look, green ready, violet merged.
 function tono(pr) {
   const v = pr.verificaciones?.resumen ?? {};
   if (v.bloqueante || (pr.sinProd && pr.seguridad)) return 'rojo';
@@ -571,61 +571,61 @@ function pintarLateral() {
   const nav = (attrs, contenido, n, activo) => `<button class="nav" ${attrs} aria-pressed="${activo}">${contenido}<span class="n">${n}</span></button>`;
   const filtro = (clave, texto, n) => nav(`data-filtro="${clave}"`, texto, n, estado.filtros.has(clave));
   $('lateral').innerHTML = `
-    <h2>Vistas</h2>
-    ${nav('data-vista="cola"', 'Cola de trabajo', FOTO.prs.length - inactivas, estado.vista === 'cola')}
-    ${nav('data-vista="inactivas"', 'Ramas que ya no se usan', inactivas, estado.vista === 'inactivas')}
+    <h2>Views</h2>
+    ${nav('data-vista="cola"', 'Work queue', FOTO.prs.length - inactivas, estado.vista === 'cola')}
+    ${nav('data-vista="inactivas"', 'Branches no longer in use', inactivas, estado.vista === 'inactivas')}
     <h2>Portal</h2>
-    ${nav('data-portal=""', 'Todos', base.length, !estado.portal)}
+    ${nav('data-portal=""', 'All', base.length, !estado.portal)}
     ${portales.map((p) => nav(`data-portal="${esc(p)}"`, esc(p), cuenta((x) => x.portal === p), estado.portal === p)).join('')}
-    <h2>Filtros</h2>
-    ${filtro('hallazgos', `${icono('alerta')} Con hallazgos altos`, cuenta((x) => x.verificaciones?.resumen.bloqueante || x.verificaciones?.resumen.alto))}
-    ${filtro('seguridad', `${icono('escudo')} Seguridad`, cuenta((x) => x.seguridad))}
-    ${filtro('sinExplicacion', `${icono('circulo')} Sin explicación`, cuenta((x) => !x.explicacion || x.explicacion.desactualizada))}
-    ${filtro('sinRevisar', `${icono('ojo')} Sin revisar`, cuenta((x) => !revision(x)))}
-    ${API && vistasIa().length ? `<h2>Vistas con IA</h2>${vistasIa().map((v, i) => {
+    <h2>Filters</h2>
+    ${filtro('hallazgos', `${icono('alerta')} High findings`, cuenta((x) => x.verificaciones?.resumen.bloqueante || x.verificaciones?.resumen.alto))}
+    ${filtro('seguridad', `${icono('escudo')} Security`, cuenta((x) => x.seguridad))}
+    ${filtro('sinExplicacion', `${icono('circulo')} No explanation`, cuenta((x) => !x.explicacion || x.explicacion.desactualizada))}
+    ${filtro('sinRevisar', `${icono('ojo')} Not reviewed`, cuenta((x) => !revision(x)))}
+    ${API && vistasIa().length ? `<h2>AI views</h2>${vistasIa().map((v, i) => {
       const activa = mismaConsulta(estado.filtroIa?.consulta, v);
-      return `<div class="vista-ia">${nav(`data-vista-ia="${i}" title="${esc(v)}"`, `${icono('chispa')}<span class="recorte">${esc(v)}</span>`, activa && estado.filtroIa.estado === 'listo' ? cuentaFiltro(estado.filtroIa).directas : '', activa)}<button type="button" class="btn-texto quitar-vista" data-quitar-vista-ia="${i}" aria-label="Quitar la vista ${esc(v)}" title="Quitar la vista">×</button></div>`;
+      return `<div class="vista-ia">${nav(`data-vista-ia="${i}" title="${esc(v)}"`, `${icono('chispa')}<span class="recorte">${esc(v)}</span>`, activa && estado.filtroIa.estado === 'listo' ? cuentaFiltro(estado.filtroIa).directas : '', activa)}<button type="button" class="btn-texto quitar-vista" data-quitar-vista-ia="${i}" aria-label="Remove the view ${esc(v)}" title="Remove the view">×</button></div>`;
     }).join('')}` : ''}
-    ${API ? `<h2>Análisis con IA</h2>
+    ${API ? `<h2>AI analysis</h2>
       ${estado.confirmarPendientes
-        ? nav('data-accion="analizarPendientes"', `${icono('chispa')} Confirmar: ${plural(pendientesDeAnalisis().length, 'PR', 'PRs')}`, '', true)
-        : nav('data-accion="pedirConfirmacion"', `${icono('chispa')} Analizar las que no tienen explicación`, pendientesDeAnalisis().length, false)}
-      ${[...estado.trabajos.values()].some((t) => t.estado === 'en_cola') ? nav('data-accion="cancelarCola"', `${icono('bloqueo')} Cancelar los que están en cola`, [...estado.trabajos.values()].filter((t) => t.estado === 'en_cola').length, false) : ''}` : ''}
+        ? nav('data-accion="analizarPendientes"', `${icono('chispa')} Confirm: ${plural(pendientesDeAnalisis().length, 'PR', 'PRs')}`, '', true)
+        : nav('data-accion="pedirConfirmacion"', `${icono('chispa')} Analyze those without an explanation`, pendientesDeAnalisis().length, false)}
+      ${[...estado.trabajos.values()].some((t) => t.estado === 'en_cola') ? nav('data-accion="cancelarCola"', `${icono('bloqueo')} Cancel queued ones`, [...estado.trabajos.values()].filter((t) => t.estado === 'en_cola').length, false) : ''}` : ''}
     <div class="solo-escritorio">
-      <h2>Revisión</h2>
-      <button class="nav" data-accion="exportar">${icono('descargar')} Exportar revisión</button>
-      <button class="nav" data-accion="importar">${icono('subir')} Importar revisión</button>
-      <div class="ayuda"><span><kbd>j</kbd> <kbd>k</kbd> moverse en la cola</span><span><kbd>o</kbd> abrir en GitHub</span><span><kbd>/</kbd> buscar</span><span><kbd>[</kbd> menú lateral</span><span><kbd>]</kbd> cola</span></div>
+      <h2>Review</h2>
+      <button class="nav" data-accion="exportar">${icono('descargar')} Export review</button>
+      <button class="nav" data-accion="importar">${icono('subir')} Import review</button>
+      <div class="ayuda"><span><kbd>j</kbd> <kbd>k</kbd> move through the queue</span><span><kbd>o</kbd> open in GitHub</span><span><kbd>/</kbd> search</span><span><kbd>[</kbd> sidebar</span><span><kbd>]</kbd> queue</span></div>
     </div>`;
 }
 
 function senales(pr) {
   const s = [];
   const v = pr.verificaciones?.resumen ?? {};
-  if (v.bloqueante) s.push(`<span class="senal rojo" title="${plural(v.bloqueante, 'verificación bloqueante', 'verificaciones bloqueantes')}">${icono('bloqueo')}${v.bloqueante}</span>`);
-  else if (v.alto) s.push(`<span class="senal ambar" title="${plural(v.alto, 'hallazgo alto', 'hallazgos altos')}">${icono('alerta')}${v.alto}</span>`);
+  if (v.bloqueante) s.push(`<span class="senal rojo" title="${plural(v.bloqueante, 'blocking check', 'blocking checks')}">${icono('bloqueo')}${v.bloqueante}</span>`);
+  else if (v.alto) s.push(`<span class="senal ambar" title="${plural(v.alto, 'high finding', 'high findings')}">${icono('alerta')}${v.alto}</span>`);
   const r = revision(pr);
   if (r?.decision) {
     const [txt, cls] = DECISIONES[r.decision] ?? [r.decision, ''];
-    s.push(`<span class="senal ${cls}" title="Revisor: ${esc(txt)}">${icono(cls === 'rojo' ? 'bloqueo' : cls === 'ambar' ? 'alerta' : 'ok')}</span>`);
+    s.push(`<span class="senal ${cls}" title="Reviewer: ${esc(txt)}">${icono(cls === 'rojo' ? 'bloqueo' : cls === 'ambar' ? 'alerta' : 'ok')}</span>`);
   }
   const t = trabajo(pr);
-  if (t?.estado === 'en_curso') s.push(`<span class="senal azul" title="Analizando con IA">${icono('actualizar', 'girando')}</span>`);
-  else if (t?.estado === 'en_cola') s.push(`<span class="senal azul" title="En cola para analizar">${icono('reloj')}</span>`);
-  else if (t?.estado === 'error') s.push(`<span class="senal rojo" title="El análisis falló">${icono('bloqueo')}</span>`);
+  if (t?.estado === 'en_curso') s.push(`<span class="senal azul" title="Analyzing with AI">${icono('actualizar', 'girando')}</span>`);
+  else if (t?.estado === 'en_cola') s.push(`<span class="senal azul" title="Queued for analysis">${icono('reloj')}</span>`);
+  else if (t?.estado === 'error') s.push(`<span class="senal rojo" title="The analysis failed">${icono('bloqueo')}</span>`);
   const cs = vivos(pr).length;
-  if (cs) s.push(`<span class="senal" title="${plural(cs, 'comentario', 'comentarios')} en el diff">${icono('comentario')}${cs}</span>`);
-  if (pr.seguridad) s.push(`<span class="senal" title="Seguridad">${icono('escudo')}</span>`);
+  if (cs) s.push(`<span class="senal" title="${plural(cs, 'comment', 'comments')} on the diff">${icono('comentario')}${cs}</span>`);
+  if (pr.seguridad) s.push(`<span class="senal" title="Security">${icono('escudo')}</span>`);
   const esfuerzo = pr.explicacion?.esfuerzo ?? pr.esfuerzoTamano;
-  if (esfuerzo) s.push(`<span title="Esfuerzo de revisión, de 1 a 5">E${esfuerzo}</span>`);
-  s.push(`<span title="Días desde que se abrió">${pr.dias} d</span>`);
+  if (esfuerzo) s.push(`<span title="Review effort, 1 to 5">E${esfuerzo}</span>`);
+  s.push(`<span title="Days since it was opened">${pr.dias} d</span>`);
   return s.join('');
 }
 
 function pintarCola() {
   const prs = FOTO.prs.filter(pasaFiltros);
   if (!prs.length) {
-    $('cola').innerHTML = `${avisoVersion()}${bannerFiltroIa()}<div class="vacio"><p>Ninguna PR coincide con la búsqueda y los filtros activos.</p><button class="btn" data-accion="limpiar">Quitar filtros</button></div>`;
+    $('cola').innerHTML = `${avisoVersion()}${bannerFiltroIa()}<div class="vacio"><p>No PRs match the search and active filters.</p><button class="btn" data-accion="limpiar">Clear filters</button></div>`;
     return;
   }
   const defs = definicionGrupos();
@@ -655,23 +655,23 @@ function pintarCola() {
   }).join('');
 }
 
-// Filtro con IA: la necesidad se escribe en el buscador. Las necesidades guardadas como vista viven en este navegador.
+// AI filter: the need is typed in the search box. Needs saved as views live in this browser.
 const claveVistasIa = () => `seki-review:vistas-ia:${FOTO.proyecto}`;
 const vistasIa = () => almacen.leer(claveVistasIa(), []);
 const mismaConsulta = (a, b) => a?.toLowerCase() === b?.toLowerCase();
-// Directa: el propósito de la PR es la necesidad. Relacionada: toca el área con otro propósito; se ve solo si se pide.
+// Direct: the PR’s purpose is the need. Related: touches the area with another purpose; shown only on request.
 const incluidaEnFiltro = (f, id) => { const m = f.motivos.get(id); return !!m && (m.relacion !== 'relacionada' || f.conRelacionadas); };
 const cuentaFiltro = (f) => {
   const todas = [...f.motivos.values()];
   return { directas: todas.filter((m) => m.relacion !== 'relacionada').length, relacionadas: todas.filter((m) => m.relacion === 'relacionada').length };
 };
-const motivoHtml = (m) => (m ? `<span class="motivo-ia">${m.relacion === 'relacionada' ? '<span class="etiqueta-relacionada">Relacionada</span> ' : ''}${esc(m.motivo)}</span>` : '');
+const motivoHtml = (m) => (m ? `<span class="motivo-ia">${m.relacion === 'relacionada' ? '<span class="etiqueta-relacionada">Related</span> ' : ''}${esc(m.motivo)}</span>` : '');
 const firmaFoto = () => FOTO.prs.map((x) => `${x.id}@${x.headSha}`).sort().join('|');
 
 async function filtrarConIa(consulta) {
   const q = (consulta ?? $('buscar').value).replace(/\s+/g, ' ').trim();
-  if (!q) { avisar('Escriba en el buscador qué PRs busca, por ejemplo «PRs de ciberseguridad».'); return $('buscar').focus(); }
-  if (servidorDesfasado()) return avisar('Reinicie Claude Code: el servidor del tablero es de una versión anterior y todavía no tiene Filtrar con IA.');
+  if (!q) { avisar('Type in the search box which PRs you are looking for, for example “cybersecurity PRs”.'); return $('buscar').focus(); }
+  if (servidorDesfasado()) return avisar('Restart Claude Code: the dashboard server is from an older version and does not have Filter with AI yet.');
   if (estado.filtroIa?.estado === 'cargando' && mismaConsulta(estado.filtroIa.consulta, q)) return;
   const pedido = { consulta: q, estado: 'cargando', inicio: new Date().toISOString(), firma: firmaFoto() };
   estado.filtroIa = pedido;
@@ -684,7 +684,7 @@ async function filtrarConIa(consulta) {
   } catch (err) {
     siguiente = { ...pedido, estado: 'error', mensaje: err.message };
   }
-  // Si mientras tanto se quitó o se pidió otro filtro, esta respuesta ya no aplica.
+  // If the filter was removed or another one requested meanwhile, this response no longer applies.
   if (estado.filtroIa !== pedido) return;
   estado.filtroIa = siguiente;
   pintarTodo({ detalle: false });
@@ -694,60 +694,60 @@ async function filtrarConIa(consulta) {
 const servidorDesfasado = () => !!(API && VERSION_PAGINA && estado.versionServidor && estado.versionServidor !== VERSION_PAGINA);
 function avisoVersion() {
   if (!servidorDesfasado()) return '';
-  return `<div class="filtro-ia error" role="alert"><p>${icono('alerta')} El plugin se actualizó a la versión ${esc(VERSION_PAGINA)}, pero el servidor del tablero sigue con la ${esc(estado.versionServidor)}. Las funciones nuevas (como Filtrar con IA) no responden hasta reiniciar Claude Code.</p></div>`;
+  return `<div class="filtro-ia error" role="alert"><p>${icono('alerta')} The plugin was updated to version ${esc(VERSION_PAGINA)}, but the dashboard server is still on ${esc(estado.versionServidor)}. New features (such as Filter with AI) won’t respond until you restart Claude Code.</p></div>`;
 }
 
 function bannerFiltroIa() {
   const f = estado.filtroIa;
   if (!f) return '';
-  const q = `«${esc(f.consulta)}»`;
-  const quitar = '<button type="button" class="btn-texto" data-accion="quitarFiltroIa">Quitar el filtro</button>';
+  const q = `“${esc(f.consulta)}”`;
+  const quitar = '<button type="button" class="btn-texto" data-accion="quitarFiltroIa">Remove filter</button>';
   if (f.estado === 'cargando') {
-    return `<div class="filtro-ia" role="status"><p class="trabajando">${icono('actualizar', 'girando')}<span>La IA está revisando ${plural(FOTO.prs.length, 'PR', 'PRs')} para ${q} · ${transcurrido(f.inicio)}</span></p>
-      <div class="progreso" aria-hidden="true"></div><p class="muy-tenue">Usa título, rama y archivos de cada PR; suele tardar entre 10 y 40 segundos. ${quitar}</p></div>`;
+    return `<div class="filtro-ia" role="status"><p class="trabajando">${icono('actualizar', 'girando')}<span>AI is reviewing ${plural(FOTO.prs.length, 'PR', 'PRs')} for ${q} · ${transcurrido(f.inicio)}</span></p>
+      <div class="progreso" aria-hidden="true"></div><p class="muy-tenue">Uses each PR’s title, branch and files; usually takes 10 to 40 seconds. ${quitar}</p></div>`;
   }
   if (f.estado === 'error') {
     return `<div class="filtro-ia error" role="alert"><p>${icono('alerta')} ${esc(f.mensaje)}</p>
-      <p><button type="button" class="btn chico" data-accion="reintentarFiltroIa">Reintentar</button> ${quitar}</p></div>`;
+      <p><button type="button" class="btn chico" data-accion="reintentarFiltroIa">Retry</button> ${quitar}</p></div>`;
   }
   const visibles = FOTO.prs.filter(pasaFiltros).length;
   const { directas, relacionadas } = cuentaFiltro(f);
   const ocultas = (f.conRelacionadas ? directas + relacionadas : directas) - visibles;
   const verRelacionadas = relacionadas
-    ? ` · <button type="button" class="btn-texto" data-accion="relacionadasFiltroIa" aria-pressed="${f.conRelacionadas}" title="PRs que tocan el área pero cuyo propósito es otro (un texto, un ajuste visual, una funcionalidad)">${f.conRelacionadas ? 'Ocultar' : 'Mostrar'} ${plural(relacionadas, 'relacionada', 'relacionadas')}</button>` : '';
+    ? ` · <button type="button" class="btn-texto" data-accion="relacionadasFiltroIa" aria-pressed="${f.conRelacionadas}" title="PRs that touch the area but have a different purpose (copy, a visual tweak, a feature)">${f.conRelacionadas ? 'Hide' : 'Show'} ${plural(relacionadas, 'related', 'related')}</button>` : '';
   const guardada = vistasIa().some((v) => mismaConsulta(v, f.consulta));
   const cambio = f.firma !== firmaFoto()
-    ? `<p class="aviso-lento">${icono('reloj')} La cola cambió después de filtrar. <button type="button" class="btn-texto" data-accion="reintentarFiltroIa">Volver a filtrar</button></p>` : '';
+    ? `<p class="aviso-lento">${icono('reloj')} The queue changed after filtering. <button type="button" class="btn-texto" data-accion="reintentarFiltroIa">Filter again</button></p>` : '';
   return `<div class="filtro-ia" role="status">
-    <p><strong>${icono('chispa')} Filtro con IA</strong> ${q}: ${directas ? plural(directas, 'PR trata de esto', 'PRs tratan de esto') : 'ninguna PR trata de esto'}${verRelacionadas}${ocultas > 0 ? ` · ${plural(ocultas, 'oculta', 'ocultas')} por los demás filtros o la vista` : ''}</p>
-    <p class="muy-tenue">${f.desdeCache ? 'Resultado guardado, sin costo' : usd(f.costo)} · decidido por título, rama y archivos: revise el motivo de cada una.</p>
-    <p>${guardada ? '' : '<button type="button" class="btn-texto" data-accion="guardarFiltroIa">Guardar como vista</button> · '}${quitar}</p>${cambio}</div>`;
+    <p><strong>${icono('chispa')} AI filter</strong> ${q}: ${directas ? plural(directas, 'PR is about this', 'PRs are about this') : 'no PR is about this'}${verRelacionadas}${ocultas > 0 ? ` · ${plural(ocultas, 'hidden', 'hidden')} by the other filters or the view` : ''}</p>
+    <p class="muy-tenue">${f.desdeCache ? 'Saved result, no cost' : usd(f.costo)} · decided by title, branch and files: check the reason for each one.</p>
+    <p>${guardada ? '' : '<button type="button" class="btn-texto" data-accion="guardarFiltroIa">Save as view</button> · '}${quitar}</p>${cambio}</div>`;
 }
 
 function seccionCambios() {
   const c = FOTO.cambios;
   if (!c || estado.vista !== 'cola') return '';
-  const fecha = (f) => new Date(f).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
+  const fecha = (f) => new Date(f).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' });
   const enlace = (x) => `<a href="${gh(x.repo, x.numero)}" target="_blank" rel="noopener" title="${esc(x.titulo)}">${esc(x.titulo)}</a>`;
   const fila = (etiqueta, color, x, extra = '') => `<div class="cambio"><span class="estado ${color}">${etiqueta}</span><span class="mono muy-tenue">${esc(x.repo.replace('core-', ''))} #${x.numero}</span><span class="titulo">${FOTO.prs.some((p) => p.id === x.id) ? `<a href="#" data-ir="${esc(x.id)}">${esc(x.titulo)}</a>` : enlace(x)}${extra}</span></div>`;
   const nombreGrupo = (g) => (GRUPOS[g] ?? [g])[0];
   const filas = [
-    ...c.mergeadas.map((x) => fila('Mergeada', 'violeta', x, ` <span class="muy-tenue">en ${esc(x.base)}</span>`)),
-    ...c.cerradas.map((x) => fila(x.estado === 'cerrada' ? 'Cerrada' : 'Salió', '', x)),
-    ...c.nuevas.map((x) => fila('Nueva', 'verde', x)),
-    ...c.movidas.map((x) => fila('Cambió', 'ambar', x, ` <span class="muy-tenue">${esc(nombreGrupo(x.de))} → ${esc(nombreGrupo(x.a))}</span>`)),
+    ...c.mergeadas.map((x) => fila('Merged', 'violeta', x, ` <span class="muy-tenue">into ${esc(x.base)}</span>`)),
+    ...c.cerradas.map((x) => fila(x.estado === 'cerrada' ? 'Closed' : 'Left', '', x)),
+    ...c.nuevas.map((x) => fila('New', 'verde', x)),
+    ...c.movidas.map((x) => fila('Changed', 'ambar', x, ` <span class="muy-tenue">${esc(nombreGrupo(x.de))} → ${esc(nombreGrupo(x.a))}</span>`)),
   ];
   const n = filas.length;
   const cerrado = estado.cerrados.has('_cambios');
   return `<section class="grupo" ${cerrado ? 'data-cerrado' : ''}>
-    <button class="grupo-cab" data-grupo-toggle="_cambios" aria-expanded="${!cerrado}">${icono('chevron')}<span>Cambios detectados</span><span class="n">${n}</span><span class="desc">entre ${fecha(c.desde)} y ${fecha(c.hasta)}</span></button>
+    <button class="grupo-cab" data-grupo-toggle="_cambios" aria-expanded="${!cerrado}">${icono('chevron')}<span>Detected changes</span><span class="n">${n}</span><span class="desc">between ${fecha(c.desde)} and ${fecha(c.hasta)}</span></button>
     <div class="filas">${filas.join('')}</div>
   </section>`;
 }
 
-// Tiempo transcurrido que se actualiza cada segundo sin repintar la vista.
+// Elapsed time that updates every second without repainting the view.
 const reloj = (desde) => { const s = Math.max(0, Math.floor((Date.now() - new Date(desde)) / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
-// aria-live="off": dentro de una región viva, el reloj se anunciaría cada segundo.
+// aria-live="off": inside a live region, the clock would be announced every second.
 const transcurrido = (desde) => (desde ? `<span class="transcurrido" data-desde="${esc(desde)}" aria-live="off">${reloj(desde)}</span>` : '');
 setInterval(() => { for (const el of document.querySelectorAll('[data-desde]')) el.textContent = reloj(el.dataset.desde); }, 1000);
 
@@ -759,65 +759,65 @@ function pilaEstados(pr) {
   const filas = [];
   const ep = pr.estadoPruebas;
   if (ep) {
-    const metodo = ep.metodo === 'parche' ? 'Comprobado aplicando el cambio sobre la rama de pruebas' : 'Comparado archivo por archivo';
-    const mapa = { en_pruebas: ['ok', 'verde', 'El código ya está en pruebas'], parcial: ['alerta', 'ambar', 'Pruebas tiene otra versión del cambio'], no_en_pruebas: ['circulo', '', 'Todavía no está en pruebas'] };
+    const metodo = ep.metodo === 'parche' ? 'Checked by applying the change to the testing branch' : 'Compared file by file';
+    const mapa = { en_pruebas: ['ok', 'verde', 'The code is already in testing'], parcial: ['alerta', 'ambar', 'Testing has a different version of the change'], no_en_pruebas: ['circulo', '', 'Not in testing yet'] };
     const [i, c, t] = mapa[ep.estado] ?? ['circulo', '', ep.estado];
-    filas.push(check(i, c, 'Pruebas', t, `${ep.iguales} de ${ep.total} archivos iguales${ep.conflicto ? ', con conflicto' : ''}. ${metodo}.`));
+    filas.push(check(i, c, 'Testing', t, `${ep.iguales} of ${ep.total} files identical${ep.conflicto ? ', with conflict' : ''}. ${metodo}.`));
   }
   if (pr.estadoProd) {
-    const det = `${pr.estadoProd.iguales} de ${pr.estadoProd.total} archivos iguales en producción`;
+    const det = `${pr.estadoProd.iguales} of ${pr.estadoProd.total} files identical in production`;
     filas.push(pr.sinProd
-      ? check('bloqueo', pr.seguridad ? 'rojo' : 'ambar', 'Producción', 'Código no encontrado en producción y sin PR hacia producción', det)
-      : check('ok', '', 'Producción', pr.cubiertaPor ? `La PR <a href="${gh(pr.repo, pr.cubiertaPor)}" target="_blank" rel="noopener">#${pr.cubiertaPor}</a> hacia producción trae los mismos archivos` : 'Sin alertas', det));
+      ? check('bloqueo', pr.seguridad ? 'rojo' : 'ambar', 'Production', 'Code not found in production and no PR to production', det)
+      : check('ok', '', 'Production', pr.cubiertaPor ? `PR <a href="${gh(pr.repo, pr.cubiertaPor)}" target="_blank" rel="noopener">#${pr.cubiertaPor}</a> to production brings the same files` : 'No alerts', det));
   }
   if (pr.gemela) {
-    const txt = { MERGED: 'mergeada', OPEN: 'abierta', CLOSED: 'cerrada sin mergear' }[pr.gemela.estado] ?? pr.gemela.estado;
-    filas.push(check(pr.gemela.estado === 'MERGED' ? 'merge' : 'circulo', pr.gemela.estado === 'MERGED' ? 'verde' : '', pr.ambiente === 'prod' ? 'PR hacia pruebas' : 'PR hacia producción',
-      `<a href="${gh(pr.repo, pr.gemela.numero)}" target="_blank" rel="noopener">#${pr.gemela.numero}</a> ${txt}`, 'Encontrada por título; el estado de pruebas de arriba es la comprobación'));
+    const txt = { MERGED: 'merged', OPEN: 'open', CLOSED: 'closed without merging' }[pr.gemela.estado] ?? pr.gemela.estado;
+    filas.push(check(pr.gemela.estado === 'MERGED' ? 'merge' : 'circulo', pr.gemela.estado === 'MERGED' ? 'verde' : '', pr.ambiente === 'prod' ? 'PR to testing' : 'PR to production',
+      `<a href="${gh(pr.repo, pr.gemela.numero)}" target="_blank" rel="noopener">#${pr.gemela.numero}</a> ${txt}`, 'Found by title; the testing status above is the actual check'));
   }
   if (pr.hermanas?.length) {
     const faltan = pr.hermanas.some((h) => !h.numero);
-    filas.push(check(faltan ? 'alerta' : 'ok', faltan ? 'ambar' : 'verde', 'Otros portales',
-      pr.hermanas.map((h) => (h.numero ? `${esc(h.portal)}: <a href="${gh(pr.repo, h.numero)}" target="_blank" rel="noopener">#${h.numero}</a>` : `${esc(h.portal)}: sin PR equivalente`)).join(' · '),
-      faltan ? 'Confirmar si el cambio aplica también a ese portal' : ''));
+    filas.push(check(faltan ? 'alerta' : 'ok', faltan ? 'ambar' : 'verde', 'Other portals',
+      pr.hermanas.map((h) => (h.numero ? `${esc(h.portal)}: <a href="${gh(pr.repo, h.numero)}" target="_blank" rel="noopener">#${h.numero}</a>` : `${esc(h.portal)}: no equivalent PR`)).join(' · '),
+      faltan ? 'Confirm whether the change also applies to that portal' : ''));
   }
   const v = pr.verificaciones;
   if (v) {
     const r = v.resumen;
     const [i, c] = r.bloqueante ? ['bloqueo', 'rojo'] : r.alto ? ['alerta', 'ambar'] : ['ok', 'verde'];
-    const partes = [r.bloqueante && plural(r.bloqueante, 'bloqueante', 'bloqueantes'), r.alto && plural(r.alto, 'alta', 'altas'), r.medio && plural(r.medio, 'media', 'medias'), r.aviso && plural(r.aviso, 'aviso', 'avisos')].filter(Boolean);
-    filas.push(check(i, c, 'Verificaciones', partes.length ? partes.join(', ') : 'Sin hallazgos en las líneas agregadas', partes.length ? '<a href="#" data-tab-ir="verificaciones">Ver hallazgos</a>' : ''));
+    const partes = [r.bloqueante && plural(r.bloqueante, 'blocking', 'blocking'), r.alto && plural(r.alto, 'high', 'high'), r.medio && plural(r.medio, 'medium', 'medium'), r.aviso && plural(r.aviso, 'warning', 'warnings')].filter(Boolean);
+    filas.push(check(i, c, 'Checks', partes.length ? partes.join(', ') : 'No findings in the added lines', partes.length ? '<a href="#" data-tab-ir="verificaciones">View findings</a>' : ''));
   }
   const tr = trabajo(pr);
   if (tr) {
-    const hora = (f) => (f ? new Date(f).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) : '');
+    const hora = (f) => (f ? new Date(f).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '');
     const mapa = {
-      en_cola: ['reloj', '', 'En cola para analizar', ''],
-      en_curso: ['actualizar', '', 'Analizando la PR', `${transcurrido(tr.inicio)} · desde las ${hora(tr.inicio)} · suele tardar entre uno y tres minutos<div class="progreso" role="progressbar" aria-label="Análisis en curso"></div>`],
-      terminado: ['ok', 'verde', 'Explicación generada', `A las ${hora(tr.fin)}${costoTexto(tr)}`],
-      error: ['bloqueo', 'rojo', 'El análisis no se completó', esc(tr.mensaje ?? '')],
-      cancelado: ['circulo', '', 'Análisis cancelado', ''],
+      en_cola: ['reloj', '', 'Queued for analysis', ''],
+      en_curso: ['actualizar', '', 'Analyzing the PR', `${transcurrido(tr.inicio)} · since ${hora(tr.inicio)} · usually takes one to three minutes<div class="progreso" role="progressbar" aria-label="Analysis in progress"></div>`],
+      terminado: ['ok', 'verde', 'Explanation generated', `At ${hora(tr.fin)}${costoTexto(tr)}`],
+      error: ['bloqueo', 'rojo', 'The analysis did not complete', esc(tr.mensaje ?? '')],
+      cancelado: ['circulo', '', 'Analysis canceled', ''],
     };
     const [i, c, txt, det] = mapa[tr.estado] ?? ['circulo', '', tr.estado, ''];
-    filas.push(check(i, c, 'Análisis con IA', txt, det).replace('<svg class="i "', tr.estado === 'en_curso' ? '<svg class="i girando"' : '<svg class="i "'));
+    filas.push(check(i, c, 'AI analysis', txt, det).replace('<svg class="i "', tr.estado === 'en_curso' ? '<svg class="i girando"' : '<svg class="i "'));
   }
   const rev = revision(pr);
   if (rev?.decision) {
     const [txt, cls] = DECISIONES[rev.decision] ?? [rev.decision, ''];
-    const cambio = rev.headSha && rev.headSha !== pr.headSha ? ' · la PR cambió después de esta revisión' : '';
-    filas.push(check(cls === 'rojo' ? 'bloqueo' : cls === 'ambar' ? 'alerta' : 'ok', cls, 'Revisor', esc(txt), `${esc(new Date(rev.fecha).toLocaleDateString('es-CO'))}${cambio}`));
+    const cambio = rev.headSha && rev.headSha !== pr.headSha ? ' · the PR changed after this review' : '';
+    filas.push(check(cls === 'rojo' ? 'bloqueo' : cls === 'ambar' ? 'alerta' : 'ok', cls, 'Reviewer', esc(txt), `${esc(new Date(rev.fecha).toLocaleDateString('en-US'))}${cambio}`));
   } else if (pr.revisionGithub) {
-    filas.push(check('ojo', '', 'Revisión en GitHub', esc(pr.revisionGithub)));
+    filas.push(check('ojo', '', 'GitHub review', esc(pr.revisionGithub)));
   }
   return filas.length ? `<div class="checks">${filas.join('')}</div>` : '';
 }
 
-const lista = (items) => (items?.length ? `<ul>${items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : '<p class="sin-dato">Sin datos.</p>');
+const lista = (items) => (items?.length ? `<ul>${items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : '<p class="sin-dato">No data.</p>');
 const sec = (titulo, cuerpo, clave) => {
   if (!clave || !API) return `<div class="seccion"><h3>${titulo}</h3>${cuerpo}</div>`;
   const pr = prSel();
   const hilos = pr ? dePr(pr, clave) : [];
-  return `<div class="seccion" data-seccion="${clave}"><h3 class="con-accion">${titulo}<button type="button" class="btn-texto" data-ampliar="${clave}" title="La IA amplía esta sección con ejemplos del diff">${icono('chispa')} Ampliar</button></h3>${cuerpo}
+  return `<div class="seccion" data-seccion="${clave}"><h3 class="con-accion">${titulo}<button type="button" class="btn-texto" data-ampliar="${clave}" title="AI expands this section with examples from the diff">${icono('chispa')} Expand</button></h3>${cuerpo}
     ${hilos.length ? `<div class="hilos-pr">${hilosDiv(hilos)}</div>` : ''}</div>`;
 };
 
@@ -826,13 +826,13 @@ function preguntaPrHtml(pr) {
   const generales = dePr(pr, null);
   const opciones = Object.entries(SECCIONES).filter(([k]) => pr.explicacion?.[k]?.length || k === 'resumen')
     .map(([k, t]) => `<option value="${k}">${esc(t)}</option>`).join('');
-  return `<div class="seccion pregunta-pr"><h3>Preguntar sobre esta PR</h3>
+  return `<div class="seccion pregunta-pr"><h3>Ask about this PR</h3>
     ${generales.length ? `<div class="hilos-pr">${hilosDiv(generales)}</div>` : ''}
-    ${estado.respondeA?.ambito === 'pr' ? `<div class="respondiendo">Sigue la conversación de: «${esc(estado.respondeA.resumen)}» <button type="button" class="btn-texto" data-accion="quitarRespondeA">Quitar</button></div>` : ''}
-    <textarea id="preguntaPr" rows="3" placeholder="Por ejemplo: ¿qué pasa con los webhooks que ya estaban configurados en producción?" aria-label="Pregunta sobre la PR"></textarea>
-    <div class="prop-acciones"><select id="preguntaPrSeccion" aria-label="Sobre qué parte"><option value="">Toda la PR</option>${opciones}</select>
-      <label class="muy-tenue"><input type="checkbox" id="preguntaPrCodigo"> Revisar el código</label>
-      <button type="button" class="btn chico primario" data-accion="preguntarPr">Preguntar</button><button type="button" class="btn chico" data-accion="agregarPreguntaPr">Agregar a la revisión</button><span class="muy-tenue">Ctrl + Enter pregunta · también puede seleccionar texto de la explicación o de una respuesta para preguntar por esa parte · la respuesta es más útil si la pregunta no sugiere la conclusión</span></div></div>`;
+    ${estado.respondeA?.ambito === 'pr' ? `<div class="respondiendo">Continues the conversation from: “${esc(estado.respondeA.resumen)}” <button type="button" class="btn-texto" data-accion="quitarRespondeA">Remove</button></div>` : ''}
+    <textarea id="preguntaPr" rows="3" placeholder="For example: what happens to the webhooks already configured in production?" aria-label="Question about the PR"></textarea>
+    <div class="prop-acciones"><select id="preguntaPrSeccion" aria-label="Which part"><option value="">Whole PR</option>${opciones}</select>
+      <label class="muy-tenue"><input type="checkbox" id="preguntaPrCodigo"> Check the code</label>
+      <button type="button" class="btn chico primario" data-accion="preguntarPr">Ask</button><button type="button" class="btn chico" data-accion="agregarPreguntaPr">Add to review</button><span class="muy-tenue">Ctrl + Enter asks · you can also select text in the explanation or in an answer to ask about that part · the answer is more useful if the question doesn’t suggest the conclusion</span></div></div>`;
 }
 
 function coberturaHtml(e, pr) {
@@ -840,13 +840,13 @@ function coberturaHtml(e, pr) {
   if (!c) return '';
   const gen = c.generados ?? [];
   const aparte = c.leidosAparte ?? [];
-  const extra = [aparte.length ? `${plural(aparte.length, 'archivo leído', 'archivos leídos')} fuera del mensaje` : '', gen.length ? `${plural(gen.length, 'archivo generado omitido', 'archivos generados omitidos')}` : ''].filter(Boolean).join(' · ');
-  if (c.completa) return extra ? `<p class="origen">${icono('ok')} <span>La IA revisó todo el diff (${extra}).</span></p>` : '';
+  const extra = [aparte.length ? `${plural(aparte.length, 'file read', 'files read')} outside the message` : '', gen.length ? `${plural(gen.length, 'generated file skipped', 'generated files skipped')}` : ''].filter(Boolean).join(' · ');
+  if (c.completa) return extra ? `<p class="origen">${icono('ok')} <span>AI reviewed the whole diff (${extra}).</span></p>` : '';
   const sin = c.sinDiff ?? [];
   const rec = c.recortados ?? [];
-  const items = [...sin.map((a) => `<li><span class="mono">${esc(a)}</span> · sin revisar</li>`), ...rec.map((a) => `<li><span class="mono">${esc(a)}</span> · revisado en parte</li>`), ...gen.map((a) => `<li><span class="mono">${esc(a)}</span> · generado, no se revisa</li>`)];
-  const boton = API ? `<p style="margin-top:8px"><button type="button" class="btn chico" data-accion="completarCobertura" ${trabajoActivo(pr) ? 'disabled' : ''}>${icono('chispa')} Revisar lo que faltó</button> <span class="muy-tenue">Analiza solo esos archivos y amplía la explicación</span></p>` : '';
-  return `<details class="seccion cobertura"><summary><span class="estado ambar">${icono('alerta')} Cobertura parcial: la IA no vio el diff completo (${plural(sin.length, 'archivo sin revisar', 'archivos sin revisar')}${rec.length ? `, ${plural(rec.length, 'recortado', 'recortados')}` : ''})</span>${extra ? ` <span class="muy-tenue">${extra}</span>` : ''}</summary>
+  const items = [...sin.map((a) => `<li><span class="mono">${esc(a)}</span> · not reviewed</li>`), ...rec.map((a) => `<li><span class="mono">${esc(a)}</span> · partly reviewed</li>`), ...gen.map((a) => `<li><span class="mono">${esc(a)}</span> · generated, not reviewed</li>`)];
+  const boton = API ? `<p style="margin-top:8px"><button type="button" class="btn chico" data-accion="completarCobertura" ${trabajoActivo(pr) ? 'disabled' : ''}>${icono('chispa')} Review what was missed</button> <span class="muy-tenue">Analyzes only those files and extends the explanation</span></p>` : '';
+  return `<details class="seccion cobertura"><summary><span class="estado ambar">${icono('alerta')} Partial coverage: AI did not see the full diff (${plural(sin.length, 'file not reviewed', 'files not reviewed')}${rec.length ? `, ${plural(rec.length, 'truncated', 'truncated')}` : ''})</span>${extra ? ` <span class="muy-tenue">${extra}</span>` : ''}</summary>
     ${boton}${items.length ? `<ul class="tenue">${items.slice(0, 80).join('')}</ul>` : ''}</details>`;
 }
 
@@ -854,86 +854,86 @@ function tabResumen(pr) {
   const e = pr.explicacion;
   if (!e) {
     const tr = trabajo(pr);
-    if (API && tr?.estado === 'en_curso') return `<div class="seccion" aria-live="polite"><p class="trabajando">${icono('actualizar', 'girando')}<span>La IA está leyendo el diff y el código relacionado · ${transcurrido(tr.inicio)}</span></p>
+    if (API && tr?.estado === 'en_curso') return `<div class="seccion" aria-live="polite"><p class="trabajando">${icono('actualizar', 'girando')}<span>AI is reading the diff and related code · ${transcurrido(tr.inicio)}</span></p>
       <div class="progreso" aria-hidden="true"></div>${avanceHtml('explicar', estado.avances[`pr:${pr.id}`], tr.inicio)}
       <div class="esqueleto" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div></div>`;
-    if (API && tr?.estado === 'en_cola') return `<div class="seccion"><p class="trabajando">${icono('reloj')} En cola: empieza cuando termine el análisis en curso.</p></div>`;
-    if (API) return `<div class="seccion"><p class="tenue">Esta PR todavía no tiene explicación.</p>
-      <p style="margin-top:12px"><button class="btn chico" data-accion="analizar" ${trabajoActivo(pr) ? 'disabled' : ''}>${trabajoActivo(pr) ? `${icono('actualizar', 'girando')} Analizando` : `${icono('chispa')} Analizar con IA`}</button></p></div>`;
-    return `<div class="seccion"><p class="tenue">Esta PR todavía no tiene explicación. Se genera desde Claude Code y aparece aquí al regenerar el tablero.</p>
-      <p style="margin-top:12px"><button class="btn chico" data-copiar="/seki-review:revisar-prs explicar ${esc(pr.repo)}#${pr.numero}">${icono('copiar')} Copiar el comando</button></p></div>`;
+    if (API && tr?.estado === 'en_cola') return `<div class="seccion"><p class="trabajando">${icono('reloj')} Queued: starts when the current analysis finishes.</p></div>`;
+    if (API) return `<div class="seccion"><p class="tenue">This PR doesn’t have an explanation yet.</p>
+      <p style="margin-top:12px"><button class="btn chico" data-accion="analizar" ${trabajoActivo(pr) ? 'disabled' : ''}>${trabajoActivo(pr) ? `${icono('actualizar', 'girando')} Analyzing` : `${icono('chispa')} Analyze with AI`}</button></p></div>`;
+    return `<div class="seccion"><p class="tenue">This PR doesn’t have an explanation yet. It is generated from Claude Code and appears here when the dashboard is regenerated.</p>
+      <p style="margin-top:12px"><button class="btn chico" data-copiar="/seki-review:revisar-prs explicar ${esc(pr.repo)}#${pr.numero}">${icono('copiar')} Copy the command</button></p></div>`;
   }
   return `
-    <p class="origen">${icono('chispa')} <span><strong>Explicación de IA.</strong> Ayuda para leer la PR, no reemplaza revisar el diff. Las reglas fijas están en Verificaciones.</span></p>
-    ${e.desactualizada ? `<div class="seccion"><span class="estado ambar">${icono('alerta')} La PR recibió commits después de esta explicación</span></div>` : ''}
+    <p class="origen">${icono('chispa')} <span><strong>AI explanation.</strong> A reading aid for the PR; it does not replace reviewing the diff. The fixed rules are under Checks.</span></p>
+    ${e.desactualizada ? `<div class="seccion"><span class="estado ambar">${icono('alerta')} The PR received commits after this explanation</span></div>` : ''}
     ${coberturaHtml(e, pr)}
-    ${sec('Qué resuelve', `<p>${esc(e.resumen)}</p>`, 'resumen')}
-    ${sec('Por qué', `<p>${esc(e.por_que)}</p>`, 'por_que')}
-    ${e.impacto_usuario ? sec('Qué nota quien usa el portal', `<p>${esc(e.impacto_usuario)}</p>`, 'impacto_usuario') : ''}
-    ${sec('Qué cambia', lista(e.que_cambia), 'que_cambia')}
-    ${e.orden_lectura?.length ? sec('Orden de lectura', `<ol class="lectura">${e.orden_lectura.map((o) => `<li><span class="mono">${esc(o.archivo)}</span><br><span class="tenue">${esc(o.motivo)}</span></li>`).join('')}</ol>`, 'orden_lectura') : ''}
-    ${e.diagrama ? sec('Flujo', `<pre class="mermaid">${esc(e.diagrama.replace(/#(?!\d+;)/g, '#35;'))}</pre>`, 'diagrama') : ''}
-    ${e.tecnologias?.length ? sec('Tecnologías', `<div class="tabla"><table><thead><tr><th>Tecnología</th><th>Uso en este cambio</th><th>Por qué esta</th><th>Descartadas</th></tr></thead><tbody>
+    ${sec('What it solves', `<p>${esc(e.resumen)}</p>`, 'resumen')}
+    ${sec('Why', `<p>${esc(e.por_que)}</p>`, 'por_que')}
+    ${e.impacto_usuario ? sec('What users notice', `<p>${esc(e.impacto_usuario)}</p>`, 'impacto_usuario') : ''}
+    ${sec('What changes', lista(e.que_cambia), 'que_cambia')}
+    ${e.orden_lectura?.length ? sec('Reading order', `<ol class="lectura">${e.orden_lectura.map((o) => `<li><span class="mono">${esc(o.archivo)}</span><br><span class="tenue">${esc(o.motivo)}</span></li>`).join('')}</ol>`, 'orden_lectura') : ''}
+    ${e.diagrama ? sec('Flow', `<pre class="mermaid">${esc(e.diagrama.replace(/#(?!\d+;)/g, '#35;'))}</pre>`, 'diagrama') : ''}
+    ${e.tecnologias?.length ? sec('Technologies', `<div class="tabla"><table><thead><tr><th>Technology</th><th>Use in this change</th><th>Why this one</th><th>Ruled out</th></tr></thead><tbody>
       ${e.tecnologias.map((t) => `<tr><td><strong>${esc(t.nombre)}</strong></td><td>${esc(t.uso)}</td><td>${esc(t.por_que)}</td><td class="tenue">${esc((t.alternativas_descartadas ?? []).join(' '))}</td></tr>`).join('')}
       </tbody></table></div>`, 'tecnologias') : ''}
-    ${e.alternativas?.length ? sec('Alternativas consideradas', lista(e.alternativas), 'alternativas') : ''}
-    ${e.dependencias?.length ? sec('Debe ir antes', lista(e.dependencias), 'dependencias') : ''}
-    ${e.riesgos?.length ? sec('Riesgos', lista(e.riesgos), 'riesgos') : ''}
+    ${e.alternativas?.length ? sec('Alternatives considered', lista(e.alternativas), 'alternativas') : ''}
+    ${e.dependencias?.length ? sec('Must go first', lista(e.dependencias), 'dependencias') : ''}
+    ${e.riesgos?.length ? sec('Risks', lista(e.riesgos), 'riesgos') : ''}
     ${barraPendiente(pr)}
     ${preguntaPrHtml(pr)}
-    <p class="nota-pie">Explicación del ${esc(e.fecha?.slice(0, 10))} sobre el commit <span class="mono">${esc(e.headSha?.slice(0, 7))}</span>${e.riesgo ? ` · riesgo ${esc(e.riesgo)}` : ''}${e.esfuerzo ? ` · esfuerzo ${e.esfuerzo} de 5` : ''}.${API ? ` <button type="button" class="btn-texto" data-accion="analizar" ${trabajoActivo(pr) ? 'disabled' : ''}>Volver a analizar con IA</button>` : ''}</p>`;
+    <p class="nota-pie">Explanation from ${esc(e.fecha?.slice(0, 10))} on commit <span class="mono">${esc(e.headSha?.slice(0, 7))}</span>${e.riesgo ? ` · ${esc(nivel(e.riesgo))} risk` : ''}${e.esfuerzo ? ` · effort ${e.esfuerzo} of 5` : ''}.${API ? ` <button type="button" class="btn-texto" data-accion="analizar" ${trabajoActivo(pr) ? 'disabled' : ''}>Analyze again with AI</button>` : ''}</p>`;
 }
 
 function tabVerificaciones(pr) {
   const v = pr.verificaciones;
-  if (!v) return '<p class="sin-dato">Sin verificaciones para esta PR.</p>';
-  if (!v.hallazgos.length) return '<p class="tenue">Las líneas agregadas pasan todas las reglas.</p>';
+  if (!v) return '<p class="sin-dato">No checks for this PR.</p>';
+  if (!v.hallazgos.length) return '<p class="tenue">The added lines pass all rules.</p>';
   const color = { bloqueante: 'rojo', alto: 'ambar', medio: '', aviso: '' };
-  return `<div class="tabla"><table><thead><tr><th>Severidad</th><th>Hallazgo</th><th>Dónde</th></tr></thead><tbody>
+  return `<div class="tabla"><table><thead><tr><th>Severity</th><th>Finding</th><th>Where</th></tr></thead><tbody>
     ${v.hallazgos.map((h) => `<tr>
-      <td><span class="estado ${color[h.severidad]}">${esc(h.severidad)}</span></td>
+      <td><span class="estado ${color[h.severidad]}">${esc(nivel(h.severidad))}</span></td>
       <td><strong>${esc(h.titulo)}</strong><br><span class="tenue">${esc(h.mensaje)}</span><br><span class="muy-tenue">${esc(h.origen)}</span></td>
       <td><a class="mono" href="${esc(pr.url)}/files" target="_blank" rel="noopener">${esc(h.archivo)}${h.linea ? ':' + h.linea : ''}</a>${h.texto ? `<code class="codigo">${esc(h.texto)}</code>` : ''}</td>
     </tr>`).join('')}
   </tbody></table></div>
-  <p class="nota-pie">Reglas fijas sobre las líneas agregadas, sin IA: marcan patrones, no confirman que haya un problema. Una línea se excluye de una regla con el comentario <span class="mono">seki-review: ignorar &lt;regla&gt;</span>.</p>`;
+  <p class="nota-pie">Fixed rules over the added lines, no AI: they flag patterns, they don’t confirm there is a problem. A line is excluded from a rule with the comment <span class="mono">seki-review: ignore &lt;rule&gt;</span>.</p>`;
 }
 
 function tabDescripcion(pr) {
   const texto = (pr.descripcion ?? '').replace(/<!--[\s\S]*?-->/g, '').trim();
   let cuerpo = `<div class="md-desc lectura">${md(texto)}</div>`;
-  if (pr.descripcion === undefined) cuerpo = '<p class="sin-dato">Estos datos no traen la descripción. Use «Actualizar estado».</p>';
-  else if (!texto) cuerpo = `<p class="sin-dato">La PR no tiene descripción.${pr.seguridad ? ' Es una PR de seguridad: conviene pedir al autor qué cambia, por qué y en qué orden se despliega.' : ''}</p>`;
+  if (pr.descripcion === undefined) cuerpo = '<p class="sin-dato">This data doesn’t include the description. Use “Refresh status”.</p>';
+  else if (!texto) cuerpo = `<p class="sin-dato">The PR has no description.${pr.seguridad ? ' This is a security PR: ask the author what changes, why, and in what order it is deployed.' : ''}</p>`;
   const commits = pr.commits ?? [];
   const lista = commits.length
     ? `<ol class="commits">${commits.map((c) => `<li>
         <a class="mono" href="${esc(pr.url)}/commits/${esc(c.sha)}" target="_blank" rel="noopener">${esc(c.sha.slice(0, 7))}</a>
         ${esc(c.titulo)}
-        <span class="muy-tenue">${esc(c.autor ?? '')}${c.fecha ? ` · ${esc(new Date(c.fecha).toLocaleString('es-CO'))}` : ''}</span>
-        ${c.cuerpo ? `<details><summary class="muy-tenue">Mensaje completo</summary><div class="tenue">${md(c.cuerpo)}</div></details>` : ''}
+        <span class="muy-tenue">${esc(c.autor ?? '')}${c.fecha ? ` · ${esc(new Date(c.fecha).toLocaleString('en-US'))}` : ''}</span>
+        ${c.cuerpo ? `<details><summary class="muy-tenue">Full message</summary><div class="tenue">${md(c.cuerpo)}</div></details>` : ''}
       </li>`).join('')}</ol>`
-    : '<p class="sin-dato">Sin commits en estos datos.</p>';
-  return `${sec('Descripción del autor', cuerpo)}${sec('Commits', lista)}`;
+    : '<p class="sin-dato">No commits in this data.</p>';
+  return `${sec('Author’s description', cuerpo)}${sec('Commits', lista)}`;
 }
 
 function tabProbar(pr) {
   const pasos = pr.explicacion?.como_probar ?? [];
-  if (!pasos.length) return '<p class="sin-dato">La explicación no trae pasos de prueba.</p>';
+  if (!pasos.length) return '<p class="sin-dato">The explanation has no test steps.</p>';
   const marcados = almacen.leer(clavePasos(pr), []);
   return `<ul class="pasos">${pasos.map((p, i) => `<li><input type="checkbox" id="paso${i}" data-paso="${i}" ${marcados.includes(i) ? 'checked' : ''}><label for="paso${i}">${esc(p)}</label></li>`).join('')}</ul>
-    <p class="nota-pie">${marcados.length} de ${plural(pasos.length, 'paso marcado', 'pasos marcados')}. Se guarda en este navegador y viaja con la revisión exportada.</p>`;
+    <p class="nota-pie">${marcados.length} of ${plural(pasos.length, 'step checked', 'steps checked')}. Saved in this browser and included in the exported review.</p>`;
 }
 
 function tabRevision(pr) {
   const r = revision(pr) ?? {};
-  return `${sec('Decisión', `<div class="decision" role="radiogroup">${Object.entries(DECISIONES).map(([k, [t]]) => `<label><input type="radio" name="decision" value="${k}" ${r.decision === k ? 'checked' : ''}> ${t}</label>`).join('')}</div>`)}
-    ${sec('Observaciones para el autor', `<textarea id="notaRevision" placeholder="Qué falta, qué se probó, qué hay que aclarar">${esc(r.nota ?? '')}</textarea>
-      <div class="guardado" id="guardado">${r.fecha ? `Guardado el ${esc(new Date(r.fecha).toLocaleString('es-CO'))}` : ''}</div>`)}
-    <p class="tenue">La revisión queda en este navegador. Para enviarla al autor:</p>
-    <div class="acciones"><button class="btn" data-accion="exportar">${icono('descargar')} Exportar revisión</button><button class="btn" data-accion="copiarResumen">${icono('copiar')} Copiar resumen</button></div>`;
+  return `${sec('Decision', `<div class="decision" role="radiogroup">${Object.entries(DECISIONES).map(([k, [t]]) => `<label><input type="radio" name="decision" value="${k}" ${r.decision === k ? 'checked' : ''}> ${t}</label>`).join('')}</div>`)}
+    ${sec('Feedback for the author', `<textarea id="notaRevision" placeholder="What’s missing, what was tested, what needs clarifying">${esc(r.nota ?? '')}</textarea>
+      <div class="guardado" id="guardado">${r.fecha ? `Saved ${esc(new Date(r.fecha).toLocaleString('en-US'))}` : ''}</div>`)}
+    <p class="tenue">The review stays in this browser. To send it to the author:</p>
+    <div class="acciones"><button class="btn" data-accion="exportar">${icono('descargar')} Export review</button><button class="btn" data-accion="copiarResumen">${icono('copiar')} Copy summary</button></div>`;
 }
 
-const ESTADO_ARCHIVO = { added: 'Agregado', removed: 'Eliminado', modified: 'Modificado', renamed: 'Renombrado', copied: 'Copiado', changed: 'Cambiado' };
+const ESTADO_ARCHIVO = { added: 'Added', removed: 'Removed', modified: 'Modified', renamed: 'Renamed', copied: 'Copied', changed: 'Changed' };
 const claveVistos = (pr) => `seki-review:vistos:${pr.id}:${pr.headSha}`;
 const idArchivo = (i) => `archivo-${i}`;
 
@@ -944,31 +944,35 @@ function barrita(a, d) {
   return `<span class="barrita" aria-hidden="true">${[0, 1, 2, 3, 4].map((i) => `<i class="${i < verdes ? 'a' : 'd'}"></i>`).join('')}</span>`;
 }
 
-// Comentarios sobre líneas del diff. Preguntas y pedidos de cambio nacen como borradores y se envían
-// juntos; las notas manuales se guardan al agregarlas y viajan en la revisión exportada.
+// Comments on diff lines. Questions and change requests start as drafts and are sent
+// together; manual notes are saved when added and travel in the exported review.
 const TIPOS_COMENTARIO = {
-  pregunta: { nombre: 'Preguntar', etiqueta: 'Pregunta', ayuda: 'Qué se quiere entender de estas líneas. Mejor «¿qué pasa si…?» que «¿esto está bien?»' },
-  cambio: { nombre: 'Pedir cambio', etiqueta: 'Pedido de cambio', ayuda: 'Cómo debe quedar este código' },
-  nota: { nombre: 'Nota', etiqueta: 'Nota', ayuda: 'Comentario para el autor' },
+  pregunta: { nombre: 'Ask', etiqueta: 'Question', ayuda: 'What you want to understand about these lines. “What happens if…?” beats “Is this OK?”' },
+  cambio: { nombre: 'Request change', etiqueta: 'Change request', ayuda: 'How this code should end up' },
+  nota: { nombre: 'Note', etiqueta: 'Note', ayuda: 'Comment for the author' },
 };
 const ESTADOS_COMENTARIO = {
-  borrador: ['Borrador', ''], nota: ['Nota guardada', ''], en_cola: ['En cola', 'azul'], en_curso: ['En curso', 'azul'],
-  respondido: ['Respondido', 'verde'], propuesta: ['Propuesta lista', 'ambar'], aprobado: ['Aprobado', 'violeta'],
-  descartado: ['Descartado', ''], error: ['Error', 'rojo'],
+  borrador: ['Draft', ''], nota: ['Note saved', ''], en_cola: ['Queued', 'azul'], en_curso: ['In progress', 'azul'],
+  respondido: ['Answered', 'verde'], propuesta: ['Proposal ready', 'ambar'], aprobado: ['Approved', 'violeta'],
+  descartado: ['Discarded', ''], error: ['Error', 'rojo'],
 };
 const claveComentarios = (pr) => `seki-review:comentarios:${pr.id}`;
 const comentarios = (pr) => almacen.leer(claveComentarios(pr), []);
 const vivos = (pr) => comentarios(pr).filter((c) => c.estado !== 'descartado');
 const deLineas = (pr) => vivos(pr).filter((c) => !c.ambito);
 const dePr = (pr, seccion) => vivos(pr).filter((c) => c.ambito === 'pr' && (c.seccion ?? null) === (seccion ?? null));
+// Display labels for values the server stores in Spanish.
+const NIVELES = { bloqueante: 'blocking', alto: 'high', medio: 'medium', aviso: 'notice', bajo: 'low' };
+const nivel = (v) => NIVELES[v] ?? v;
+
 const SECCIONES = {
-  resumen: 'Qué resuelve', por_que: 'Por qué', impacto_usuario: 'Qué nota quien usa el portal', que_cambia: 'Qué cambia',
-  orden_lectura: 'Orden de lectura', diagrama: 'Flujo', tecnologias: 'Tecnologías', alternativas: 'Alternativas consideradas',
-  dependencias: 'Debe ir antes', riesgos: 'Riesgos', como_probar: 'Cómo probar',
+  resumen: 'What it solves', por_que: 'Why', impacto_usuario: 'What users notice', que_cambia: 'What changes',
+  orden_lectura: 'Reading order', diagrama: 'Flow', tecnologias: 'Technologies', alternativas: 'Alternatives considered',
+  dependencias: 'Must go first', riesgos: 'Risks', como_probar: 'How to test',
 };
 
-// Preguntas sobre la PR o una sección de la explicación: se envían al momento, sin pasar por "Revisión pendiente".
-// Un segundo clic en la misma opción quita la valoración.
+// Questions about the PR or a section of the explanation: sent right away, without going through "Pending review".
+// A second click on the same option removes the rating.
 async function valorar(pr, id, util) {
   const c = comentarios(pr).find((x) => x.id === id);
   const valor = c?.valoracion === util ? null : util;
@@ -991,7 +995,7 @@ async function investigar(pr, id) {
 async function preguntarPr(pr, seccion, textoFijo, { citado, enviar = true, investigar } = {}) {
   const caja = $('preguntaPr');
   const texto = (textoFijo ?? caja?.value ?? '').trim();
-  if (!texto) { avisar('Escriba la pregunta antes de enviarla.'); return caja?.focus(); }
+  if (!texto) { avisar('Write the question before sending it.'); return caja?.focus(); }
   const sobre = seccion ?? ($('preguntaPrSeccion')?.value || undefined);
   const respondeA = !textoFijo && estado.respondeA?.ambito === 'pr' ? estado.respondeA.id : undefined;
   const conCodigo = investigar ?? (!textoFijo && !!$('preguntaPrCodigo')?.checked);
@@ -1003,16 +1007,16 @@ async function preguntarPr(pr, seccion, textoFijo, { citado, enviar = true, inve
   else { repintarDetalle(); pintarCola(); }
 }
 
-// Selección de texto en el Resumen: barra flotante para preguntar sobre el fragmento (como en Plannotator).
+// Text selection in the Summary: floating bar to ask about the fragment (as in Plannotator).
 const RAPIDAS = [
-  ['¿Por qué?', '¿Por qué se hizo así y no de otra forma?'],
-  ['Dar un ejemplo', 'Dar un ejemplo concreto tomado del diff.'],
-  ['Ampliar', 'Ampliar este punto con más detalle y ejemplos del diff.'],
+  ['Why?', 'Why was it done this way and not another?'],
+  ['Give an example', 'Give a concrete example taken from the diff.'],
+  ['Expand', 'Expand this point with more detail and examples from the diff.'],
 ];
 const RAPIDAS_RESPUESTA = [
-  ['¿Por qué?', '¿En qué se basa esta parte? Indicar el archivo y las líneas.'],
-  ['Dar un ejemplo', 'Dar un ejemplo concreto de esta parte tomado del diff.'],
-  ['Ampliar', 'Ampliar esta parte con más detalle.'],
+  ['Why?', 'What is this part based on? Point to the file and lines.'],
+  ['Give an example', 'Give a concrete example of this part taken from the diff.'],
+  ['Expand', 'Expand this part with more detail.'],
 ];
 let seleccionResumen = null;
 
@@ -1021,7 +1025,7 @@ function cerrarBarraSel() {
   seleccionResumen = null;
 }
 
-// Texto seleccionado con el mouse dentro del diff: se traduce a las filas que toca para comentar esas líneas.
+// Text selected with the mouse inside the diff: mapped to the rows it touches so those lines can be commented on.
 function lineasDeSeleccion(rango) {
   const fila = (n) => (n.nodeType === 1 ? n : n.parentElement)?.closest('tr[data-clave]');
   const a = fila(rango.startContainer);
@@ -1065,12 +1069,12 @@ function abrirBarraSel() {
     barra.id = 'barraSel';
     barra.className = 'barra-sel';
     barra.setAttribute('role', 'dialog');
-    barra.setAttribute('aria-label', 'Comentar las líneas seleccionadas');
+    barra.setAttribute('aria-label', 'Comment on the selected lines');
     barra.innerHTML = `<div class="barra-sel-botones">
-      ${API ? `<button type="button" class="btn chico primario" data-bsel-lineas="pregunta">${icono('chispa')} Preguntar</button>` : ''}
-      ${API && prSel()?.estadoPr === 'OPEN' ? '<button type="button" class="btn chico" data-bsel-lineas="cambio">Pedir cambio</button>' : ''}
-      <button type="button" class="btn chico${API ? '' : ' primario'}" data-bsel-lineas="nota">Nota</button>
-      <button type="button" class="btn-texto" data-bsel="cerrar" aria-label="Cerrar">Esc</button></div>`;
+      ${API ? `<button type="button" class="btn chico primario" data-bsel-lineas="pregunta">${icono('chispa')} Ask</button>` : ''}
+      ${API && prSel()?.estadoPr === 'OPEN' ? '<button type="button" class="btn chico" data-bsel-lineas="cambio">Request change</button>' : ''}
+      <button type="button" class="btn chico${API ? '' : ' primario'}" data-bsel-lineas="nota">Note</button>
+      <button type="button" class="btn-texto" data-bsel="cerrar" aria-label="Close">Esc</button></div>`;
     colocarBarra(barra, sel.getRangeAt(0).getBoundingClientRect());
     barra.style.width = 'auto';
     return;
@@ -1081,10 +1085,10 @@ function abrirBarraSel() {
   const seccion = nodo?.closest('[data-seccion]');
   if (!seccion || nodo.closest('.hilos-pr, textarea, button')) return;
   seleccionResumen = { seccion: seccion.dataset.seccion, citado: texto.slice(0, 2000), tab: 'resumen' };
-  ponerBarraPregunta(rango.getBoundingClientRect(), 'Preguntar sobre el texto seleccionado', 'Pregunta o comentario sobre este fragmento');
+  ponerBarraPregunta(rango.getBoundingClientRect(), 'Ask about the selected text', 'Question or comment about this fragment');
 }
 
-// Texto seleccionado en la respuesta de la IA de un hilo (Resumen o Archivos): se repregunta en ese hilo sobre esa parte.
+// Text selected in the AI answer of a thread (Summary or Files): a follow-up is asked in that thread about that part.
 function barraEnRespuesta(sel, texto) {
   const rango = sel.getRangeAt(0);
   const nodo = rango.commonAncestorContainer.nodeType === 1 ? rango.commonAncestorContainer : rango.commonAncestorContainer.parentElement;
@@ -1093,7 +1097,7 @@ function barraEnRespuesta(sel, texto) {
   const c = hilo && comentarios(prSel() ?? {}).find((x) => x.id === hilo.dataset.hilo);
   if (!c?.respuesta || c.estado === 'en_cola' || c.estado === 'en_curso') return false;
   seleccionResumen = { hilo: c.id, citado: texto.slice(0, 2000), tab: estado.tab };
-  ponerBarraPregunta(rango.getBoundingClientRect(), 'Repreguntar sobre el fragmento de la respuesta', 'Qué quiere saber de esta parte de la respuesta');
+  ponerBarraPregunta(rango.getBoundingClientRect(), 'Follow up on this part of the answer', 'What do you want to know about this part of the answer');
   return true;
 }
 
@@ -1105,15 +1109,15 @@ function ponerBarraPregunta(caja, etiqueta, ayuda) {
   barra.setAttribute('role', 'dialog');
   barra.setAttribute('aria-label', etiqueta);
   barra.innerHTML = `<div class="barra-sel-botones">
-      <button type="button" class="btn chico primario" data-bsel="preguntar">${icono('chispa')} Preguntar</button>
+      <button type="button" class="btn chico primario" data-bsel="preguntar">${icono('chispa')} Ask</button>
       ${(seleccionResumen.hilo ? RAPIDAS_RESPUESTA : RAPIDAS).map(([e], i) => `<button type="button" class="btn chico" data-bsel-rapida="${i}">${esc(e)}</button>`).join('')}
-      <button type="button" class="btn-texto" data-bsel="cerrar" aria-label="Cerrar">Esc</button>
+      <button type="button" class="btn-texto" data-bsel="cerrar" aria-label="Close">Esc</button>
     </div>
     <div class="barra-sel-caja" hidden>
       <blockquote class="cita">${esc(seleccionResumen.citado.length > 180 ? `${seleccionResumen.citado.slice(0, 180)}…` : seleccionResumen.citado)}</blockquote>
       <textarea id="barraSelTexto" rows="3" placeholder="${esc(ayuda)}" aria-label="${esc(ayuda)}"></textarea>
-      <label class="muy-tenue" style="display:block;margin-bottom:6px"><input type="checkbox" id="barraSelCodigo"> Revisar el código del repositorio</label>
-      <div class="prop-acciones"><button type="button" class="btn chico primario" data-bsel="enviar">Enviar ahora</button><button type="button" class="btn chico" data-bsel="agregar">Agregar a la revisión</button><span class="muy-tenue">Ctrl + Enter agrega</span></div>
+      <label class="muy-tenue" style="display:block;margin-bottom:6px"><input type="checkbox" id="barraSelCodigo"> Check the repository code</label>
+      <div class="prop-acciones"><button type="button" class="btn chico primario" data-bsel="enviar">Send now</button><button type="button" class="btn chico" data-bsel="agregar">Add to review</button><span class="muy-tenue">Ctrl + Enter adds</span></div>
     </div>`;
   colocarBarra(barra, caja);
 }
@@ -1127,14 +1131,14 @@ function accionBarraSel(accion, rapida) {
   if (accion === 'cerrar') return cerrarBarraSel();
   if (accion === 'preguntar') { $('barraSel').querySelector('.barra-sel-caja').hidden = false; return $('barraSelTexto').focus(); }
   const texto = $('barraSelTexto')?.value.trim();
-  if (!texto) { avisar('Escriba la pregunta antes de agregarla.'); return $('barraSelTexto')?.focus(); }
+  if (!texto) { avisar('Write the question before adding it.'); return $('barraSelTexto')?.focus(); }
   const investigar = !!$('barraSelCodigo')?.checked;
   cerrarBarraSel();
   window.getSelection()?.removeAllRanges();
   return preguntar(texto, { citado: s.citado, enviar: accion === 'enviar', investigar });
 }
 
-// La repregunta hereda dónde vive el hilo (sección de la PR o líneas del diff) para quedar colgada de él.
+// The follow-up inherits where the thread lives (PR section or diff lines) so it hangs off it.
 async function preguntarSobreRespuesta(pr, padreId, texto, { citado, enviar, investigar }) {
   const padre = comentarios(pr).find((x) => x.id === padreId);
   if (!padre) return;
@@ -1147,7 +1151,7 @@ async function preguntarSobreRespuesta(pr, padreId, texto, { citado, enviar, inv
   else { repintarDetalle(); pintarCola(); }
 }
 
-// Resalta en la explicación los fragmentos citados por preguntas (CSS Highlight API; sin ella no se resalta).
+// Highlights in the explanation the fragments quoted by questions (CSS Highlight API; without it nothing is highlighted).
 function resaltarCitas(pr) {
   if (!globalThis.CSS?.highlights || !globalThis.Highlight) return;
   const rangos = [];
@@ -1188,14 +1192,14 @@ function rangoDeTexto(el, buscado) {
   return rg;
 }
 const borradores = (pr) => comentarios(pr).filter((c) => c.estado === 'borrador');
-// El servidor no envía comentarios hechos sobre otro commit; al editarlos se anclan al commit actual.
+// The server does not send comments made on another commit; editing them anchors them to the current commit.
 const deOtroCommit = (pr, c) => !!c.headSha && c.headSha !== pr.headSha;
 const nuevoIdComentario = () => `c-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const rangoTexto = (c) => esc(c.desde === c.hasta ? `L${c.desde}` : `L${c.desde}–${c.hasta}`);
 const cajaVacia = (tipo) => ({ tipo: tipo ?? (API ? 'pregunta' : 'nota'), texto: '', conSugerido: false, sugerido: null, editando: null });
 
 function escribirComentarios(pr, lista) {
-  if (!almacen.escribir(claveComentarios(pr), lista)) avisar('No se pudo guardar: el navegador bloquea el almacenamiento local.');
+  if (!almacen.escribir(claveComentarios(pr), lista)) avisar('Could not save: the browser is blocking local storage.');
 }
 
 function guardarComentario(pr, c) {
@@ -1209,8 +1213,8 @@ function borrarComentarios(pr, ids) {
   sincronizarComentarios(pr, [], ids);
 }
 
-// Junta comentarios por id; gana el de actualización más reciente, salvo que el servidor ya lo haya sacado
-// de borrador o nota: eso no se revierte desde el navegador.
+// Merges comments by id; the most recently updated wins, unless the server already moved it out
+// of draft or note: that is not reverted from the browser.
 const DEL_NAVEGADOR = new Set(['borrador', 'nota']);
 function fusionarComentarios(actuales, entrantes) {
   const porId = new Map(actuales.map((c) => [c.id, c]));
@@ -1222,14 +1226,14 @@ function fusionarComentarios(actuales, entrantes) {
   return [...porId.values()];
 }
 
-// Con el tablero servido, los comentarios también viven en disco: no se pierden y la IA los lee.
+// With the served dashboard, comments also live on disk: they are not lost and the AI reads them.
 async function sincronizarComentarios(pr, cambios = [], borrados = []) {
   if (!API) return;
   try {
     let delServidor = cambios.length || borrados.length
       ? await api('/api/comentarios', { id: pr.id, comentarios: cambios, borrados })
       : await api(`/api/comentarios?id=${encodeURIComponent(pr.id)}`);
-    // Borradores y notas que solo están en este navegador (sin servidor al crearlos, o importados) se suben.
+    // Drafts and notes that only exist in this browser (no server when created, or imported) are uploaded.
     const enServidor = new Set(delServidor.map((c) => c.id));
     const faltan = comentarios(pr).filter((c) => DEL_NAVEGADOR.has(c.estado) && !enServidor.has(c.id) && !borrados.includes(c.id));
     if (faltan.length) delServidor = await api('/api/comentarios', { id: pr.id, comentarios: faltan });
@@ -1237,7 +1241,7 @@ async function sincronizarComentarios(pr, cambios = [], borrados = []) {
     escribirComentarios(pr, fusionarComentarios(comentarios(pr).filter((c) => !borrados.includes(c.id)), delServidor));
     estado.comentariosCargados.add(pr.id);
     if (JSON.stringify(comentarios(pr)) !== antes && estado.seleccion === pr.id && !$('detalle').contains(document.activeElement)) { repintarDetalle(); pintarCola(); }
-  } catch (err) { avisar(`Los comentarios quedaron solo en este navegador: ${err.message}`); }
+  } catch (err) { avisar(`The comments were saved only in this browser: ${err.message}`); }
 }
 
 function leerCaja() {
@@ -1251,22 +1255,22 @@ function cajaHtml(rango) {
   const c = estado.caja;
   const pr = FOTO.prs.find((p) => p.id === estado.seleccion);
   const abierta = pr?.estadoPr === 'OPEN';
-  const motivo = (k) => (k === 'nota' ? '' : !API ? 'Disponible con el tablero abierto desde Claude Code (tablero_servir)' : k === 'cambio' && !abierta ? 'La PR ya no está abierta' : '');
+  const motivo = (k) => (k === 'nota' ? '' : !API ? 'Available when the dashboard is opened from Claude Code (tablero_servir)' : k === 'cambio' && !abierta ? 'The PR is no longer open' : '');
   const tabs = Object.entries(TIPOS_COMENTARIO).map(([k, t]) => `<button type="button" data-caja-tipo="${k}" aria-pressed="${c.tipo === k}" ${motivo(k) ? `disabled title="${motivo(k)}"` : ''}>${t.nombre}</button>`).join('');
   const sugerible = rango.lado === 'nuevo';
   const sugerido = c.tipo === 'nota'
-    ? `<label><input type="checkbox" data-caja-sugerido ${c.conSugerido && sugerible ? 'checked' : ''} ${sugerible ? '' : 'disabled'}> Incluir código sugerido</label>
-       ${sugerible ? '' : ' <span class="muy-tenue">El código sugerido solo aplica a líneas nuevas o sin cambios</span>'}
-       ${c.conSugerido && sugerible ? `<textarea id="cajaSugerido" class="mono" rows="${Math.min(14, rango.claves.length + 1)}" spellcheck="false" aria-label="Código sugerido">${esc(c.sugerido ?? rango.texto)}</textarea>` : ''}`
+    ? `<label><input type="checkbox" data-caja-sugerido ${c.conSugerido && sugerible ? 'checked' : ''} ${sugerible ? '' : 'disabled'}> Include suggested code</label>
+       ${sugerible ? '' : ' <span class="muy-tenue">Suggested code only applies to new or unchanged lines</span>'}
+       ${c.conSugerido && sugerible ? `<textarea id="cajaSugerido" class="mono" rows="${Math.min(14, rango.claves.length + 1)}" spellcheck="false" aria-label="Suggested code">${esc(c.sugerido ?? rango.texto)}</textarea>` : ''}`
     : '';
-  return `<tr class="caja"><td class="n"></td><td class="n"></td><td><div class="caja-com" role="group" aria-label="Comentario sobre ${rangoTexto(rango)}">
-    <div class="caja-cab"><span class="mono muy-tenue">${rangoTexto(rango)}</span><div class="tabs-caja" role="group" aria-label="Tipo de comentario">${tabs}</div></div>
-    ${c.respondeA ? `<div class="respondiendo">Sigue la conversación de: «${esc(c.resumenRespondeA ?? '')}»</div>` : ''}
+  return `<tr class="caja"><td class="n"></td><td class="n"></td><td><div class="caja-com" role="group" aria-label="Comment on ${rangoTexto(rango)}">
+    <div class="caja-cab"><span class="mono muy-tenue">${rangoTexto(rango)}</span><div class="tabs-caja" role="group" aria-label="Comment type">${tabs}</div></div>
+    ${c.respondeA ? `<div class="respondiendo">Continues the conversation from: “${esc(c.resumenRespondeA ?? '')}”</div>` : ''}
     <textarea id="cajaTexto" rows="3" placeholder="${TIPOS_COMENTARIO[c.tipo].ayuda}" aria-label="${TIPOS_COMENTARIO[c.tipo].ayuda}">${esc(c.texto)}</textarea>
     ${sugerido}
     <div class="caja-acciones">
-      <button type="button" class="btn chico primario" data-accion="cajaAgregar">${c.editando ? 'Guardar cambios' : c.tipo === 'nota' ? 'Guardar nota' : 'Agregar a la revisión'}</button>
-      <button type="button" class="btn chico" data-accion="cajaCancelar">Cancelar</button>
+      <button type="button" class="btn chico primario" data-accion="cajaAgregar">${c.editando ? 'Save changes' : c.tipo === 'nota' ? 'Save note' : 'Add to review'}</button>
+      <button type="button" class="btn chico" data-accion="cajaCancelar">Cancel</button>
       <span class="muy-tenue">Ctrl + Enter</span>
     </div>
   </div></td></tr>`;
@@ -1274,7 +1278,7 @@ function cajaHtml(rango) {
 
 const hiloHtml = (c, nivel = 0) => `<tr class="hilo"><td class="n"></td><td class="n"></td><td>${hiloCuerpo(c, nivel)}</td></tr>`;
 
-// Qué abrió la IA al investigar: sin esta lista no se sabe si una afirmación sale del código o del diff.
+// What the AI opened while investigating: without this list you can’t tell whether a claim comes from the code or the diff.
 function consultadoHtml(c) {
   const a = c.consultado?.archivos ?? [];
   const b = c.consultado?.busquedas ?? [];
@@ -1283,32 +1287,32 @@ function consultadoHtml(c) {
   const rango = (x) => (x.desde ? ` L${Number(x.desde)}${x.hasta ? `–${Number(x.hasta)}` : ''}` : '');
   const filas = [
     ...a.map((x) => `<li><span class="mono">${x.repo ? `${esc(x.repo)}: ` : ''}${esc(x.ruta)}${rango(x)}</span></li>`),
-    ...b.map((x) => `<li>${esc(x.herramienta === 'Grep' ? 'Búsqueda' : 'Archivos')} <span class="mono">${esc(x.patron)}</span>${x.repo ? ` en ${esc(x.repo)}` : ''}</li>`),
-    ...bloq.map((x) => `<li>Bloqueado por permisos: <span class="mono">${esc(x.herramienta)} ${esc(x.ruta)}</span></li>`),
+    ...b.map((x) => `<li>${esc(x.herramienta === 'Grep' ? 'Search' : 'Files')} <span class="mono">${esc(x.patron)}</span>${x.repo ? ` in ${esc(x.repo)}` : ''}</li>`),
+    ...bloq.map((x) => `<li>Blocked by permissions: <span class="mono">${esc(x.herramienta)} ${esc(x.ruta)}</span></li>`),
   ];
-  return `<details class="leido muy-tenue"><summary>Archivos leídos: ${a.length}${b.length ? ` · ${plural(b.length, 'búsqueda', 'búsquedas')}` : ''}${bloq.length ? ` · ${plural(bloq.length, 'intento bloqueado', 'intentos bloqueados')}` : ''}</summary><ul>${filas.join('')}</ul></details>`;
+  return `<details class="leido muy-tenue"><summary>Files read: ${a.length}${b.length ? ` · ${plural(b.length, 'search', 'searches')}` : ''}${bloq.length ? ` · ${plural(bloq.length, 'blocked attempt', 'blocked attempts')}` : ''}</summary><ul>${filas.join('')}</ul></details>`;
 }
 
 const valorarHtml = (c) => (API && c.estado === 'respondido'
-  ? `<span class="valorar" role="group" aria-label="¿Sirvió la respuesta?">¿Sirvió? <button type="button" class="btn-texto" data-com-valorar="${esc(c.id)}" data-util="si" aria-pressed="${c.valoracion === true}">Sí</button><button type="button" class="btn-texto" data-com-valorar="${esc(c.id)}" data-util="no" aria-pressed="${c.valoracion === false}">No</button></span> · `
+  ? `<span class="valorar" role="group" aria-label="Was the answer helpful?">Helpful? <button type="button" class="btn-texto" data-com-valorar="${esc(c.id)}" data-util="si" aria-pressed="${c.valoracion === true}">Yes</button><button type="button" class="btn-texto" data-com-valorar="${esc(c.id)}" data-util="no" aria-pressed="${c.valoracion === false}">No</button></span> · `
   : '');
 
 function respuestaHtml(c) {
   const larga = c.respuesta.length > 900 || c.respuesta.split('\n').length > 14;
   const abierta = estado.expandidas.has(c.id);
-  const costo = c.desdeCache ? 'Respuesta guardada, sin costo' : `${esc(nombreModelo(c.modelo))}${c.costo ? ` · ${usd(c.costo)}${Number(c.lote) > 1 ? ` por el lote de ${Number(c.lote)}` : ''}` : ''}`;
+  const costo = c.desdeCache ? 'Saved answer, no cost' : `${esc(nombreModelo(c.modelo))}${c.costo ? ` · ${usd(c.costo)}${Number(c.lote) > 1 ? ` for the batch of ${Number(c.lote)}` : ''}` : ''}`;
   const investigar = API && c.tipo === 'pregunta' && !c.investigado && c.estado === 'respondido'
-    ? `<button type="button" class="btn-texto${c.necesitaCodigo ? ' destacado' : ''}" data-com-investigar="${esc(c.id)}" title="La IA busca y lee el código de la PR y de los otros repos (sin secretos)">${icono('buscar')} Investigar en el código</button>` : '';
+    ? `<button type="button" class="btn-texto${c.necesitaCodigo ? ' destacado' : ''}" data-com-investigar="${esc(c.id)}" title="AI searches and reads the code of the PR and the other repos (no secrets)">${icono('buscar')} Investigate in the code</button>` : '';
   return `<div class="hilo-respuesta">
-    ${c.necesitaCodigo && !c.investigado ? '<p class="aviso-codigo">Para responder con certeza hay que revisar el código del repositorio.</p>' : ''}
+    ${c.necesitaCodigo && !c.investigado ? '<p class="aviso-codigo">Answering with certainty requires checking the repository code.</p>' : ''}
     <div class="md${larga && !abierta ? ' plegada' : ''}">${md(c.respuesta)}</div>
-    ${larga ? `<button type="button" class="btn-texto" data-ver-mas="${esc(c.id)}">${abierta ? 'Ver menos' : 'Ver más'}</button>` : ''}
-    ${c.leido?.length ? `<p class="leido muy-tenue">Revisado en: ${c.leido.map((x) => `<span class="mono">${esc(x.repo)}${x.portal && x.portal !== x.repo ? ` (${esc(x.portal)})` : ''} ${esc(x.rama)}@${esc(String(x.sha ?? '').slice(0, 7))}</span>`).join(' · ')}</p>` : ''}
+    ${larga ? `<button type="button" class="btn-texto" data-ver-mas="${esc(c.id)}">${abierta ? 'Show less' : 'Show more'}</button>` : ''}
+    ${c.leido?.length ? `<p class="leido muy-tenue">Checked in: ${c.leido.map((x) => `<span class="mono">${esc(x.repo)}${x.portal && x.portal !== x.repo ? ` (${esc(x.portal)})` : ''} ${esc(x.rama)}@${esc(String(x.sha ?? '').slice(0, 7))}</span>`).join(' · ')}</p>` : ''}
     ${consultadoHtml(c)}
-    <div class="hilo-pie muy-tenue"><span>Respuesta de IA</span> · ${c.investigado ? `${icono('buscar')} Revisado en el código · ` : ''}${costo}${valorarHtml(c)}<button type="button" class="btn-texto" data-com-repreguntar="${esc(c.id)}">Repreguntar</button>${investigar}</div></div>`;
+    <div class="hilo-pie muy-tenue"><span>AI answer</span> · ${c.investigado ? `${icono('buscar')} Checked in the code · ` : ''}${costo}${valorarHtml(c)}<button type="button" class="btn-texto" data-com-repreguntar="${esc(c.id)}">Follow up</button>${investigar}</div></div>`;
 }
 
-// Ordena una lista de comentarios como conversación: cada repregunta debajo de la pregunta a la que responde.
+// Orders a list of comments as a conversation: each follow-up below the question it replies to.
 function enHilo(cs) {
   const ids = new Set(cs.map((c) => c.id));
   const hijos = new Map();
@@ -1320,13 +1324,13 @@ function enHilo(cs) {
 }
 const hilosDiv = (cs) => enHilo(cs).map(([c, n]) => hiloCuerpo(c, n)).join('');
 
-// Formato mínimo de las respuestas de la IA: bloques de código, código en línea, negrita, listas y párrafos.
+// Minimal formatting for AI answers: code blocks, inline code, bold, lists and paragraphs.
 function md(texto) {
   return String(texto ?? '').replace(/\r/g, '').split('```').map((b, i) => (i % 2
     ? `<pre class="md-codigo">${esc(b.replace(/^[a-zA-Z]*\n/, '').replace(/\n$/, ''))}</pre>`
     : mdTexto(b))).join('');
 }
-// Solo enlaces http(s): esc() ya quitó las comillas, así que el href no puede salirse del atributo.
+// Only http(s) links: esc() already removed the quotes, so the href cannot break out of the attribute.
 const mdEnLinea = (t) => esc(t).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
   .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 function mdTexto(t) {
@@ -1361,19 +1365,19 @@ function mdTexto(t) {
   }).join('');
 }
 
-// Qué hace la IA mientras trabaja en un comentario, con el tiempo que lleva: un punto quieto parece una app pegada.
+// What the AI is doing while working on a comment, with elapsed time: a static dot looks like a frozen app.
 const PROGRESO = {
-  investigar: ['La IA está buscando y leyendo el código de la PR y de los otros repos', 'Suele tardar entre 30 segundos y 2 minutos.'],
-  pregunta: ['La IA está redactando la respuesta', 'Suele tardar unos segundos.'],
-  cambio: ['La IA está aplicando el cambio en una copia y corriendo las comprobaciones', 'Suele tardar entre 1 y 3 minutos.'],
+  investigar: ['AI is searching and reading the code of the PR and the other repos', 'Usually takes 30 seconds to 2 minutes.'],
+  pregunta: ['AI is writing the answer', 'Usually takes a few seconds.'],
+  cambio: ['AI is applying the change to a copy and running the checks', 'Usually takes 1 to 3 minutes.'],
 };
-// Etapas que informa el servidor (mcp/lib/avance.mjs). Las de corrección solo aparecen si la primera comprobación falló.
+// Stages reported by the server (mcp/lib/avance.mjs). The fix-up stages only appear if the first check failed.
 const PASOS = {
-  investigar: [['copias', 'Preparar las copias del código'], ['leyendo', 'Leer el código y redactar la respuesta']],
-  cambio: [['editando', 'Aplicar el cambio en una copia'], ['comprobando', 'Correr las comprobaciones'], ['corrigiendo', 'Corregir lo que falló'], ['recomprobando', 'Volver a comprobar']],
-  explicar: [['preparando', 'Obtener el diff y la descripción'], ['leyendo', 'Leer el diff y el código relacionado'], ['completando', 'Leer lo que faltó y ampliar la explicación']],
+  investigar: [['copias', 'Prepare copies of the code'], ['leyendo', 'Read the code and write the answer']],
+  cambio: [['editando', 'Apply the change to a copy'], ['comprobando', 'Run the checks'], ['corrigiendo', 'Fix what failed'], ['recomprobando', 'Check again']],
+  explicar: [['preparando', 'Fetch the diff and description'], ['leyendo', 'Read the diff and related code'], ['completando', 'Read what was missed and extend the explanation']],
 };
-// Segundos a partir de los cuales se avisa que tarda más de lo habitual.
+// Seconds after which a "taking longer than usual" notice is shown.
 const LENTO = { investigar: 150, pregunta: 60, cambio: 240, explicar: 240 };
 
 function avanceHtml(tipo, av, desde) {
@@ -1385,46 +1389,46 @@ function avanceHtml(tipo, av, desde) {
     return `<li class="${clase}"${i === actual ? ' aria-current="step"' : ''}>${icono(i < actual ? 'ok' : i === actual ? 'actualizar' : 'circulo', i === actual ? 'girando' : '')} ${nombre}</li>`;
   }).join('')}</ol>` : '';
   const cuentas = [
-    av?.archivos ? plural(av.archivos, 'archivo leído', 'archivos leídos') : '',
-    av?.busquedas ? plural(av.busquedas, 'búsqueda', 'búsquedas') : '',
-    av?.ediciones ? plural(av.ediciones, 'edición', 'ediciones') : '',
+    av?.archivos ? plural(av.archivos, 'file read', 'files read') : '',
+    av?.busquedas ? plural(av.busquedas, 'search', 'searches') : '',
+    av?.ediciones ? plural(av.ediciones, 'edit', 'edits') : '',
   ].filter(Boolean).join(' · ');
-  const leido = cuentas ? `<p class="muy-tenue avance-cuenta">${cuentas}${av.ultimo ? ` · último: <code>${esc(av.ultimo)}</code>` : ''}</p>` : '';
+  const leido = cuentas ? `<p class="muy-tenue avance-cuenta">${cuentas}${av.ultimo ? ` · last: <code>${esc(av.ultimo)}</code>` : ''}</p>` : '';
   const seg = desde ? (Date.now() - new Date(desde)) / 1000 : 0;
   const lento = seg > (LENTO[tipo] ?? 120)
-    ? `<p class="aviso-lento">${icono('reloj')} Tarda más de lo habitual, pero sigue en curso. Si llega a 10 minutos se detiene y queda marcado con error.</p>` : '';
+    ? `<p class="aviso-lento">${icono('reloj')} Taking longer than usual, but still running. If it reaches 10 minutes it stops and is marked as an error.</p>` : '';
   return lista + leido + lento;
 }
 
 function progresoHtml(c) {
-  if (c.estado === 'en_cola') return `<div class="hilo-progreso" aria-live="polite"><p class="trabajando">${icono('reloj')} En cola: empieza cuando termine el trabajo en curso.</p></div>`;
+  if (c.estado === 'en_cola') return `<div class="hilo-progreso" aria-live="polite"><p class="trabajando">${icono('reloj')} Queued: starts when the current job finishes.</p></div>`;
   const tipo = c.investigar ? 'investigar' : c.tipo;
   const [texto, ayuda] = PROGRESO[tipo] ?? PROGRESO.pregunta;
   const desde = c.actualizado ?? c.creado;
   return `<div class="hilo-progreso" aria-live="polite"><p class="trabajando">${icono('actualizar', 'girando')}<span>${texto} · ${transcurrido(desde)}</span></p>
-    <div class="progreso" aria-hidden="true"></div>${avanceHtml(tipo, estado.avances[`c:${c.id}`], desde)}<p class="muy-tenue">${ayuda} Se puede seguir usando el tablero mientras tanto.</p></div>`;
+    <div class="progreso" aria-hidden="true"></div>${avanceHtml(tipo, estado.avances[`c:${c.id}`], desde)}<p class="muy-tenue">${ayuda} You can keep using the dashboard meanwhile.</p></div>`;
 }
 
 function hiloCuerpo(c, nivel = 0) {
   const revisando = c.investigar && (c.estado === 'en_cola' || c.estado === 'en_curso');
   const trabajando = c.estado === 'en_cola' || c.estado === 'en_curso';
-  const [txt, cls] = revisando ? ['Revisando el código', 'azul'] : ESTADOS_COMENTARIO[c.estado] ?? [c.estado, ''];
+  const [txt, cls] = revisando ? ['Checking the code', 'azul'] : ESTADOS_COMENTARIO[c.estado] ?? [c.estado, ''];
   const editable = (c.estado === 'borrador' || c.estado === 'nota') && !c.ambito;
-  const donde = c.ambito === 'pr' ? (c.seccion ? esc(SECCIONES[c.seccion] ?? '') : 'Toda la PR') : rangoTexto(c);
+  const donde = c.ambito === 'pr' ? (c.seccion ? esc(SECCIONES[c.seccion] ?? '') : 'Whole PR') : rangoTexto(c);
   return `<div class="hilo-com${nivel ? ' respuesta-a' : ''}" data-hilo="${esc(c.id)}" style="${nivel ? `margin-left:${Math.min(nivel, 3) * 18}px` : ''}">
-    <div class="hilo-cab">${nivel ? '<span class="muy-tenue">Sigue</span>' : ''}<strong>${TIPOS_COMENTARIO[c.tipo]?.etiqueta ?? esc(c.tipo)}</strong><span class="mono muy-tenue">${donde}</span><span class="punto-estado ${cls}${trabajando ? ' vivo' : ''}">${esc(txt)}</span>
-      ${editable ? `<span class="der"><button type="button" class="btn-texto" data-com-editar="${esc(c.id)}">Editar</button><button type="button" class="btn-texto" data-com-borrar="${esc(c.id)}">Borrar</button></span>` : ''}${c.ambito && c.estado === 'borrador' ? `<span class="der"><button type="button" class="btn-texto" data-com-borrar="${esc(c.id)}">Borrar</button></span>` : ''}</div>
-    ${c.citado ? `<blockquote class="cita"${c.citadoDe === 'respuesta' ? ' title="Fragmento de la respuesta anterior"' : ''}>${esc(c.citado)}</blockquote>` : ''}
+    <div class="hilo-cab">${nivel ? '<span class="muy-tenue">Follow-up</span>' : ''}<strong>${TIPOS_COMENTARIO[c.tipo]?.etiqueta ?? esc(c.tipo)}</strong><span class="mono muy-tenue">${donde}</span><span class="punto-estado ${cls}${trabajando ? ' vivo' : ''}">${esc(txt)}</span>
+      ${editable ? `<span class="der"><button type="button" class="btn-texto" data-com-editar="${esc(c.id)}">Edit</button><button type="button" class="btn-texto" data-com-borrar="${esc(c.id)}">Delete</button></span>` : ''}${c.ambito && c.estado === 'borrador' ? `<span class="der"><button type="button" class="btn-texto" data-com-borrar="${esc(c.id)}">Delete</button></span>` : ''}</div>
+    ${c.citado ? `<blockquote class="cita"${c.citadoDe === 'respuesta' ? ' title="Fragment of the previous answer"' : ''}>${esc(c.citado)}</blockquote>` : ''}
     <div class="hilo-texto">${esc(c.texto)}</div>
-    ${c.sugerido !== undefined ? `<pre class="sugerido" aria-label="Código sugerido">${esc(c.sugerido)}</pre>` : ''}
+    ${c.sugerido !== undefined ? `<pre class="sugerido" aria-label="Suggested code">${esc(c.sugerido)}</pre>` : ''}
     ${trabajando ? progresoHtml(c) : ''}
-    ${c.respuesta ? (trabajando ? `<div class="anterior"><span class="etiqueta-anterior">Respuesta anterior</span>${respuestaHtml(c)}</div>` : respuestaHtml(c)) : ''}
+    ${c.respuesta ? (trabajando ? `<div class="anterior"><span class="etiqueta-anterior">Previous answer</span>${respuestaHtml(c)}</div>` : respuestaHtml(c)) : ''}
     ${c.propuestaId ? propuestaHtml(c) : ''}
-    ${c.estado === 'error' && c.motivo ? `<div class="hilo-motivo">${esc(c.motivo)}${API && c.tipo !== 'nota' ? ` <button type="button" class="btn-texto" data-com-reintentar="${esc(c.id)}">Reintentar</button>` : ''}</div>` : ''}
+    ${c.estado === 'error' && c.motivo ? `<div class="hilo-motivo">${esc(c.motivo)}${API && c.tipo !== 'nota' ? ` <button type="button" class="btn-texto" data-com-reintentar="${esc(c.id)}">Retry</button>` : ''}</div>` : ''}
   </div>`;
 }
 
-// Propuestas de cambio de la IA, pedidas al servidor bajo demanda.
+// AI change proposals, requested from the server on demand.
 const propuestasPedidas = new Set();
 function propuestaDe(c) {
   const prop = estado.propuestas.get(c.propuestaId);
@@ -1445,51 +1449,51 @@ function diffPropuesta(prop) {
       ? `<tr class="hunk"><td class="n"></td><td class="n"></td><td class="c">${esc(l.texto)}</td></tr>`
       : `<tr class="${l.tipo}"><td class="n">${l.viejo ?? ''}</td><td class="n">${l.nuevo ?? ''}</td><td class="c">${esc(l.texto)}</td></tr>`)).join('');
     const fuera = prop.fueraDelComentario.includes(archivo);
-    return `<div class="prop-archivo"><div class="ruta"><span>${esc(archivo)}</span>${fuera ? '<span class="estado ambar">Fuera del comentario</span>' : ''}</div><div class="codigo-diff"><table>${filas}</table></div></div>`;
+    return `<div class="prop-archivo"><div class="ruta"><span>${esc(archivo)}</span>${fuera ? '<span class="estado ambar">Outside the comment</span>' : ''}</div><div class="codigo-diff"><table>${filas}</table></div></div>`;
   }).join('');
 }
 
 function checksPropuesta(prop) {
   const c = prop.comprobaciones;
   const fila = (nombre, r, configurado = true) => {
-    if (!configurado || !r) return check('circulo', '', nombre, 'No se comprobó', configurado ? 'Sin archivos que comprobar' : 'No configurado para este repo');
-    if (r.omitido) return check('alerta', 'ambar', nombre, 'Se superó el tiempo máximo', '');
-    if (r.ok) return check('ok', 'verde', nombre, 'Sin fallos nuevos', r.sinBaseline ? 'Sin baseline: no se comparó con el estado previo' : '');
-    return check('bloqueo', 'rojo', nombre, plural(r.nuevosFallos.length, 'fallo nuevo', 'fallos nuevos'), `${esc(r.nuevosFallos.slice(0, 6).join(' · '))}${r.sinBaseline ? ' · Sin baseline: puede incluir fallos que ya existían' : ''}`);
+    if (!configurado || !r) return check('circulo', '', nombre, 'Not checked', configurado ? 'No files to check' : 'Not configured for this repo');
+    if (r.omitido) return check('alerta', 'ambar', nombre, 'Exceeded the time limit', '');
+    if (r.ok) return check('ok', 'verde', nombre, 'No new failures', r.sinBaseline ? 'No baseline: not compared with the previous state' : '');
+    return check('bloqueo', 'rojo', nombre, plural(r.nuevosFallos.length, 'new failure', 'new failures'), `${esc(r.nuevosFallos.slice(0, 6).join(' · '))}${r.sinBaseline ? ' · No baseline: may include pre-existing failures' : ''}`);
   };
   const reglas = c.reglas.bloqueantes
-    ? check('bloqueo', 'rojo', 'Reglas', plural(c.reglas.bloqueantes, 'bloqueante', 'bloqueantes'), esc(c.reglas.hallazgos.filter((h) => h.severidad === 'bloqueante').map((h) => `${h.archivo}:${h.linea} ${h.titulo}`).join(' · ')))
-    : c.reglas.resumen?.alto ? check('alerta', 'ambar', 'Reglas', plural(c.reglas.resumen.alto, 'hallazgo alto', 'hallazgos altos'), esc(c.reglas.hallazgos.filter((h) => h.severidad === 'alto').map((h) => h.titulo).join(' · ')))
-    : check('ok', 'verde', 'Reglas', 'Sin hallazgos', '');
-  return `<div class="prop-checks">${reglas}${fila('Tipos', c.tipos, c.tipos !== null)}${fila('Tests', c.tests, c.tests !== null)}</div>
+    ? check('bloqueo', 'rojo', 'Rules', plural(c.reglas.bloqueantes, 'blocking', 'blocking'), esc(c.reglas.hallazgos.filter((h) => h.severidad === 'bloqueante').map((h) => `${h.archivo}:${h.linea} ${h.titulo}`).join(' · ')))
+    : c.reglas.resumen?.alto ? check('alerta', 'ambar', 'Rules', plural(c.reglas.resumen.alto, 'high finding', 'high findings'), esc(c.reglas.hallazgos.filter((h) => h.severidad === 'alto').map((h) => h.titulo).join(' · ')))
+    : check('ok', 'verde', 'Rules', 'No findings', '');
+  return `<div class="prop-checks">${reglas}${fila('Types', c.tipos, c.tipos !== null)}${fila('Tests', c.tests, c.tests !== null)}</div>
     ${(c.avisos ?? []).map((a) => `<p class="muy-tenue" style="margin:6px 0 0">${esc(a)}</p>`).join('')}`;
 }
 
 function propuestaHtml(c) {
   const prop = propuestaDe(c);
-  if (!prop) return `<div class="propuesta tenue">${API ? 'Cargando la propuesta.' : 'La propuesta solo se ve con el tablero abierto desde Claude Code.'}</div>`;
+  if (!prop) return `<div class="propuesta tenue">${API ? 'Loading the proposal.' : 'The proposal is only visible with the dashboard opened from Claude Code.'}</div>`;
   const pr = prSel();
   const pie = `<span class="muy-tenue">${esc(nombreModelo(prop.modelo))}${prop.costo ? ` · ${usd(prop.costo)}` : ''}</span>`;
   let acciones = '';
   if (prop.estado === 'lista') {
     const confirmar = estado.confirmarAprobar === prop.id;
     acciones = `<div class="prop-acciones">
-      <button type="button" class="btn chico primario" data-prop-aprobar="${esc(prop.id)}">${prop.conFallos ? (confirmar ? 'Confirmar: aprobar con fallos' : 'Aprobar con fallos') : 'Aprobar y subir a la rama'}</button>
-      <button type="button" class="btn chico" data-prop-ajustar="${esc(prop.id)}" aria-expanded="${estado.ajustando === prop.id}">Pedir ajuste</button>
-      <button type="button" class="btn chico" data-prop-descartar="${esc(prop.id)}">Descartar</button>${pie}
+      <button type="button" class="btn chico primario" data-prop-aprobar="${esc(prop.id)}">${prop.conFallos ? (confirmar ? 'Confirm: approve with failures' : 'Approve with failures') : 'Approve and push to the branch'}</button>
+      <button type="button" class="btn chico" data-prop-ajustar="${esc(prop.id)}" aria-expanded="${estado.ajustando === prop.id}">Request adjustment</button>
+      <button type="button" class="btn chico" data-prop-descartar="${esc(prop.id)}">Discard</button>${pie}
     </div>
-    ${confirmar ? '<p class="hilo-motivo">La propuesta tiene fallos en las comprobaciones. El segundo clic la sube igual a la rama.</p>' : ''}
-    ${estado.ajustando === prop.id ? `<div class="prop-ajuste"><textarea id="ajusteTexto" placeholder="Qué cambiar de esta propuesta" aria-label="Qué cambiar de esta propuesta"></textarea>
-      <div class="prop-acciones"><button type="button" class="btn chico primario" data-prop-enviar-ajuste="${esc(prop.id)}">Enviar ajuste</button></div></div>` : ''}`;
+    ${confirmar ? '<p class="hilo-motivo">The proposal has failing checks. A second click pushes it to the branch anyway.</p>' : ''}
+    ${estado.ajustando === prop.id ? `<div class="prop-ajuste"><textarea id="ajusteTexto" placeholder="What to change in this proposal" aria-label="What to change in this proposal"></textarea>
+      <div class="prop-acciones"><button type="button" class="btn chico primario" data-prop-enviar-ajuste="${esc(prop.id)}">Send adjustment</button></div></div>` : ''}`;
   } else if (prop.estado === 'conflicto' || prop.estado === 'rechazada') {
     acciones = `<p class="hilo-motivo">${esc(prop.motivo ?? '')}</p><div class="prop-acciones">
-      <button type="button" class="btn chico" data-prop-regenerar="${esc(prop.id)}" ${pr?.estadoPr === 'OPEN' ? '' : 'disabled title="La PR ya no está abierta"'}>Regenerar</button>
-      ${prop.estado === 'rechazada' ? `<button type="button" class="btn chico" data-prop-copiar="${esc(prop.id)}">${icono('copiar')} Copiar parche</button>` : ''}${pie}</div>`;
+      <button type="button" class="btn chico" data-prop-regenerar="${esc(prop.id)}" ${pr?.estadoPr === 'OPEN' ? '' : 'disabled title="The PR is no longer open"'}>Regenerate</button>
+      ${prop.estado === 'rechazada' ? `<button type="button" class="btn chico" data-prop-copiar="${esc(prop.id)}">${icono('copiar')} Copy patch</button>` : ''}${pie}</div>`;
   } else if (prop.estado === 'aprobada') {
-    acciones = `<div class="prop-acciones"><span class="punto-estado violeta">Subida a la rama</span><a href="${esc(pr?.url ?? '')}/commits/${esc(prop.commit)}" target="_blank" rel="noopener" class="mono">${esc(prop.commit.slice(0, 7))} ${icono('externo')}</a>${pie}</div>`;
+    acciones = `<div class="prop-acciones"><span class="punto-estado violeta">Pushed to the branch</span><a href="${esc(pr?.url ?? '')}/commits/${esc(prop.commit)}" target="_blank" rel="noopener" class="mono">${esc(prop.commit.slice(0, 7))} ${icono('externo')}</a>${pie}</div>`;
   }
   return `<div class="propuesta">
-    <div class="prop-cab"><strong>Propuesta</strong><span>${esc(prop.resumen)}</span></div>
+    <div class="prop-cab"><strong>Proposal</strong><span>${esc(prop.resumen)}</span></div>
     ${diffPropuesta(prop)}
     ${checksPropuesta(prop)}
     ${acciones}
@@ -1505,7 +1509,7 @@ async function accionPropuesta(accion, id, extra = {}) {
       if (r.motivo === 'requiere_confirmacion') { estado.confirmarAprobar = id; return repintarDetalle(); }
       avisar(r.motivo);
     }
-    if (accion === 'aprobar' && r.ok) avisar(`Cambio subido a la rama (${r.commit.slice(0, 7)}).`);
+    if (accion === 'aprobar' && r.ok) avisar(`Change pushed to the branch (${r.commit.slice(0, 7)}).`);
     estado.confirmarAprobar = null;
     estado.ajustando = null;
     await sincronizarComentarios(pr);
@@ -1520,7 +1524,7 @@ function agregarComentario() {
   const rango = rangoSeleccion();
   const c = estado.caja;
   if (!pr || !rango) return;
-  if (!c.texto.trim()) { avisar('Escriba el comentario antes de agregarlo.'); return $('cajaTexto')?.focus(); }
+  if (!c.texto.trim()) { avisar('Write the comment before adding it.'); return $('cajaTexto')?.focus(); }
   const previo = c.editando ? comentarios(pr).find((x) => x.id === c.editando) : null;
   const conSugerido = c.tipo === 'nota' && c.conSugerido && rango.lado === 'nuevo';
   guardarComentario(pr, {
@@ -1562,8 +1566,8 @@ function editarComentario(pr, id) {
   marcarSeleccion();
 }
 
-// Filas de un parche unificado con número de línea viejo y nuevo; los hallazgos se cuelgan bajo su línea nueva.
-// k: índice del archivo en la pestaña, para ubicar la selección de líneas.
+// Rows of a unified patch with old and new line numbers; findings hang below their new line.
+// k: index of the file in the tab, to locate the line selection.
 function filasDiff(lineas, hallazgos, k, hilos = new Map()) {
   const filas = [];
   const porLinea = new Map();
@@ -1573,7 +1577,7 @@ function filasDiff(lineas, hallazgos, k, hilos = new Map()) {
   }
   const color = { bloqueante: 'rojo', alto: 'ambar', medio: '', aviso: '' };
   const sel = estado.seleccionLineas?.archivo === k ? clavesSeleccion() : new Set();
-  const num = (n, clave) => (n === null ? '<td class="n"></td>' : `<td class="n"><button class="n-sel" data-sel="${clave}" aria-label="Seleccionar línea ${n}">${n}</button></td>`);
+  const num = (n, clave) => (n === null ? '<td class="n"></td>' : `<td class="n"><button class="n-sel" data-sel="${clave}" aria-label="Select line ${n}">${n}</button></td>`);
   for (const l of lineas) {
     if (l.tipo === 'hunk') {
       filas.push(`<tr class="hunk"><td class="n"></td><td class="n"></td><td class="c">${esc(l.texto)}</td></tr>`);
@@ -1583,7 +1587,7 @@ function filasDiff(lineas, hallazgos, k, hilos = new Map()) {
     filas.push(`<tr class="${l.tipo}${sel.has(clave) ? ' sel' : ''}" data-clave="${clave}">${num(l.viejo, clave)}${num(l.nuevo, clave)}<td class="c">${esc(l.texto)}</td></tr>`);
     if (l.tipo !== 'del' && porLinea.has(l.nuevo)) {
       for (const x of porLinea.get(l.nuevo)) {
-        filas.push(`<tr class="nota"><td class="n"></td><td class="n"></td><td><span class="estado ${color[x.severidad]}">${esc(x.severidad)}</span> <strong>${esc(x.titulo)}</strong> · <span class="tenue">${esc(x.mensaje)}</span></td></tr>`);
+        filas.push(`<tr class="nota"><td class="n"></td><td class="n"></td><td><span class="estado ${color[x.severidad]}">${esc(nivel(x.severidad))}</span> <strong>${esc(x.titulo)}</strong> · <span class="tenue">${esc(x.mensaje)}</span></td></tr>`);
       }
     }
     for (const [c, n] of enHilo(hilos.get(clave) ?? [])) filas.push(hiloHtml(c, n));
@@ -1591,7 +1595,7 @@ function filasDiff(lineas, hallazgos, k, hilos = new Map()) {
   return filas.join('');
 }
 
-// Selección de líneas del diff: clic marca una línea, Shift + clic extiende el rango dentro del mismo archivo.
+// Diff line selection: click marks a line, Shift + click extends the range within the same file.
 function rangoSeleccion() {
   const s = estado.seleccionLineas;
   if (!s) return null;
@@ -1636,12 +1640,12 @@ function barraPendiente(pr) {
   if (!bs.length) return '';
   const preguntas = bs.filter((c) => c.tipo === 'pregunta').length;
   const cambios = bs.filter((c) => c.tipo === 'cambio').length;
-  const partes = [preguntas && plural(preguntas, 'pregunta', 'preguntas'), cambios && plural(cambios, 'pedido de cambio', 'pedidos de cambio')].filter(Boolean).join(' · ');
-  return `<div class="barra-pendiente" role="region" aria-label="Revisión pendiente">
-    <span><strong>Revisión pendiente (${bs.length})</strong> <span class="tenue">${partes}</span></span>
+  const partes = [preguntas && plural(preguntas, 'question', 'questions'), cambios && plural(cambios, 'change request', 'change requests')].filter(Boolean).join(' · ');
+  return `<div class="barra-pendiente" role="region" aria-label="Pending review">
+    <span><strong>Pending review (${bs.length})</strong> <span class="tenue">${partes}</span></span>
     <span class="der">
-      <button type="button" class="btn chico primario" data-accion="enviarRevision" ${API ? '' : 'disabled title="Disponible con el tablero abierto desde Claude Code (tablero_servir)"'}>${icono('chispa')} Enviar revisión</button>
-      <button type="button" class="btn chico" data-accion="descartarBorradores">${estado.confirmarDescarte ? `Confirmar: descartar ${plural(bs.length, 'borrador', 'borradores')}` : 'Descartar borradores'}</button>
+      <button type="button" class="btn chico primario" data-accion="enviarRevision" ${API ? '' : 'disabled title="Available when the dashboard is opened from Claude Code (tablero_servir)"'}>${icono('chispa')} Send review</button>
+      <button type="button" class="btn chico" data-accion="descartarBorradores">${estado.confirmarDescarte ? `Confirm: discard ${plural(bs.length, 'draft', 'drafts')}` : 'Discard drafts'}</button>
     </span>
   </div>`;
 }
@@ -1661,9 +1665,9 @@ function tabArchivos(pr) {
         diffPendiente = pr.id;
         api(`/api/diff?id=${encodeURIComponent(pr.id)}`).then((d) => { DIFFS[pr.id] = d; if (estado.seleccion === pr.id) pintarDetalle(); }, (e) => avisar(e.message)).finally(() => { diffPendiente = null; });
       }
-      return '<p class="tenue">Cargando los cambios de GitHub.</p>';
+      return '<p class="tenue">Loading changes from GitHub.</p>';
     }
-    return `<p class="tenue">Este tablero no trae el diff de esta PR. Véalo en <a href="${esc(pr.url)}/files" target="_blank" rel="noopener">GitHub</a> o regenere el tablero.</p>`;
+    return `<p class="tenue">This dashboard doesn’t include the diff for this PR. View it on <a href="${esc(pr.url)}/files" target="_blank" rel="noopener">GitHub</a> or regenerate the dashboard.</p>`;
   }
   archivos = ordenarArchivos(pr, archivos);
   estado.lineasArchivo = archivos.map((a) => (a.patch !== undefined ? SekiAnclaje.lineasDePatch(a.patch) : []));
@@ -1691,33 +1695,33 @@ function tabArchivos(pr) {
   const ordenados = !!pr.explicacion?.orden_lectura?.length;
   return `<div class="${ajustar ? 'ajustar' : ''}">
     <div class="diff-barra">
-      <span>${plural(archivos.length, 'archivo', 'archivos')} · <span class="mas">+${totalA}</span> <span class="menos">−${totalD}</span> · ${vistos.size} de ${archivos.length} vistos</span>
-      ${ordenados ? '<span class="muy-tenue">En el orden de lectura de la explicación</span>' : ''}
+      <span>${plural(archivos.length, 'file', 'files')} · <span class="mas">+${totalA}</span> <span class="menos">−${totalD}</span> · ${vistos.size} of ${archivos.length} viewed</span>
+      ${ordenados ? '<span class="muy-tenue">In the explanation’s reading order</span>' : ''}
       <span class="der">
-        <label><input type="checkbox" data-accion-diff="ajustar" ${ajustar ? 'checked' : ''}> Ajustar líneas largas</label>
-        <button class="btn chico" data-accion="plegarTodo">Plegar todo</button>
-        <button class="btn chico" data-accion="enfoque" title="Esconde la cola y el lateral; Esc para volver">${document.body.hasAttribute('data-enfoque') ? 'Ver la cola' : 'Ampliar'}</button>
-        <a class="btn chico" href="${esc(pr.url)}/files" target="_blank" rel="noopener">Ver en GitHub ${icono('externo')}</a>
+        <label><input type="checkbox" data-accion-diff="ajustar" ${ajustar ? 'checked' : ''}> Wrap long lines</label>
+        <button class="btn chico" data-accion="plegarTodo">Collapse all</button>
+        <button class="btn chico" data-accion="enfoque" title="Hides the queue and the sidebar; Esc to go back">${document.body.hasAttribute('data-enfoque') ? 'Show the queue' : 'Expand'}</button>
+        <a class="btn chico" href="${esc(pr.url)}/files" target="_blank" rel="noopener">View on GitHub ${icono('externo')}</a>
       </span>
     </div>
-    ${bloqueSuelto(fuera, 'Comentarios sobre archivos que ya no están en la PR')}
-    <nav class="indice" aria-label="Archivos de la PR">${archivos.map((a, k) => `<a href="#${idArchivo(k)}" data-saltar="${idArchivo(k)}"><span class="mono muy-tenue">${k + 1}</span><span class="ruta mono ${vistos.has(a.filename) ? 'visto' : ''}" title="${esc(a.filename)}"><bdi>${esc(a.filename)}</bdi></span><span class="mono"><span class="mas">+${a.additions}</span> <span class="menos">−${a.deletions}</span>${barrita(a.additions, a.deletions)}</span></a>`).join('')}</nav>
+    ${bloqueSuelto(fuera, 'Comments on files no longer in the PR')}
+    <nav class="indice" aria-label="PR files">${archivos.map((a, k) => `<a href="#${idArchivo(k)}" data-saltar="${idArchivo(k)}"><span class="mono muy-tenue">${k + 1}</span><span class="ruta mono ${vistos.has(a.filename) ? 'visto' : ''}" title="${esc(a.filename)}"><bdi>${esc(a.filename)}</bdi></span><span class="mono"><span class="mas">+${a.additions}</span> <span class="menos">−${a.deletions}</span>${barrita(a.additions, a.deletions)}</span></a>`).join('')}</nav>
     ${archivos.map((a, k) => {
       const plegado = vistos.has(a.filename) || k >= plegarDesde;
       const propios = hallazgos.filter((h) => h.archivo === a.filename && h.linea);
       const cuerpo = a.patch !== undefined
-        ? `<div class="codigo-diff"><table>${filasDiff(estado.lineasArchivo[k], propios, k, anclados[k])}</table></div>${a.recortado ? `<div class="aviso-diff">El resto de este archivo no viene en el tablero. <a href="${esc(pr.url)}/files" target="_blank" rel="noopener">Ver completo en GitHub</a>.</div>` : ''}`
-        : `<div class="aviso-diff">${a.recortado ? 'La PR supera el tope de líneas que trae el tablero.' : 'GitHub no muestra el diff de este archivo (binario o demasiado grande).'} <a href="${esc(pr.url)}/files" target="_blank" rel="noopener">Ver en GitHub</a>.</div>`;
+        ? `<div class="codigo-diff"><table>${filasDiff(estado.lineasArchivo[k], propios, k, anclados[k])}</table></div>${a.recortado ? `<div class="aviso-diff">The rest of this file is not included in the dashboard. <a href="${esc(pr.url)}/files" target="_blank" rel="noopener">View it in full on GitHub</a>.</div>` : ''}`
+        : `<div class="aviso-diff">${a.recortado ? 'The PR exceeds the line limit the dashboard includes.' : 'GitHub doesn’t show the diff for this file (binary or too large).'} <a href="${esc(pr.url)}/files" target="_blank" rel="noopener">View on GitHub</a>.</div>`;
       return `<section class="archivo" id="${idArchivo(k)}" data-k="${k}" ${plegado ? 'data-plegado' : ''}>
         <div class="archivo-cab">
-          <button class="plegar" data-plegar="${idArchivo(k)}" aria-label="Plegar o desplegar">${icono('chevron')}</button>
+          <button class="plegar" data-plegar="${idArchivo(k)}" aria-label="Collapse or expand">${icono('chevron')}</button>
           <span class="estado">${ESTADO_ARCHIVO[a.status] ?? esc(a.status)}</span>
           <span class="ruta mono" title="${esc(a.filename)}">${a.previous_filename ? `${esc(a.previous_filename)} → ` : ''}${esc(a.filename)}</span>
-          ${propios.length ? `<span class="senal ambar" title="Hallazgos en este archivo">${icono('alerta')}${propios.length}</span>` : ''}
+          ${propios.length ? `<span class="senal ambar" title="Findings in this file">${icono('alerta')}${propios.length}</span>` : ''}
           <span class="mono"><span class="mas">+${a.additions}</span> <span class="menos">−${a.deletions}</span></span>
-          <label><input type="checkbox" data-visto="${esc(a.filename)}" ${vistos.has(a.filename) ? 'checked' : ''}> Visto</label>
+          <label><input type="checkbox" data-visto="${esc(a.filename)}" ${vistos.has(a.filename) ? 'checked' : ''}> Viewed</label>
         </div>
-        ${bloqueSuelto(sueltos[k], 'Comentarios sobre líneas que cambiaron')}
+        ${bloqueSuelto(sueltos[k], 'Comments on lines that changed')}
         ${cuerpo}
       </section>`;
     }).join('')}
@@ -1726,12 +1730,12 @@ function tabArchivos(pr) {
 }
 
 const TABS = [
-  ['resumen', 'Resumen', () => null],
-  ['descripcion', 'Descripción', (pr) => pr.commits?.length || null],
-  ['archivos', 'Archivos', (pr) => pr.archivos ?? DIFFS[pr.id]?.length ?? null],
-  ['verificaciones', 'Verificaciones', (pr) => pr.verificaciones?.hallazgos.length || null],
-  ['probar', 'Cómo probar', (pr) => pr.explicacion?.como_probar?.length || null],
-  ['revision', 'Revisión', () => null],
+  ['resumen', 'Summary', () => null],
+  ['descripcion', 'Description', (pr) => pr.commits?.length || null],
+  ['archivos', 'Files', (pr) => pr.archivos ?? DIFFS[pr.id]?.length ?? null],
+  ['verificaciones', 'Checks', (pr) => pr.verificaciones?.hallazgos.length || null],
+  ['probar', 'How to test', (pr) => pr.explicacion?.como_probar?.length || null],
+  ['revision', 'Review', () => null],
 ];
 const CUERPOS = { resumen: tabResumen, descripcion: tabDescripcion, archivos: tabArchivos, verificaciones: tabVerificaciones, probar: tabProbar, revision: tabRevision };
 
@@ -1739,29 +1743,29 @@ function pintarDetalle() {
   leerCaja();
   const pr = FOTO.prs.find((p) => p.id === estado.seleccion);
   if (!pr) {
-    $('detalle').innerHTML = `<div class="vacio"><p>Seleccione una PR de la cola para ver dónde está, qué cambia y cómo probarla.</p></div>`;
+    $('detalle').innerHTML = `<div class="vacio"><p>Select a PR from the queue to see where it is, what changes and how to test it.</p></div>`;
     return;
   }
   const t = tono(pr);
   const [nombreGrupo] = definicionGrupos()[grupoDe(pr)] ?? GRUPOS[pr.accion] ?? [pr.accion];
   const etiqueta = pr.estadoPr === 'MERGED'
-    ? `<span class="estado violeta">${icono('merge')} Mergeada en pruebas</span>`
+    ? `<span class="estado violeta">${icono('merge')} Merged in testing</span>`
     : `<span class="estado ${t}">${esc(nombreGrupo)}</span>`;
   $('detalle').innerHTML = `<article class="det ${estado.tab === 'archivos' ? 'ancho' : ''}">
-    <button class="btn chico volver" data-accion="volver">${icono('flecha')} Cola</button>
+    <button class="btn chico volver" data-accion="volver">${icono('flecha')} Queue</button>
     <div class="det-meta">${etiqueta}<span class="mono">${esc(pr.repo)} #${pr.numero}</span><span>${esc(pr.portal)}</span></div>
     <h2>${esc(pr.titulo)}</h2>
     <div class="det-meta">
       <span class="mono">${esc(pr.base)} ← ${esc(pr.rama)}</span>
-      ${pr.adiciones !== undefined ? `<span class="mono"><span class="mas">+${pr.adiciones}</span> <span class="menos">−${pr.eliminaciones}</span> · ${plural(pr.archivos, 'archivo', 'archivos')}</span>` : ''}
-      <span>${icono('reloj')} hace ${plural(pr.dias, 'día', 'días')}</span>
+      ${pr.adiciones !== undefined ? `<span class="mono"><span class="mas">+${pr.adiciones}</span> <span class="menos">−${pr.eliminaciones}</span> · ${plural(pr.archivos, 'file', 'files')}</span>` : ''}
+      <span>${icono('reloj')} ${plural(pr.dias, 'day', 'days')} ago</span>
     </div>
     <div class="acciones">
-      <a class="btn primario" href="${esc(pr.url)}" target="_blank" rel="noopener">Abrir en GitHub ${icono('externo')}</a>
-      <button class="btn" data-copiar="/plannotator-review ${esc(pr.url)}">${icono('copiar')} Revisar línea por línea</button>
+      <a class="btn primario" href="${esc(pr.url)}" target="_blank" rel="noopener">Open in GitHub ${icono('externo')}</a>
+      <button class="btn" data-copiar="/plannotator-review ${esc(pr.url)}">${icono('copiar')} Review line by line</button>
       ${API
-        ? `<button class="btn" data-accion="analizar" ${trabajoActivo(pr) ? 'disabled' : ''}>${trabajoActivo(pr) ? `${icono('actualizar', 'girando')} Analizando` : `${icono('chispa')} ${pr.explicacion ? 'Volver a analizar con IA' : 'Analizar con IA'}`}</button>`
-        : `<button class="btn" data-copiar="/seki-review:revisar-prs explicar ${esc(pr.repo)}#${pr.numero}">${icono('copiar')} ${pr.explicacion ? 'Regenerar explicación' : 'Explicar'}</button>`}
+        ? `<button class="btn" data-accion="analizar" ${trabajoActivo(pr) ? 'disabled' : ''}>${trabajoActivo(pr) ? `${icono('actualizar', 'girando')} Analyzing` : `${icono('chispa')} ${pr.explicacion ? 'Analyze again with AI' : 'Analyze with AI'}`}</button>`
+        : `<button class="btn" data-copiar="/seki-review:revisar-prs explicar ${esc(pr.repo)}#${pr.numero}">${icono('copiar')} ${pr.explicacion ? 'Regenerate explanation' : 'Explain'}</button>`}
     </div>
     ${pilaEstados(pr)}
     <div class="tabs" role="tablist">${TABS.map(([k, nombre, n]) => { const c = n(pr); return `<button class="tab" role="tab" data-tab="${k}" aria-selected="${estado.tab === k}">${nombre}${c ? `<span class="n">${c}</span>` : ''}</button>`; }).join('')}</div>
@@ -1778,7 +1782,7 @@ document.addEventListener('mouseup', (ev) => {
   setTimeout(abrirBarraSel, 0);
 });
 
-// Mermaid se carga del CDN solo cuando hay un diagrama a la vista; sin red queda el texto del diagrama.
+// Mermaid loads from the CDN only when a diagram is in view; without network the diagram text remains.
 let mermaidListo = null;
 function pintarDiagramas() {
   const nodos = $('detalle').querySelectorAll('pre.mermaid');
@@ -1797,22 +1801,22 @@ function pintarDiagramas() {
   mermaidListo.then((m) => m.run({ nodes: nodos })).catch(() => {});
 }
 
-// Últimos 30 días por modelo, frente a las respuestas marcadas como útiles: sirve para ver si la elección de modelo rinde.
+// Last 30 days per model, against answers marked as helpful: shows whether the model choice pays off.
 function textoResumenCostos(r) {
   const filas = Object.entries(r?.modelos ?? {}).filter(([, m]) => m.trabajos);
   if (!filas.length) return '';
-  return [`Últimos ${r.dias} días`, ...filas.map(([n, m]) => `${n}: ${plural(m.trabajos, 'trabajo', 'trabajos')}${m.fallidos ? ` (${m.fallidos} fallidos)` : ''} · ${usd(m.costo)}${m.utiles || m.noUtiles ? ` · útiles ${m.utiles} de ${m.utiles + m.noUtiles}` : ''}${m.costoPorUtil ? ` · ${usd(m.costoPorUtil)} por respuesta útil` : ''}`),
-    ...(r.reintentos ? [`Reintentos y análisis repetidos: ${r.reintentos}`] : [])].join('\n');
+  return [`Last ${r.dias} days`, ...filas.map(([n, m]) => `${n}: ${plural(m.trabajos, 'job', 'jobs')}${m.fallidos ? ` (${m.fallidos} failed)` : ''} · ${usd(m.costo)}${m.utiles || m.noUtiles ? ` · helpful ${m.utiles} of ${m.utiles + m.noUtiles}` : ''}${m.costoPorUtil ? ` · ${usd(m.costoPorUtil)} per helpful answer` : ''}`),
+    ...(r.reintentos ? [`Retries and repeated analyses: ${r.reintentos}`] : [])].join('\n');
 }
 
 function pintarBarra() {
   if (!API) return;
   $('filtrarIa').hidden = false;
   const r = estado.ultimoRefresco;
-  const gasto = estado.costoHoy?.trabajos ? `Gasto de IA hoy: ${usd(estado.costoHoy.total)} · ${plural(estado.costoHoy.trabajos, 'trabajo', 'trabajos')}` : '';
-  const texto = estado.refrescando ? 'Consultando GitHub y git' : r?.sinConexion ? 'Sin conexión: reintentando' : r && !r.ok ? 'La última actualización falló' : gasto;
+  const gasto = estado.costoHoy?.trabajos ? `AI spend today: ${usd(estado.costoHoy.total)} · ${plural(estado.costoHoy.trabajos, 'job', 'jobs')}` : '';
+  const texto = estado.refrescando ? 'Querying GitHub and git' : r?.sinConexion ? 'Offline: retrying' : r && !r.ok ? 'The last refresh failed' : gasto;
   $('accionesBarra').innerHTML = `<span class="estado-texto" title="${esc(textoResumenCostos(estado.resumenCostos))}">${texto}</span>
-    <button class="btn chico" data-accion="refrescar" ${estado.refrescando ? 'disabled' : ''} title="${esc(r && !r.ok ? r.mensaje : 'Vuelve a consultar GitHub y git: qué se mergeó, qué es nuevo y dónde está cada PR')}">${icono('actualizar', estado.refrescando ? 'girando' : '')} ${estado.refrescando ? 'Actualizando' : 'Actualizar estado'}</button>`;
+    <button class="btn chico" data-accion="refrescar" ${estado.refrescando ? 'disabled' : ''} title="${esc(r && !r.ok ? r.mensaje : 'Queries GitHub and git again: what was merged, what is new and where each PR is')}">${icono('actualizar', estado.refrescando ? 'girando' : '')} ${estado.refrescando ? 'Refreshing' : 'Refresh status'}</button>`;
 }
 
 async function api(ruta, cuerpo) {
@@ -1821,7 +1825,7 @@ async function api(ruta, cuerpo) {
     headers: { 'X-Seki-Token': API.token, 'Content-Type': 'application/json' },
     body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo),
   });
-  if (r.status === 404 && servidorDesfasado()) throw new Error('El servidor del tablero es de una versión anterior y no tiene esta función: reinicie Claude Code.');
+  if (r.status === 404 && servidorDesfasado()) throw new Error('The dashboard server is from an older version and doesn’t have this feature: restart Claude Code.');
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`);
   return r.json();
 }
@@ -1845,16 +1849,16 @@ async function sondear() {
     }
     estado.marcasComentarios = marcas;
     estado.avances = e.avances ?? {};
-    estado.versionServidor = e.version ?? 'anterior';
+    estado.versionServidor = e.version ?? 'an older version';
     const termino = e.trabajos.some((t) => t.estado === 'terminado' && previo.get(t.id) !== 'terminado') || (eraRefresco && !e.refrescando);
     if (termino) FOTO = await api('/api/foto');
-    // Si la persona está escribiendo en el detalle, no se repinta: perdería el foco y el texto a medio escribir.
+    // If the user is typing in the detail, do not repaint: they would lose focus and half-written text.
     pintarTodo({ detalle: !$('detalle').contains(document.activeElement) });
     const activo = e.refrescando || e.trabajos.some((t) => t.estado === 'en_cola' || t.estado === 'en_curso');
     if (activo) sondeo = setTimeout(sondear, 3000);
   } catch (err) {
-    // Si la sesión que servía el tablero se cerró, otra sesión abierta lo toma en el mismo enlace: se reintenta solo.
-    estado.ultimoRefresco = { ok: false, sinConexion: true, mensaje: `Sin conexión con el servidor local (${err.message}). Se reintenta cada 5 segundos; si no hay otra sesión de Claude Code abierta, ábralo con /seki-review:revisar-prs.` };
+    // If the session serving the dashboard closed, another open session takes it over on the same link: it retries on its own.
+    estado.ultimoRefresco = { ok: false, sinConexion: true, mensaje: `No connection to the local server (${err.message}). Retrying every 5 seconds; if no other Claude Code session is open, open it with /seki-review:revisar-prs.` };
     pintarBarra();
     sondeo = setTimeout(sondear, 5000);
   }
@@ -1873,8 +1877,8 @@ function pintarTodo({ detalle = true } = {}) {
   sincronizarAnimaciones();
 }
 
-// Cada sondeo repinta el detalle y las animaciones en bucle volverían a empezar: la barra y el ícono saltarían cada 3 s.
-// Atadas al origen del reloj de la página, una animación nueva sigue en la misma fase que la que reemplaza.
+// Each poll repaints the detail and looping animations would restart: the bar and icon would jump every 3 s.
+// Tied to the page clock origin, a new animation continues in the same phase as the one it replaces.
 function sincronizarAnimaciones() {
   for (const a of document.getAnimations?.() ?? []) {
     if (a.effect?.getTiming().iterations === Infinity && a.startTime !== 0) a.startTime = 0;
@@ -1897,7 +1901,7 @@ function guardarRevision(pr, cambios) {
   const nueva = { ...(revision(pr) ?? {}), ...cambios, fecha: new Date().toISOString(), headSha: pr.headSha };
   const ok = almacen.escribir(claveRevision(pr), nueva);
   const g = $('guardado');
-  if (g) g.textContent = ok ? `Guardado el ${new Date(nueva.fecha).toLocaleString('es-CO')}` : 'No se pudo guardar: el navegador bloquea el almacenamiento local.';
+  if (g) g.textContent = ok ? `Saved ${new Date(nueva.fecha).toLocaleString('en-US')}` : 'Could not save: the browser is blocking local storage.';
   pintarLateral();
   pintarCola();
 }
@@ -1914,19 +1918,19 @@ function revisionesExportables() {
 
 function exportar() {
   const datos = { proyecto: FOTO.proyecto, exportado: new Date().toISOString(), revisiones: revisionesExportables() };
-  if (!datos.revisiones.length) return avisar('Todavía no hay decisiones, pasos marcados ni comentarios para exportar.');
+  if (!datos.revisiones.length) return avisar('There are no decisions, checked steps or comments to export yet.');
   const blob = new Blob([JSON.stringify(datos, null, 2)], { type: 'application/json' });
   const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `revision-prs-${datos.exportado.slice(0, 10)}.json` });
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  avisar(`${plural(datos.revisiones.length, 'revisión exportada', 'revisiones exportadas')}.`);
+  avisar(`${plural(datos.revisiones.length, 'review exported', 'reviews exported')}.`);
 }
 
 function resumenTexto() {
   const notasDe = (r) => (r.comentarios ?? []).filter((c) => c.tipo === 'nota' && c.estado !== 'descartado');
   const rs = revisionesExportables().filter((r) => r.decision || notasDe(r).length);
-  if (!rs.length) return 'Sin decisiones de revisión ni notas registradas.';
-  const nota = (c) => `  · ${c.archivo}:${rangoTexto(c)} · ${c.texto.replace(/\s+/g, ' ')}${c.sugerido !== undefined ? `\n    Código sugerido:\n${c.sugerido.split('\n').map((l) => `      ${l}`).join('\n')}` : ''}`;
+  if (!rs.length) return 'No review decisions or notes recorded.';
+  const nota = (c) => `  · ${c.archivo}:${rangoTexto(c)} · ${c.texto.replace(/\s+/g, ' ')}${c.sugerido !== undefined ? `\n    Suggested code:\n${c.sugerido.split('\n').map((l) => `      ${l}`).join('\n')}` : ''}`;
   return rs.map((r) => {
     const cab = `- ${r.repo}#${r.numero} ${r.titulo}${r.decision ? `: ${(DECISIONES[r.decision] ?? [r.decision])[0]}${r.nota ? `. ${r.nota.replace(/\s+/g, ' ')}` : ''}` : ''}\n  ${r.url}`;
     return [cab, ...notasDe(r).map(nota)].join('\n');
@@ -1947,8 +1951,8 @@ function importar(archivo) {
       n++;
     }
     pintarTodo();
-    avisar(`${plural(n, 'revisión importada', 'revisiones importadas')}.`);
-  }).catch(() => avisar('El archivo no es una revisión exportada desde este tablero.'));
+    avisar(`${plural(n, 'review imported', 'reviews imported')}.`);
+  }).catch(() => avisar('The file is not a review exported from this dashboard.'));
 }
 
 const prSel = () => FOTO.prs.find((p) => p.id === estado.seleccion);
@@ -1956,7 +1960,7 @@ const prSel = () => FOTO.prs.find((p) => p.id === estado.seleccion);
 function repreguntar(pr, id) {
   const c = comentarios(pr).find((x) => x.id === id);
   if (!c) return;
-  // La IA recibe el hilo completo desde el servidor; aquí solo se muestra un recordatorio corto.
+  // The AI receives the full thread from the server; only a short reminder is shown here.
   const r = c.respuesta.replace(/\s+/g, ' ');
   const resumen = r.length > 90 ? `${r.slice(0, 90)}…` : r;
   if (c.ambito === 'pr') {
@@ -1977,7 +1981,7 @@ async function enviarRevision(pr, soloIds) {
   const pedidos = (soloIds ? comentarios(pr).filter((c) => soloIds.includes(c.id)) : borradores(pr)).filter((c) => c.tipo !== 'nota');
   const viejos = pedidos.filter((c) => deOtroCommit(pr, c));
   const ids = pedidos.filter((c) => !deOtroCommit(pr, c)).map((c) => c.id);
-  if (viejos.length) avisar(`Sin enviar por ser de un commit anterior: ${plural(viejos.length, 'comentario', 'comentarios')}. Al editarlos se anclan al commit actual.`);
+  if (viejos.length) avisar(`Not sent because they belong to an earlier commit: ${plural(viejos.length, 'comment', 'comments')}. Editing them anchors them to the current commit.`);
   if (!ids.length) return;
   try {
     await sincronizarComentarios(pr);
@@ -2021,7 +2025,7 @@ function avisar(texto) {
 function copiar(boton, texto) {
   const original = boton.innerHTML;
   const fin = (t) => { boton.textContent = t; setTimeout(() => { boton.innerHTML = original; }, 1400); };
-  (navigator.clipboard ? navigator.clipboard.writeText(texto) : Promise.reject()).then(() => fin('Copiado'), () => fin('No se pudo copiar'));
+  (navigator.clipboard ? navigator.clipboard.writeText(texto) : Promise.reject()).then(() => fin('Copied'), () => fin('Could not copy'));
 }
 
 document.addEventListener('click', (ev) => {
@@ -2064,7 +2068,7 @@ document.addEventListener('click', (ev) => {
   if (d.accion === 'quitarFiltroIa') { estado.filtroIa = null; return pintarTodo({ detalle: false }); }
   if (d.accion === 'guardarFiltroIa' && estado.filtroIa) {
     almacen.escribir(claveVistasIa(), [...vistasIa().filter((v) => !mismaConsulta(v, estado.filtroIa.consulta)), estado.filtroIa.consulta]);
-    avisar('Vista guardada en la barra lateral.');
+    avisar('View saved in the sidebar.');
     return pintarTodo({ detalle: false });
   }
   if (d.vistaIa !== undefined) {
@@ -2091,7 +2095,7 @@ document.addEventListener('click', (ev) => {
   if (d.accion === 'agregarPreguntaPr') return preguntarPr(prSel(), undefined, undefined, { enviar: false });
   if (d.bsel || d.bselRapida !== undefined) return accionBarraSel(d.bsel, d.bselRapida === undefined ? undefined : Number(d.bselRapida));
   if (d.bselLineas) return abrirCajaDeSeleccion(d.bselLineas);
-  if (d.ampliar) return preguntarPr(prSel(), d.ampliar, `Ampliar la sección «${SECCIONES[d.ampliar]}»: más detalle y ejemplos concretos tomados del diff.`);
+  if (d.ampliar) return preguntarPr(prSel(), d.ampliar, `Expand the “${SECCIONES[d.ampliar]}” section: more detail and concrete examples taken from the diff.`);
   if (d.cajaTipo) { leerCaja(); estado.caja.tipo = d.cajaTipo; return marcarSeleccion(); }
   if (d.accion === 'cajaAgregar') return agregarComentario();
   if (d.accion === 'cajaCancelar') return cerrarCaja();
@@ -2116,7 +2120,7 @@ document.addEventListener('click', (ev) => {
   if (d.propAjustar) { estado.ajustando = estado.ajustando === d.propAjustar ? null : d.propAjustar; repintarDetalle(); return $('ajusteTexto')?.focus({ preventScroll: true }); }
   if (d.propEnviarAjuste) {
     const indicacion = $('ajusteTexto')?.value.trim();
-    if (!indicacion) return avisar('Escriba qué cambiar de la propuesta.');
+    if (!indicacion) return avisar('Write what to change in the proposal.');
     return accionPropuesta('ajustar', d.propEnviarAjuste, { indicacion });
   }
   if (d.propDescartar) return accionPropuesta('descartar', d.propDescartar);
@@ -2209,7 +2213,7 @@ document.addEventListener('keydown', (ev) => {
 });
 
 $('titulo').textContent = `Seki Review · ${FOTO.proyecto}`;
-$('foto').textContent = `Datos de GitHub del ${new Date(FOTO.generado).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })}`;
+$('foto').textContent = `GitHub data from ${new Date(FOTO.generado).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}`;
 document.querySelectorAll('[data-rol]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.rol === estado.rol)));
 aplicarLateral(almacen.leer('seki-review:sin-lateral', false));
 aplicarCola(almacen.leer('seki-review:sin-cola', false));

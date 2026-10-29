@@ -1,5 +1,5 @@
-// Contexto que se entrega a la IA para responder preguntas sobre líneas: el hunk del diff y el archivo
-// alrededor de esas líneas en la versión de la PR (no en la rama en que esté parado el checkout).
+// Context given to the AI to answer questions about lines: the diff hunk and the file
+// around those lines in the PR version (not in whatever branch the checkout is on).
 import { expandir } from './config.mjs';
 import { asegurarDiff } from './diffs.mjs';
 import { enCola } from './estado.mjs';
@@ -7,14 +7,14 @@ import { git } from './proceso.mjs';
 import { SECCIONES } from './comentarios.mjs';
 
 const MARGEN = 40;
-// Un archivo corto va completo: cuesta poco y evita respuestas de "no se puede determinar".
+// A short file goes in full: it costs little and avoids "cannot be determined" answers.
 const ARCHIVO_COMPLETO = 400;
 const TOPE = 60000;
 
 export async function archivoEnSha(p, repo, numero, headSha, archivo) {
   const dir = expandir(p.repos[repo].checkout);
   const mostrar = () => git(dir, ['show', `${headSha}:${archivo}`]);
-  try { return await mostrar(); } catch { /* el commit no está en el checkout */ }
+  try { return await mostrar(); } catch { /* the commit is not in the checkout */ }
   const ref = `refs/seki-review/${numero}/contexto`;
   return enCola(dir, async () => {
     try {
@@ -53,28 +53,28 @@ function hunks(patch) {
 const cruza = ([a, b], desde, hasta) => a <= hasta && desde <= b;
 
 function recortar(texto, max) {
-  return texto.length <= max ? texto : `${texto.slice(0, Math.max(0, max - 40))}\n... (recortado por longitud)`;
+  return texto.length <= max ? texto : `${texto.slice(0, Math.max(0, max - 40))}\n... (truncated for length)`;
 }
 
 function contextoDePr(pr, archivos) {
   const e = pr.explicacion;
   const explicacion = e ? Object.entries(SECCIONES).filter(([k]) => e[k] !== undefined && e[k] !== null && e[k] !== '')
     .map(([k, titulo]) => `#### ${titulo}\n${typeof e[k] === 'string' ? e[k] : JSON.stringify(e[k], null, 1)}`).join('\n') : '';
-  const diff = archivos.map((a) => `### ${a.filename}\n${a.patch ?? '(sin diff: binario o demasiado grande)'}`).join('\n\n');
-  return [explicacion ? `## Explicación actual de la PR\n${explicacion}` : '## La PR aún no tiene explicación', `## Diff de la PR\n${diff}`].join('\n\n');
+  const diff = archivos.map((a) => `### ${a.filename}\n${a.patch ?? '(no diff: binary or too large)'}`).join('\n\n');
+  return [explicacion ? `## Current PR explanation\n${explicacion}` : '## The PR has no explanation yet', `## PR diff\n${diff}`].join('\n\n');
 }
 
 const citaDe = (c) => (!c.citado ? '' : c.citadoDe === 'respuesta'
-  ? `Fragmento citado de la respuesta anterior (la pregunta es sobre esta parte): «${c.citado}»`
-  : `Texto citado de la explicación: «${c.citado}»`);
+  ? `Fragment quoted from the previous answer (the question is about this part): «${c.citado}»`
+  : `Text quoted from the explanation: «${c.citado}»`);
 
-// Preguntas y respuestas anteriores de una repregunta, de la más vieja a la más nueva, completas.
+// Previous questions and answers of a follow-up question, oldest to newest, in full.
 function hilo(c, todos) {
   const porId = new Map(todos.map((x) => [x.id, x]));
   const previos = [];
   for (let x = porId.get(c.respondeA); x && previos.length < 6; x = porId.get(x.respondeA)) previos.unshift(x);
   if (!previos.length) return '';
-  return `Conversación previa:\n${previos.map((x) => `- Pregunta: ${x.texto}\n  Respuesta: ${x.respuesta ?? '(sin respuesta)'}`).join('\n')}`;
+  return `Previous conversation:\n${previos.map((x) => `- Question: ${x.texto}\n  Answer: ${x.respuesta ?? '(no answer)'}`).join('\n')}`;
 }
 
 export async function contextoPreguntas(p, pr, comentarios, { archivos, todos = [] } = {}) {
@@ -83,7 +83,7 @@ export async function contextoPreguntas(p, pr, comentarios, { archivos, todos = 
   const bloques = [];
   const dePr = comentarios.filter((c) => c.ambito === 'pr');
   for (const c of dePr) {
-    bloques.push([`### Pregunta ${c.id} sobre la PR${c.seccion ? ` (sección «${SECCIONES[c.seccion]}»)` : ''}`, citaDe(c), hilo(c, todos), `Texto: ${c.texto}`].filter(Boolean).join('\n'));
+    bloques.push([`### Question ${c.id} about the PR${c.seccion ? ` (section «${SECCIONES[c.seccion]}»)` : ''}`, citaDe(c), hilo(c, todos), `Text: ${c.texto}`].filter(Boolean).join('\n'));
   }
   if (dePr.length) bloques.push(contextoDePr(pr, archivos));
   for (const c of comentarios.filter((x) => x.ambito !== 'pr')) {
@@ -97,23 +97,23 @@ export async function contextoPreguntas(p, pr, comentarios, { archivos, todos = 
       if (texto !== null) {
         const total = texto.split('\n').length;
         const f = fragmento(texto, c.desde, c.hasta, total <= ARCHIVO_COMPLETO ? total : MARGEN);
-        archivo = `Archivo en la versión de la PR (líneas ${f.desde}–${f.hasta}):\n${f.texto}`;
+        archivo = `File in the PR version (lines ${f.desde}–${f.hasta}):\n${f.texto}`;
       }
     }
     const rango = c.desde === c.hasta ? `L${c.desde}` : `L${c.desde}–${c.hasta}`;
     bloques.push([
-      `### Comentario ${c.id} · ${c.archivo} ${rango}${lado === 'viejo' ? ' (líneas borradas)' : ''}`,
+      `### Comment ${c.id} · ${c.archivo} ${rango}${lado === 'viejo' ? ' (deleted lines)' : ''}`,
       citaDe(c),
       hilo(c, todos),
-      `Texto: ${c.texto}`,
-      diff ? `Diff:\n${diff}` : 'Diff: no disponible para estas líneas.',
+      `Text: ${c.texto}`,
+      diff ? `Diff:\n${diff}` : 'Diff: not available for these lines.',
       archivo,
     ].filter(Boolean).join('\n'));
   }
   const pie = [
     `## PR ${pr.id}: ${pr.titulo}`,
-    pr.cuerpo ? `Descripción:\n${recortar(pr.cuerpo, 1500)}` : '',
-    pr.explicacion?.resumen ? `Resumen de la explicación: ${pr.explicacion.resumen}` : '',
+    pr.cuerpo ? `Description:\n${recortar(pr.cuerpo, 1500)}` : '',
+    pr.explicacion?.resumen ? `Explanation summary: ${pr.explicacion.resumen}` : '',
   ].filter(Boolean).join('\n');
   const porBloque = Math.floor((TOPE - pie.length - 200) / Math.max(1, bloques.length));
   return [...bloques.map((b) => recortar(b, porBloque)), pie].join('\n\n');

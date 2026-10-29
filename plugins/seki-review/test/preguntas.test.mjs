@@ -18,7 +18,7 @@ function preparar() {
   return p;
 }
 
-test('responde dos preguntas en una sola llamada', async () => {
+test('answers two questions in a single call', async () => {
   const p = preparar();
   process.env.SEKI_CLAUDE = falsoClaude(exito([{ id: 'c-0001', texto: 'Hace A.' }, { id: 'c-0002', texto: 'Por B.' }]));
   const r = await responderPreguntas(p, pr, ['c-0001', 'c-0002'], deps);
@@ -29,7 +29,7 @@ test('responde dos preguntas en una sola llamada', async () => {
   assert.equal(cs[0].modelo, 'claude-haiku-5-5');
 });
 
-test('segunda vez usa la caché sin llamar a claude', async () => {
+test('second time uses the cache without calling claude', async () => {
   const p = preparar();
   process.env.SEKI_CLAUDE = falsoClaude(exito([{ id: 'c-0001', texto: 'Hace A.' }, { id: 'c-0002', texto: 'Por B.' }]));
   await responderPreguntas(p, pr, ['c-0001', 'c-0002'], deps);
@@ -43,28 +43,28 @@ test('segunda vez usa la caché sin llamar a claude', async () => {
   assert.equal(c.desdeCache, true);
 });
 
-test('respuesta faltante deja solo esa pregunta en error', async () => {
+test('missing answer leaves only that question in error', async () => {
   const p = preparar();
   process.env.SEKI_CLAUDE = falsoClaude(exito([{ id: 'c-0001', texto: 'Hace A.' }]));
   await responderPreguntas(p, pr, ['c-0001', 'c-0002'], deps);
   const cs = leerComentarios(p, 'r', 1);
   assert.equal(cs[0].estado, 'respondido');
   assert.equal(cs[1].estado, 'error');
-  assert.match(cs[1].motivo, /no devolvió respuesta/);
+  assert.match(cs[1].motivo, /returned no answer/);
 });
 
-test('tope alcanzado deja el lote en error con motivo', async () => {
+test('reached cap leaves the batch in error with a reason', async () => {
   const p = preparar();
   process.env.SEKI_CLAUDE = falsoClaude({ type: 'result', is_error: true, subtype: 'error_max_budget_usd', total_cost_usd: 1 }, 1);
   const r = await responderPreguntas(p, pr, ['c-0001', 'c-0002'], deps);
   assert.equal(r.ok, false);
   for (const c of leerComentarios(p, 'r', 1)) {
     assert.equal(c.estado, 'error');
-    assert.equal(c.motivo, 'Se alcanzó el tope de costo del trabajo');
+    assert.equal(c.motivo, 'The job reached its cost cap');
   }
 });
 
-test('ignora ids que no son preguntas o que ya están respondidos', async () => {
+test('ignores ids that are not questions or are already answered', async () => {
   const p = preparar();
   guardarComentarios(p, 'r', 1, [{ ...preg('c-0004', 'nota'), tipo: 'nota', estado: 'nota' }]);
   process.env.SEKI_CLAUDE = falsoClaude(exito([]));
@@ -73,7 +73,7 @@ test('ignora ids que no son preguntas o que ya están respondidos', async () => 
   assert.equal(llamadas(process.env.SEKI_CLAUDE), 0);
 });
 
-test('si el contexto falla las preguntas quedan en error y no en curso', async () => {
+test('if the context fails the questions end in error, not in progress', async () => {
   const p = preparar();
   process.env.SEKI_CLAUDE = falsoClaude(exito([]));
   await assert.rejects(() => responderPreguntas(p, pr, ['c-0001', 'c-0002'], { ...deps, contexto: async () => { throw new Error('sin red'); } }));
@@ -83,7 +83,7 @@ test('si el contexto falla las preguntas quedan en error y no en curso', async (
   }
 });
 
-test('la respuesta rápida marca cuando hace falta revisar el código', async () => {
+test('the quick answer flags when the code needs to be reviewed', async () => {
   const p = preparar();
   process.env.SEKI_CLAUDE = falsoClaude(exito([{ id: 'c-0001', texto: 'No se puede con el diff.', necesitaCodigo: true }, { id: 'c-0002', texto: 'Por B.' }]));
   await responderPreguntas(p, pr, ['c-0001', 'c-0002'], deps);
@@ -92,7 +92,7 @@ test('la respuesta rápida marca cuando hace falta revisar el código', async ()
   assert.equal(b.necesitaCodigo, undefined);
 });
 
-test('investigar lee el repositorio en una copia de la PR, nunca el checkout del usuario, y no los secretos', async () => {
+test('investigar reads the repository in a copy of the PR, never the user checkout, and not the secrets', async () => {
   const { repoConPr } = await import('./util/repo.mjs');
   const { mkdirSync, readFileSync } = await import('node:fs');
   const r = repoConPr({ antes: 'a\n', despues: 'b\n' });
@@ -116,7 +116,7 @@ test('investigar lee el repositorio en una copia de la PR, nunca el checkout del
   assert.ok(!args.includes('--json-schema') || args[args.indexOf('--json-schema') + 1].includes('texto'));
 });
 
-test('investigar lee los otros repos en la rama equivalente y deja registrado qué leyó', async () => {
+test('investigar reads the other repos on the equivalent branch and records what it read', async () => {
   const { repoConPr } = await import('./util/repo.mjs');
   const { readFileSync } = await import('node:fs');
   const a = repoConPr({ antes: 'a\n', despues: 'b\n', rama: 'fix/a' });
@@ -138,7 +138,7 @@ test('investigar lee los otros repos en la rama equivalente y deja registrado qu
   assert.ok(args.some((x) => x.includes('b-pruebas')));
 });
 
-test('investigar guarda los archivos leídos, las búsquedas y lo que bloquearon los permisos', async () => {
+test('investigar stores the files read, the searches and what permissions blocked', async () => {
   const { repoConPr } = await import('./util/repo.mjs');
   const r = repoConPr({ antes: 'a\n', despues: 'b\n' });
   const salida = mkdtempSync(join(tmpdir(), 'seki-inv3-'));
@@ -154,7 +154,7 @@ test('investigar guarda los archivos leídos, las búsquedas y lo que bloquearon
   assert.deepEqual(c.bloqueadas, [{ herramienta: 'Read', ruta: '/x/.env' }]);
 });
 
-test('consultasDe ubica cada ruta en su repo y deja sin repo lo que está fuera', () => {
+test('consultasDe places each path in its repo and leaves paths outside without a repo', () => {
   const res = consultasDe([
     { nombre: 'Read', entrada: { file_path: '/c/pr/src/a.ts' } },
     { nombre: 'Read', entrada: { file_path: '/c/otro/b.ts', offset: 5, limit: 3 } },

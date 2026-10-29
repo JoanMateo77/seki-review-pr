@@ -8,7 +8,7 @@ import { servidorActivo, tokenDe } from '../mcp/lib/acceso.mjs';
 
 const p = () => ({ clave: 'x', salida: mkdtempSync(join(tmpdir(), 'seki-acceso-')) });
 
-test('tokenDe es el mismo entre arranques y queda solo legible por el dueño', () => {
+test('tokenDe is the same across restarts and readable only by the owner', () => {
   const pr = p();
   const a = tokenDe(pr);
   assert.match(a, /^[A-Za-z0-9_-]{24}$/);
@@ -22,14 +22,14 @@ async function falso(responde) {
   return { s, puerto: s.address().port };
 }
 
-test('servidorActivo reconoce un tablero que acepta el mismo token', async () => {
+test('servidorActivo recognizes a dashboard that accepts the same token', async () => {
   const { s, puerto } = await falso((req) => (req.headers['x-seki-token'] === 'tok' ? 200 : 403));
   assert.equal(await servidorActivo(puerto, 'tok'), true);
   assert.equal(await servidorActivo(puerto, 'otro'), false);
   s.close();
 });
 
-test('servidorActivo da false si no hay nada escuchando', async () => {
+test('servidorActivo returns false when nothing is listening', async () => {
   const { s, puerto } = await falso(() => 200);
   await new Promise((ok) => s.close(ok));
   assert.equal(await servidorActivo(puerto, 'tok'), false);

@@ -11,7 +11,7 @@ export async function gh(args) {
 
 export const ghJson = async (args) => JSON.parse(await gh(args));
 
-// gh api --paginate concatena arreglos JSON; --slurp los junta en uno de páginas.
+// gh api --paginate concatenates JSON arrays; --slurp gathers them into one array of pages.
 export async function ghApiLista(ruta) {
   const paginas = await ghJson(['api', '--paginate', '--slurp', ruta]);
   return paginas.flat();

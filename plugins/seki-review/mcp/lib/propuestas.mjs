@@ -1,5 +1,5 @@
-// Pedidos de cambio: la IA trabaja en la copia de la PR, el servidor comprueba el resultado y lo guarda como
-// propuesta. Solo Aprobar lo lleva a la rama, y solo si la rama sigue donde estaba cuando se generó.
+// Change requests: the AI works on the PR's copy, the server checks the result and saves it as a
+// proposal. Only Approve takes it to the branch, and only if the branch is still where it was when it was generated.
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -18,7 +18,7 @@ const PENDIENTES = new Set(['borrador', 'en_cola', 'en_curso', 'error']);
 const HERRAMIENTAS = ['Read', 'Grep', 'Glob', 'Edit', 'Write'];
 const SCHEMA = { type: 'object', properties: { resumen: { type: 'string' }, hecho: { type: 'boolean' } }, required: ['resumen', 'hecho'] };
 
-// Todo lo que toca la copia de una PR va en serie: proponer, ajustar, aprobar y descartar comparten el worktree.
+// Everything that touches a PR's copy runs serially: propose, adjust, approve and discard share the worktree.
 const series = new Map();
 function enSerie(pr, fn) {
   const previa = series.get(pr.id) ?? Promise.resolve();
@@ -38,9 +38,9 @@ export function leerPropuestas(p, repo, numero) {
 }
 
 export const leerPropuesta = (p, repo, numero, id) => {
-  if (!/^p-[a-z0-9]{4,32}$/.test(id ?? '')) throw new Error('Propuesta sin id válido');
+  if (!/^p-[a-z0-9]{4,32}$/.test(id ?? '')) throw new Error('Proposal without a valid id');
   const prop = leerJson(rutaDe(p, repo, numero, id));
-  if (!prop) throw Object.assign(new Error('La propuesta no existe'), { codigo: 404 });
+  if (!prop) throw Object.assign(new Error('The proposal does not exist'), { codigo: 404 });
   return prop;
 };
 
@@ -54,9 +54,9 @@ const conFallos = (c) => !!(c.reglas.bloqueantes || c.tipos?.nuevosFallos.length
 
 function textoFallos(c) {
   const partes = [];
-  if (c.reglas.bloqueantes) partes.push(`Reglas bloqueantes:\n${c.reglas.hallazgos.filter((h) => h.severidad === 'bloqueante').map((h) => `- ${h.archivo}:${h.linea} ${h.titulo}: ${h.mensaje}`).join('\n')}`);
-  if (c.tipos?.nuevosFallos.length) partes.push(`Errores de tipos nuevos:\n${c.tipos.nuevosFallos.join('\n')}`);
-  if (c.tests?.nuevosFallos.length) partes.push(`Tests que fallan:\n${c.tests.nuevosFallos.join('\n')}\n${c.tests.salida.slice(-1500)}`);
+  if (c.reglas.bloqueantes) partes.push(`Blocking rules:\n${c.reglas.hallazgos.filter((h) => h.severidad === 'bloqueante').map((h) => `- ${h.archivo}:${h.linea} ${h.titulo}: ${h.mensaje}`).join('\n')}`);
+  if (c.tipos?.nuevosFallos.length) partes.push(`New type errors:\n${c.tipos.nuevosFallos.join('\n')}`);
+  if (c.tests?.nuevosFallos.length) partes.push(`Failing tests:\n${c.tests.nuevosFallos.join('\n')}\n${c.tests.salida.slice(-1500)}`);
   return partes.join('\n\n');
 }
 
@@ -72,8 +72,8 @@ async function generar(p, pr, c, dir, { sistema, avisos, contexto, cuerpo, previ
   const modelo = elegirModelo({ tipo: 'cambiar', pr });
   const rango = c.desde === c.hasta ? `L${c.desde}` : `L${c.desde}–${c.hasta}`;
   const ctx = await contexto(p, { ...pr, cuerpo }, [c]);
-  let prompt = `Pedido ${c.id} sobre ${c.archivo} ${rango}: ${c.texto}\n\n${ctx}`;
-  if (previa) prompt += `\n\nPropuesta anterior (ya aplicada en la copia):\n${previa.patch}\n\nAjuste pedido: ${indicacion}`;
+  let prompt = `Request ${c.id} on ${c.archivo} ${rango}: ${c.texto}\n\n${ctx}`;
+  if (previa) prompt += `\n\nPrevious proposal (already applied to the copy):\n${previa.patch}\n\nRequested adjustment: ${indicacion}`;
   const clave = `c:${c.id}`;
   const correr = (args) => ejecutarClaude(argsClaude({ modelo, sistema, schema: SCHEMA, tools: HERRAMIENTAS, tope: tope('cambiar'), turnos: TURNOS.cambiar, persistir: true, traza: true, ...args }), { cwd: dir, alUsar: (h) => contarHerramienta(clave, h, dir) });
   fijarAvance(clave, { fase: 'editando' });
@@ -82,12 +82,12 @@ async function generar(p, pr, c, dir, { sistema, avisos, contexto, cuerpo, previ
   registrarCosto(p, { tipo: 'cambiar', prId: pr.id, modelo: r.modelo ?? modelo, uso: r.uso, costo: r.costo, ok: r.ok });
   if (!r.ok) return { error: r.motivo, costo };
   let patch = await diffCopia(dir);
-  if (!r.salida.hecho || !patch.trim()) return { error: r.salida.resumen || 'La IA no hizo cambios', costo };
+  if (!r.salida.hecho || !patch.trim()) return { error: r.salida.resumen || 'The AI made no changes', costo };
   fijarAvance(clave, { fase: 'comprobando' });
   let comp = await comprobar(p, pr.repo, dir, patch, pr.headSha);
   if (conFallos(comp)) {
     fijarAvance(clave, { fase: 'corrigiendo', corrigio: true });
-    const segunda = await correr({ prompt: `Las comprobaciones fallaron. Corregir sin ampliar el alcance del pedido.\n\n${textoFallos(comp)}`, sesion: r.sesion });
+    const segunda = await correr({ prompt: `The checks failed. Fix them without widening the scope of the request.\n\n${textoFallos(comp)}`, sesion: r.sesion });
     costo += segunda.costo ?? 0;
     registrarCosto(p, { tipo: 'cambiar', prId: pr.id, modelo: segunda.modelo ?? modelo, uso: segunda.uso, costo: segunda.costo, ok: segunda.ok, reintento: true });
     if (segunda.ok) {
@@ -111,8 +111,8 @@ async function generar(p, pr, c, dir, { sistema, avisos, contexto, cuerpo, previ
 
 async function preparar(p, pr, deps) {
   const texto = lineamientos(p);
-  const avisos = texto || !p.lineamientos ? [] : ['Lineamientos del proyecto no disponibles en esta máquina: la propuesta no los consideró.'];
-  const sistema = [sistemaDe(p, 'base', 'cambiar'), ...(texto ? [`# Lineamientos del proyecto\n\n${texto}`] : avisos)].join('\n\n');
+  const avisos = texto || !p.lineamientos ? [] : ['Project guidelines are not available on this machine: the proposal did not take them into account.'];
+  const sistema = [sistemaDe(p, 'base', 'cambiar'), ...(texto ? [`# Project guidelines\n\n${texto}`] : avisos)].join('\n\n');
   const cuerpo = (await (deps.detalle ?? detallePr)(p, pr))?.body;
   const dir = await crearCopia(p, pr.repo, pr.numero, pr.headSha);
   await reiniciarCopia(dir, pr.headSha);
@@ -129,8 +129,8 @@ async function proponerCambiosSinSerie(p, pr, ids, deps = {}) {
   const actualizar = (id, cambios) => actualizarComentario(p, pr.repo, pr.numero, id, cambios);
   if (!lista.length) return { ok: true, costo: 0 };
   if (pr.estadoPr !== 'OPEN') {
-    for (const c of lista) actualizar(c.id, { estado: 'error', motivo: 'La PR ya no está abierta' });
-    return { ok: false, motivo: 'La PR ya no está abierta' };
+    for (const c of lista) actualizar(c.id, { estado: 'error', motivo: 'The PR is no longer open' });
+    return { ok: false, motivo: 'The PR is no longer open' };
   }
   let ctx;
   try {
@@ -159,17 +159,17 @@ async function proponerCambiosSinSerie(p, pr, ids, deps = {}) {
       await reiniciarCopia(ctx.dir, pr.headSha).catch(() => {});
     }
   }
-  return { ok: algunaOk, motivo: algunaOk ? null : 'Ningún pedido generó propuesta', costo };
+  return { ok: algunaOk, motivo: algunaOk ? null : 'No request produced a proposal', costo };
 }
 
 export const ajustarPropuesta = (...args) => enSerie(args[1], () => ajustarPropuestaSinSerie(...args));
 
 async function ajustarPropuestaSinSerie(p, pr, propuestaId, indicacion, deps = {}) {
   const previa = leerPropuesta(p, pr.repo, pr.numero, propuestaId);
-  if (previa.estado !== 'lista') throw new Error('Solo se ajusta una propuesta lista');
-  if (pr.estadoPr !== 'OPEN') throw new Error('La PR ya no está abierta');
+  if (previa.estado !== 'lista') throw new Error('Only a ready proposal can be adjusted');
+  if (pr.estadoPr !== 'OPEN') throw new Error('The PR is no longer open');
   const c = leerComentarios(p, pr.repo, pr.numero).find((x) => x.id === previa.comentarioId);
-  const volver = (motivo) => actualizarComentario(p, pr.repo, pr.numero, c.id, { estado: 'propuesta', motivo: `El ajuste no se pudo hacer: ${recortar(motivo)}` });
+  const volver = (motivo) => actualizarComentario(p, pr.repo, pr.numero, c.id, { estado: 'propuesta', motivo: `The adjustment could not be made: ${recortar(motivo)}` });
   let ctx;
   try {
     ctx = await preparar(p, pr, deps);
@@ -210,9 +210,9 @@ async function aplicarParche(dir, patch, index) {
 }
 
 const recortar = (s, n = 400) => String(s ?? '').trim().slice(0, n);
-const MENSAJE_POR_DEFECTO = 'Ajuste pedido en la revisión de la PR';
+const MENSAJE_POR_DEFECTO = 'Change requested in the PR review';
 
-// La rama solo puede haber avanzado con commits que subió el tablero desde el commit de la propuesta.
+// The branch may only have advanced with commits the dashboard pushed since the proposal's commit.
 function soloCommitsDelTablero(cabeza, desde, cadena) {
   const base = new Map(cadena.map((x) => [x.commit, x.base]));
   let actual = cabeza;
@@ -228,30 +228,30 @@ export const aprobar = (...args) => enSerie(args[1], () => aprobarSinSerie(...ar
 
 async function aprobarSinSerie(p, pr, propuestaId, { confirmarFallos = false } = {}) {
   const prop = leerPropuesta(p, pr.repo, pr.numero, propuestaId);
-  if (prop.estado !== 'lista') return { ok: false, motivo: 'La propuesta ya no está lista para aprobar' };
+  if (prop.estado !== 'lista') return { ok: false, motivo: 'The proposal is no longer ready to approve' };
   if (prop.conFallos && !confirmarFallos) return { ok: false, motivo: 'requiere_confirmacion' };
   const marcar = (estado, extra = {}) => guardar(p, pr.repo, pr.numero, { ...prop, estado, ...extra });
   const estadoRuta = join(rutaPropuestas(p.salida, pr.repo, pr.numero), 'estado.json');
   const subido = leerJson(estadoRuta, {});
   const remoto = await ghJson(['pr', 'view', String(pr.numero), '-R', `${p.owner}/${pr.repo}`, '--json', 'state,headRefName,headRefOid,isCrossRepository']);
-  if (remoto.state !== 'OPEN') { marcar('conflicto', { motivo: 'La PR ya no está abierta' }); return { ok: false, motivo: 'La PR ya no está abierta' }; }
-  // En una PR desde un fork, origin/<rama> es otra rama del repositorio base.
+  if (remoto.state !== 'OPEN') { marcar('conflicto', { motivo: 'The PR is no longer open' }); return { ok: false, motivo: 'The PR is no longer open' }; }
+  // In a PR from a fork, origin/<branch> is a different branch of the base repository.
   if (remoto.isCrossRepository) {
-    const motivo = 'La PR viene de un fork: el parche se aplica a mano en la rama del fork';
+    const motivo = 'The PR comes from a fork: apply the patch manually on the fork branch';
     marcar('rechazada', { motivo });
     return { ok: false, motivo, parche: prop.patch };
   }
   let cadena = Array.isArray(subido.cadena) ? subido.cadena : [];
-  // Un push que llegó a GitHub sin que se alcanzara a guardar el resultado (proceso cortado, tiempo agotado) se
-  // reconoce por su commit y se da por aprobado, en vez de volver a subirlo.
+  // A push that reached GitHub before the result could be saved (process killed, timeout) is
+  // recognized by its commit and treated as approved, instead of being pushed again.
   const pendiente = subido.pendiente;
   if (pendiente && remoto.headRefOid === pendiente.commit) {
     cadena = cerrarAprobacion(p, pr, estadoRuta, remoto.headRefName, cadena, pendiente);
     if (pendiente.propuestaId === propuestaId) return { ok: true, commit: pendiente.commit, reconciliada: true };
   }
   if (!soloCommitsDelTablero(remoto.headRefOid, prop.headSha, cadena)) {
-    marcar('conflicto', { motivo: 'La rama cambió desde que se generó la propuesta' });
-    return { ok: false, motivo: 'La rama cambió desde que se generó la propuesta' };
+    marcar('conflicto', { motivo: 'The branch changed since the proposal was generated' });
+    return { ok: false, motivo: 'The branch changed since the proposal was generated' };
   }
   const dir = await crearCopia(p, pr.repo, pr.numero, remoto.headRefOid);
   await reiniciarCopia(dir, remoto.headRefOid);
@@ -259,8 +259,8 @@ async function aprobarSinSerie(p, pr, propuestaId, { confirmarFallos = false } =
     await aplicarParche(dir, prop.patch, true);
   } catch (e) {
     await reiniciarCopia(dir, remoto.headRefOid);
-    marcar('conflicto', { motivo: 'La propuesta no aplica sobre la rama actual' });
-    return { ok: false, motivo: 'La propuesta no aplica sobre la rama actual' };
+    marcar('conflicto', { motivo: 'The proposal does not apply on the current branch' });
+    return { ok: false, motivo: 'The proposal does not apply on the current branch' };
   }
   try {
     await git(dir, ['commit', '-q', '--no-verify', '-m', recortar(prop.resumen, 200) || MENSAJE_POR_DEFECTO]);
@@ -277,7 +277,7 @@ async function aprobarSinSerie(p, pr, propuestaId, { confirmarFallos = false } =
   try {
     await git(dir, ['push', '-q', 'origin', `HEAD:refs/heads/${remoto.headRefName}`]);
   } catch (e) {
-    // Un error del push no prueba que no llegó: se mira la rama remota antes de darlo por rechazado.
+    // A push error does not prove it did not land: check the remote branch before treating it as rejected.
     const remota = await git(dir, ['ls-remote', 'origin', `refs/heads/${remoto.headRefName}`]).catch(() => '');
     if (!remota.startsWith(commit)) {
       escribirJson(estadoRuta, { rama: remoto.headRefName, cadena });
@@ -304,7 +304,7 @@ export const descartar = (...args) => enSerie(args[1], () => descartarSinSerie(.
 
 async function descartarSinSerie(p, pr, propuestaId) {
   const prop = leerPropuesta(p, pr.repo, pr.numero, propuestaId);
-  if (prop.estado === 'aprobada') throw new Error('Una propuesta aprobada ya está en la rama: no se descarta');
+  if (prop.estado === 'aprobada') throw new Error('An approved proposal is already on the branch: it cannot be discarded');
   guardar(p, pr.repo, pr.numero, { ...prop, estado: 'descartada' });
   actualizarComentario(p, pr.repo, pr.numero, prop.comentarioId, { estado: 'descartado' });
   if (!leerPropuestas(p, pr.repo, pr.numero).some((x) => x.estado === 'lista')) await borrarCopia(p, pr.repo, pr.numero);

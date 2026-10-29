@@ -13,7 +13,7 @@ const espera = (ms) => new Promise((ok) => setTimeout(ok, ms));
 const estadoEn = async (puerto, token) => (await fetch(`http://127.0.0.1:${puerto}/api/estado`, { headers: { 'x-seki-token': token } })).json();
 const cerrarReal = (puerto, token) => fetch(`http://127.0.0.1:${puerto}/api/ceder`, { method: 'POST', headers: { 'x-seki-token': token } });
 
-// Cada prueba usa su propio proyecto: el servidor real recuerda los que ya sirve en este proceso.
+// Each test uses its own project: the real server remembers the ones it already serves in this process.
 let n = 0;
 function proyecto() {
   const clave = `p${++n}`;
@@ -24,7 +24,7 @@ function proyecto() {
   return { clave, token: tokenDe({ clave, salida }) };
 }
 
-// Tablero de otra sesión: responde su estado y, si sabe, suelta el puerto al pedírselo.
+// Another session's dashboard: replies with its state and, if it knows how, releases the port when asked.
 async function otraSesion({ token, version, trabajos = [], sabeCeder = true }) {
   const s = createServer((req, res) => {
     if (req.headers['x-seki-token'] !== token) { res.writeHead(403); return res.end('{}'); }
@@ -36,7 +36,7 @@ async function otraSesion({ token, version, trabajos = [], sabeCeder = true }) {
   return { s, puerto: s.address().port };
 }
 
-test('una versión distinta y libre cede el puerto y la nueva sesión sirve en el mismo enlace', async () => {
+test('a different, idle version hands over the port and the new session serves on the same link', async () => {
   const { clave, token } = proyecto();
   const { s, puerto } = await otraSesion({ token, version: '0.1.0' });
   const r = await iniciarServidor({ proyecto: clave, puerto, abrir: false });
@@ -45,41 +45,41 @@ test('una versión distinta y libre cede el puerto y la nueva sesión sirve en e
   assert.equal(s.listening, false);
   const e = await (await fetch(`http://127.0.0.1:${puerto}/api/estado`, { headers: { 'x-seki-token': token } })).json();
   assert.notEqual(e.version, '0.1.0');
-  // El tablero nuevo también sabe ceder: así se cierra al terminar la prueba.
+  // The new dashboard can also hand over: that is how it is closed at the end of the test.
   assert.equal((await fetch(`http://127.0.0.1:${puerto}/api/ceder`, { method: 'POST', headers: { 'x-seki-token': token } })).status, 200);
 });
 
-test('con trabajos en curso no se le pide el puerto y se avisa', async () => {
+test('with jobs in progress the port is not requested and a notice is given', async () => {
   const { clave, token } = proyecto();
   const { s, puerto } = await otraSesion({ token, version: '0.1.0', trabajos: [{ estado: 'en_curso' }] });
   const r = await iniciarServidor({ proyecto: clave, puerto, abrir: false });
   assert.equal(r.yaEstaba, true);
-  assert.match(r.aviso, /trabajos en curso/);
+  assert.match(r.aviso, /jobs in progress/);
   assert.equal(s.listening, true);
   s.close();
   await espera(400);
   await cerrarReal(puerto, token);
 });
 
-test('una versión anterior que no sabe ceder sigue sirviendo y el aviso dice qué hacer', async () => {
+test('an older version that cannot hand over keeps serving and the notice says what to do', async () => {
   const { clave, token } = proyecto();
   const { s, puerto } = await otraSesion({ token, version: undefined, sabeCeder: false });
   const r = await iniciarServidor({ proyecto: clave, puerto, abrir: false });
   assert.equal(r.yaEstaba, true);
-  assert.match(r.aviso, /cierre o reinicie esa sesión/);
+  assert.match(r.aviso, /close or restart that session/);
   s.close();
   await espera(400);
   await cerrarReal(puerto, token);
 });
 
-test('esMasNueva compara por números y sin versión cuenta como la más vieja', () => {
+test('esMasNueva compares numerically and no version counts as the oldest', () => {
   assert.equal(esMasNueva('0.19.10', '0.19.9'), true);
   assert.equal(esMasNueva('0.19.2', '0.19.2'), false);
   assert.equal(esMasNueva('0.19.2', undefined), true);
   assert.equal(esMasNueva('0.18.0', '0.19.0'), false);
 });
 
-test('una sesión vieja no le quita el tablero a una más nueva', async () => {
+test('an older session does not take the dashboard from a newer one', async () => {
   const { clave, token } = proyecto();
   const { s, puerto } = await otraSesion({ token, version: '99.0.0' });
   const r = await iniciarServidor({ proyecto: clave, puerto, abrir: false });
@@ -91,7 +91,7 @@ test('una sesión vieja no le quita el tablero a una más nueva', async () => {
   await cerrarReal(puerto, token);
 });
 
-test('si la sesión que sirve el tablero se cierra, la de reserva lo toma en el mismo enlace', async () => {
+test('if the session serving the dashboard closes, the standby one takes it on the same link', async () => {
   const { clave, token } = proyecto();
   const { s, puerto } = await otraSesion({ token, version: versionEnDisco() });
   const r = await iniciarServidor({ proyecto: clave, puerto, abrir: false });

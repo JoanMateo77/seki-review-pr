@@ -1,9 +1,9 @@
-// Falso `claude`: imprime el JSON indicado, sale con el código indicado y anota cada invocación en `llamadas`.
+// Fake `claude`: prints the given JSON, exits with the given code and records each invocation in `llamadas`.
 import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// script: comandos sh que corren antes de imprimir (por ejemplo, editar un archivo del cwd). $N es el número de llamada.
+// script: sh commands that run before printing (for example, editing a file in the cwd). $N is the call number.
 export function falsoClaude(json, codigo = 0, script = '') {
   const dir = mkdtempSync(join(tmpdir(), 'seki-claude-'));
   const ruta = join(dir, 'claude');

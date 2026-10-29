@@ -8,14 +8,14 @@ import { construirHtml, fotoConExplicaciones } from '../lib/tablero.mjs';
 export default {
   name: 'tablero_generar',
   description:
-    'Genera el tablero HTML local de revisión de PRs (archivo, sin publicar en ningún servicio) con filtros por portal, acción y riesgo, ' +
-    'y el detalle de cada PR con su explicación. Usa la última foto de prs_pendientes salvo refrescar=true.',
+    'Generates the local HTML PR review dashboard (a file, not published to any service) with filters by portal, action and risk, ' +
+    'and each PR\'s detail with its explanation. Uses the latest prs_pendientes snapshot unless refrescar=true.',
   inputSchema: {
     type: 'object',
     properties: {
-      proyecto: { type: 'string', description: 'Clave del proyecto en proyectos.json; si se omite, el predeterminado' },
-      refrescar: { type: 'boolean', default: false, description: 'Volver a consultar GitHub antes de generar' },
-      abrir: { type: 'boolean', default: true, description: 'Abrir en el navegador local' },
+      proyecto: { type: 'string', description: 'Project key in proyectos.json; defaults to the default project if omitted' },
+      refrescar: { type: 'boolean', default: false, description: 'Query GitHub again before generating' },
+      abrir: { type: 'boolean', default: true, description: 'Open in the local browser' },
     },
   },
   async handler({ proyecto, refrescar = false, abrir = true }) {
@@ -28,6 +28,6 @@ export default {
     writeFileSync(ruta, html);
     if (abrir && process.platform === 'darwin') execFile('open', [ruta]);
     const explicadas = foto.prs.filter((x) => x.explicacion && !x.explicacion.desactualizada).length;
-    return `Tablero en ${ruta}: ${foto.prs.length} PRs, ${explicadas} con explicación vigente. Foto del ${foto.generado.slice(0, 16)}.`;
+    return `Dashboard at ${ruta}: ${foto.prs.length} PRs, ${explicadas} with an up-to-date explanation. Snapshot from ${foto.generado.slice(0, 16)}.`;
   },
 };

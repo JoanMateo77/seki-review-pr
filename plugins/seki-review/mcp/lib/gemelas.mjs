@@ -1,6 +1,6 @@
-// La PR "gemela" es la misma tarea abierta contra la otra rama de la línea (prod <-> pruebas).
-// Se detecta por parecido del título: los títulos difieren solo en el sufijo de ambiente.
-const VACIAS = new Set(['para', 'por', 'con', 'sin', 'los', 'las', 'del', 'que', 'una', 'uno', 'the', 'and']);
+// The "twin" PR is the same task opened against the line's other branch (prod <-> testing).
+// It is detected by title similarity: the titles differ only in the environment suffix.
+const VACIAS = new Set(['para', 'por', 'con', 'sin', 'los', 'las', 'del', 'que', 'una', 'uno', 'the', 'and', 'for', 'with', 'from']);
 
 export function tokensTitulo(titulo) {
   return new Set(

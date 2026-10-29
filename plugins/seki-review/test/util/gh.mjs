@@ -1,4 +1,4 @@
-// Falso `gh`: responde `pr view` con el JSON del archivo indicado (se puede reescribir durante la prueba).
+// Fake `gh`: answers `pr view` with the JSON of the given file (it can be rewritten during the test).
 import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

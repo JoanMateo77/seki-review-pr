@@ -1,5 +1,5 @@
-// Lógica pura del diff para el tablero: numeración de líneas, rangos seleccionados y anclaje de
-// comentarios. Script clásico (sin módulos) para incrustarlo en la plantilla y probarlo con vm.
+// Pure diff logic for the dashboard: line numbering, selected ranges and comment anchoring.
+// Classic script (no modules) so it can be inlined into the template and tested with vm.
 (function () {
   function lineasDePatch(patch) {
     const lineas = [];

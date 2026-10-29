@@ -4,17 +4,17 @@
     "owner": "mi-organizacion",
     "autor": "@me",
     "salida": "~/seki-review/demo",
-    "contexto": "Describir aquí el proyecto (stack, repos) y las reglas de texto o de código que la IA debe respetar.",
+    "contexto": "Describe the project here (stack, repos) and the text or code rules the AI must follow.",
     "lineamientos": "~/.claude/skills/mis-lineamientos",
     "reglas": [
       {
         "id": "ejemplo-todo",
-        "titulo": "TODO nuevo",
+        "titulo": "New TODO",
         "severidad": "aviso",
         "archivos": "\\.(ts|js)$",
         "patron": "\\bTODO\\b",
-        "mensaje": "Dejar un ticket en lugar de un TODO.",
-        "origen": "Ejemplo de regla propia del proyecto."
+        "mensaje": "Open a ticket instead of leaving a TODO.",
+        "origen": "Example of a project-specific rule."
       }
     ],
     "secretos": [
@@ -32,7 +32,7 @@
           }
         ],
         "inactivas": {
-          "legacy": "Rama antigua sin despliegue"
+          "legacy": "Old branch with no deployment"
         },
         "comprobar": {
           "node": "node",

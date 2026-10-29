@@ -7,20 +7,20 @@ const lista = { type: 'array', items: { type: 'string' } };
 export default {
   name: 'pr_guardar_explicacion',
   description:
-    'Guarda la explicación de una PR para el tablero, atada al commit actual de la PR (si la PR cambia, queda marcada como desactualizada). ' +
-    'Redactar en español formal e impersonal, sin nombres de funciones cuando no aporten, y con las reglas de texto del contexto del proyecto (pr_detalle lo trae).',
+    'Saves a PR explanation for the dashboard, tied to the PR\'s current commit (if the PR changes, the explanation is marked as outdated). ' +
+    'Write in formal, impersonal English, without function names unless they add value, and follow the writing rules in the project context (returned by pr_detalle).',
   inputSchema: {
     type: 'object',
     required: ['repo', 'numero', 'resumen', 'que_cambia', 'por_que'],
     properties: {
-      proyecto: { type: 'string', description: 'Clave del proyecto en proyectos.json; si se omite, el predeterminado' },
+      proyecto: { type: 'string', description: 'Project key in proyectos.json; defaults to the default project if omitted' },
       repo: { type: 'string' },
       numero: { type: 'integer' },
-      headSha: { type: 'string', description: 'Commit de la PR que se analizó, si el mensaje lo indica; si se omite, el commit actual en GitHub' },
-      resumen: { type: 'string', description: 'Una frase: qué resuelve la PR' },
-      que_cambia: { ...lista, description: 'Cambios concretos, uno por elemento' },
-      por_que: { type: 'string', description: 'Problema o hallazgo que origina el cambio' },
-      impacto_usuario: { type: 'string', description: 'Qué nota quien usa el portal' },
+      headSha: { type: 'string', description: 'PR commit that was analyzed, if the request specifies it; if omitted, the current commit on GitHub' },
+      resumen: { type: 'string', description: 'One sentence: what the PR solves' },
+      que_cambia: { ...lista, description: 'Concrete changes, one per item' },
+      por_que: { type: 'string', description: 'Problem or finding that motivates the change' },
+      impacto_usuario: { type: 'string', description: 'What a portal user notices' },
       tecnologias: {
         type: 'array',
         items: {
@@ -28,27 +28,27 @@ export default {
           required: ['nombre', 'uso'],
           properties: {
             nombre: { type: 'string' },
-            uso: { type: 'string', description: 'Para qué se usa en este cambio' },
-            por_que: { type: 'string', description: 'Por qué esta y no otra' },
+            uso: { type: 'string', description: 'What it is used for in this change' },
+            por_que: { type: 'string', description: 'Why this one and not another' },
             alternativas_descartadas: lista,
           },
         },
       },
-      alternativas: { ...lista, description: 'Otras soluciones posibles y por qué no se eligieron' },
+      alternativas: { ...lista, description: 'Other possible solutions and why they were not chosen' },
       como_probar: lista,
       riesgos: lista,
-      dependencias: { ...lista, description: 'PRs, SQL o variables que deben ir antes' },
+      dependencias: { ...lista, description: 'PRs, SQL or variables that must be deployed first' },
       cobertura: {
         type: 'object',
-        description: 'Qué parte del diff se revisó. completa=false si el diff vino recortado y no se leyó el resto',
+        description: 'How much of the diff was reviewed. completa=false if the diff was truncated and the rest was not read',
         required: ['completa'],
-        properties: { completa: { type: 'boolean' }, sinDiff: { ...lista, description: 'Archivos que no se revisaron' }, recortados: { ...lista, description: 'Archivos revisados solo en parte' } },
+        properties: { completa: { type: 'boolean' }, sinDiff: { ...lista, description: 'Files that were not reviewed' }, recortados: { ...lista, description: 'Files reviewed only partially' } },
       },
       riesgo: { type: 'string', enum: ['bajo', 'medio', 'alto'] },
-      esfuerzo: { type: 'integer', minimum: 1, maximum: 5, description: 'Esfuerzo de revisión: 1 = minutos, 5 = media jornada o más' },
+      esfuerzo: { type: 'integer', minimum: 1, maximum: 5, description: 'Review effort: 1 = minutes, 5 = half a day or more' },
       orden_lectura: {
         type: 'array',
-        description: 'Archivos en el orden en que conviene leerlos, empezando por donde nace el cambio',
+        description: 'Files in the recommended reading order, starting where the change originates',
         items: {
           type: 'object',
           required: ['archivo', 'motivo'],
@@ -57,17 +57,17 @@ export default {
       },
       diagrama: {
         type: 'string',
-        description: 'Solo si el cambio altera un flujo entre componentes: sequenceDiagram de Mermaid con el flujo nuevo, sin nombres de funciones',
+        description: 'Only if the change alters a flow between components: a Mermaid sequenceDiagram of the new flow, without function names',
       },
     },
   },
-  // La explicación se ata al commit que se leyó: si la PR avanzó mientras tanto, el tablero la marca desactualizada.
+  // The explanation is tied to the commit that was read: if the PR moved on in the meantime, the dashboard marks it outdated.
   async handler({ proyecto, repo, numero, headSha, ...campos }) {
     const p = cargarProyecto(proyecto);
     const sha = /^[0-9a-f]{40}$/i.test(headSha ?? '') ? headSha
       : (await ghJson(['pr', 'view', String(numero), '-R', `${p.owner}/${repo}`, '--json', 'headRefOid'])).headRefOid;
     const ruta = rutaExplicacion(p.salida, repo, numero);
     escribirJson(ruta, { repo, numero, headSha: sha, fecha: new Date().toISOString(), ...campos });
-    return `Explicación guardada en ${ruta} (commit ${sha.slice(0, 7)}).`;
+    return `Explanation saved to ${ruta} (commit ${sha.slice(0, 7)}).`;
   },
 };

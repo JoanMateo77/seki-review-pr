@@ -1,5 +1,5 @@
-// Avance en vivo de los trabajos de IA, en memoria: la etapa en curso y lo que la IA va leyendo. El tablero lo lee
-// en cada sondeo para que un trabajo largo no parezca detenido. Claves: `c:<comentario>` y `pr:<repo>#<n>`.
+// Live progress of AI jobs, in memory: the current stage and what the AI is reading. The dashboard reads it
+// on every poll so a long job does not look stuck. Keys: `c:<comment>` and `pr:<repo>#<n>`.
 const mapa = new Map();
 
 export function fijarAvance(clave, cambios) {
@@ -7,7 +7,7 @@ export function fijarAvance(clave, cambios) {
   mapa.set(clave, { ...previo, ...cambios, actualizado: new Date().toISOString() });
 }
 
-// Cada llamada a una herramienta suma al contador; Read deja el último archivo, relativo al directorio de trabajo.
+// Each tool call adds to the counter; Read records the last file, relative to the working directory.
 export function contarHerramienta(clave, { nombre, entrada }, raices = []) {
   const a = mapa.get(clave) ?? { archivos: 0, busquedas: 0 };
   if (nombre === 'Read' && typeof entrada?.file_path === 'string') {

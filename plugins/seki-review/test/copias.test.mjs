@@ -13,7 +13,7 @@ function preparar() {
   return { r, p };
 }
 
-test('crearCopia crea worktree desacoplado en el sha y excluye node_modules', async () => {
+test('crearCopia creates a detached worktree at the sha and excludes node_modules', async () => {
   const { r, p } = preparar();
   const dir = await crearCopia(p, 'x', 7, r.head);
   assert.equal(sh(dir, 'rev-parse', 'HEAD'), r.head);
@@ -24,7 +24,7 @@ test('crearCopia crea worktree desacoplado en el sha y excluye node_modules', as
   assert.match(sh(r.checkout, 'worktree', 'list'), /\(detached HEAD\)/);
 });
 
-test('crearCopia reutiliza la copia existente', async () => {
+test('crearCopia reuses the existing copy', async () => {
   const { r, p } = preparar();
   const a = await crearCopia(p, 'x', 7, r.head);
   writeFileSync(join(a, 'a.ts'), 'tocado\n');
@@ -33,7 +33,7 @@ test('crearCopia reutiliza la copia existente', async () => {
   assert.equal(readFileSync(join(b, 'a.ts'), 'utf8'), 'tocado\n');
 });
 
-test('diffCopia incluye archivos nuevos y reiniciarCopia los quita', async () => {
+test('diffCopia includes new files and reiniciarCopia removes them', async () => {
   const { r, p } = preparar();
   const dir = await crearCopia(p, 'x', 7, r.head);
   writeFileSync(join(dir, 'nuevo.ts'), 'export const x = 1;\n');
@@ -47,7 +47,7 @@ test('diffCopia incluye archivos nuevos y reiniciarCopia los quita', async () =>
   assert.ok(existsSync(join(dir, 'node_modules')));
 });
 
-test('borrarCopia quita el worktree', async () => {
+test('borrarCopia removes the worktree', async () => {
   const { r, p } = preparar();
   const dir = await crearCopia(p, 'x', 7, r.head);
   await borrarCopia(p, 'x', 7);
@@ -55,7 +55,7 @@ test('borrarCopia quita el worktree', async () => {
   assert.doesNotMatch(sh(r.checkout, 'worktree', 'list'), /detached/);
 });
 
-test('borrarCopia no poda worktrees ajenos cuyo directorio falta', async () => {
+test('borrarCopia does not prune foreign worktrees whose directory is missing', async () => {
   const { r, p } = preparar();
   const ajeno = join(r.raiz, 'ajeno');
   sh(r.checkout, 'worktree', 'add', '-q', '--detach', ajeno);
@@ -66,16 +66,16 @@ test('borrarCopia no poda worktrees ajenos cuyo directorio falta', async () => {
   assert.match(sh(r.checkout, 'worktree', 'list', '--porcelain'), /ajeno/);
 });
 
-test('reiniciarCopia se niega a operar fuera de la raíz de un worktree', async () => {
+test('reiniciarCopia refuses to operate outside the root of a worktree', async () => {
   const { r } = preparar();
   const sub = join(r.checkout, 'sub');
   mkdirSync(sub);
   writeFileSync(join(r.checkout, 'sin-guardar.txt'), 'x');
-  await assert.rejects(() => reiniciarCopia(sub, r.head), /raíz/);
+  await assert.rejects(() => reiniciarCopia(sub, r.head), /root/);
   assert.ok(existsSync(join(r.checkout, 'sin-guardar.txt')));
 });
 
-test('ramasEquivalentes: una PR a pruebas lee los otros repos en sus ramas de pruebas, cada portal del front', async () => {
+test('ramasEquivalentes: a PR to testing reads the other repos on their testing branches, one per front portal', async () => {
   const { ramasEquivalentes } = await import('../mcp/lib/copias.mjs');
   const p = { repos: {
     back: { lineas: [{ portal: 'Back', prod: 'main', pruebas: 'develop' }] },
@@ -85,7 +85,7 @@ test('ramasEquivalentes: una PR a pruebas lee los otros repos en sus ramas de pr
   assert.equal(ramasEquivalentes(p, { repo: 'front', base: 'mp' }).ramas[0].rama, 'main');
 });
 
-test('copiaDeRama trae la rama fresca del remoto sin tocar ramas ni refs del checkout', async () => {
+test('copiaDeRama fetches the branch fresh from the remote without touching checkout branches or refs', async () => {
   const { copiaDeRama } = await import('../mcp/lib/copias.mjs');
   const { r, p } = preparar();
   const antes = sh(r.checkout, 'for-each-ref', '--format=%(refname)');
@@ -99,7 +99,7 @@ test('copiaDeRama trae la rama fresca del remoto sin tocar ramas ni refs del che
   assert.equal(otra.dir, c.dir);
 });
 
-test('limpiarCopias borra las de PRs cerradas y las viejas, y no toca worktrees ajenos', async () => {
+test('limpiarCopias deletes copies of closed PRs and stale ones, and leaves foreign worktrees alone', async () => {
   const { copiaDeRama, limpiarCopias } = await import('../mcp/lib/copias.mjs');
   const { r, p } = preparar();
   const abierta = await crearCopia(p, 'x', 7, r.head);

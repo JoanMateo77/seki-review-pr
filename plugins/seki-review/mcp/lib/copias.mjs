@@ -1,5 +1,5 @@
-// Copia de trabajo por PR: un git worktree desacoplado en el commit de la PR, aparte del checkout principal y de
-// los worktrees del usuario. Ahí trabaja la IA y se prueban los cambios; nada sale de ahí sin Aprobar.
+// Working copy per PR: a detached git worktree at the PR's commit, separate from the main checkout and from
+// the user's worktrees. The AI works there and changes are tested there; nothing leaves it without Approve.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { rutaCopia } from './cache.mjs';
@@ -13,7 +13,7 @@ async function excluirNodeModules(checkout) {
   const comun = (await git(checkout, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim();
   const ruta = join(comun, 'info/exclude');
   const actual = existsSync(ruta) ? readFileSync(ruta, 'utf8') : '';
-  // Sin barra final: "node_modules/" no coincide con un enlace simbólico.
+  // No trailing slash: "node_modules/" does not match a symbolic link.
   if (!actual.split('\n').includes('node_modules')) {
     mkdirSync(dirname(ruta), { recursive: true });
     appendFileSync(ruta, `${actual && !actual.endsWith('\n') ? '\n' : ''}node_modules\n`);
@@ -56,9 +56,9 @@ export async function diffCopia(dir) {
 }
 
 export async function reiniciarCopia(dir, headSha) {
-  // reset --hard y clean desde una subcarpeta operarían sobre el repo que la contiene.
+  // reset --hard and clean from a subfolder would operate on the repo that contains it.
   const raiz = await git(dir, ['rev-parse', '--show-toplevel']).then((x) => realpathSync(x.trim()), () => null);
-  if (raiz !== realpathSync(dir)) throw new Error(`${dir} no es la raíz de una copia de trabajo`);
+  if (raiz !== realpathSync(dir)) throw new Error(`${dir} is not the root of a working copy`);
   await git(dir, ['reset', '-q', '--hard', headSha]);
   await git(dir, ['clean', '-q', '-fd', '-e', 'node_modules']);
 }
@@ -66,13 +66,13 @@ export async function reiniciarCopia(dir, headSha) {
 export async function borrarCopia(p, repo, numero) {
   const checkout = checkoutDe(p, repo);
   const dir = rutaCopia(p, repo, numero);
-  // Sin prune general: podaría también worktrees del usuario cuyo directorio no está montado.
+  // No general prune: it would also prune the user's worktrees whose directory is not mounted.
   if (existsSync(dir)) await git(checkout, ['worktree', 'remove', '--force', dir]);
   else await git(checkout, ['worktree', 'remove', '--force', dir]).catch(() => {});
 }
 
-// Para investigar, los otros repos se leen en la rama que corresponde al ambiente de la PR (pruebas o producción),
-// una por cada portal, nunca en la rama en que esté parado el checkout del usuario.
+// For investigation, the other repos are read on the branch matching the PR's environment (testing or production),
+// one per portal, never on whatever branch the user's checkout is on.
 export function ramasEquivalentes(p, pr) {
   const clase = clasificarBase({ lineas: [], ...p.repos[pr.repo] }, pr.base);
   const ambiente = clase.ambiente === 'prod' ? 'prod' : 'pruebas';
@@ -88,14 +88,14 @@ const rutaUsos = (p) => join(p.copias ?? join(p.salida, 'copias'), 'usos.json');
 export function marcarUso(p, dir) {
   const ruta = rutaUsos(p);
   let usos = {};
-  try { usos = JSON.parse(readFileSync(ruta, 'utf8')); } catch { /* primera vez */ }
+  try { usos = JSON.parse(readFileSync(ruta, 'utf8')); } catch { /* first time */ }
   usos[dir] = Date.now();
   mkdirSync(dirname(ruta), { recursive: true });
   writeFileSync(ruta, JSON.stringify(usos));
 }
 const leerUsos = (p) => { try { return JSON.parse(readFileSync(rutaUsos(p), 'utf8')); } catch { return {}; } };
 
-// Copia de solo lectura de una rama, traída fresca del remoto a una ref propia que se borra enseguida.
+// Read-only copy of a branch, fetched fresh from the remote into a private ref that is deleted right away.
 export async function copiaDeRama(p, repo, rama) {
   const checkout = checkoutDe(p, repo);
   const dir = join(p.copias ?? join(p.salida, 'copias'), 'ramas', `${repo}--${rama.replace(/[^\w.-]+/g, '_')}`);
@@ -118,8 +118,8 @@ export async function copiaDeRama(p, repo, rama) {
   return { dir, sha };
 }
 
-// Borra las copias del plugin de PRs que ya no están abiertas y las que llevan más de 7 días sin uso. Solo toca
-// worktrees que viven dentro de la carpeta de copias; los del usuario quedan fuera aunque sean del mismo repo.
+// Deletes the plugin's copies for PRs that are no longer open and those unused for more than 7 days. It only touches
+// worktrees inside the copies folder; the user's are left alone even if they belong to the same repo.
 export async function limpiarCopias(p, { abiertas, ahora = Date.now(), usos = leerUsos(p), dias = 7 }) {
   const raiz = p.copias ?? join(p.salida, 'copias');
   if (!existsSync(raiz)) return [];

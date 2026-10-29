@@ -1,16 +1,16 @@
-Tarea: de una lista de PRs, elegir las que responden a una necesidad de quien revisa (por ejemplo "PRs de ciberseguridad" o "lo que toca el login").
+Task: from a list of PRs, pick the ones that address a reviewer's need (for example "cybersecurity PRs" or "anything touching the login").
 
-Cada PR viene en una línea: id, título, rama, portal y los archivos que cambia cuando se conocen. No hay diff ni descripción.
+Each PR comes on one line: id, title, branch, portal and the files it changes when known. There is no diff or description.
 
-Clasificar cada PR que tenga relación con la necesidad:
+Classify each PR related to the need:
 
-- `directa`: el propósito de la PR es la necesidad. Lo dicen el título o la rama: qué corrige, qué agrega o qué endurece. Para una necesidad de seguridad, una PR es directa si corrige una vulnerabilidad o cambia lo que un atacante podría hacer (acceso, datos expuestos, inyección, firma, sesión, permisos).
-- `relacionada`: la PR toca el área de la necesidad, pero su propósito es otro: un texto o aviso, un ajuste visual, una funcionalidad nueva, una refactorización o pruebas. Ejemplo: con la necesidad "seguridad", una PR que corrige que el aviso de demasiados intentos del login salía vacío es `relacionada`, no `directa`: cambia un texto, no lo que se puede hacer.
-- Sin relación: no se devuelve.
+- `directa`: the PR's purpose is the need. The title or branch says so: what it fixes, adds or hardens. For a security need, a PR is direct if it fixes a vulnerability or changes what an attacker could do (access, exposed data, injection, signing, session, permissions).
+- `relacionada`: the PR touches the area of the need, but its purpose is something else: a text or notice, a visual tweak, a new feature, a refactor or tests. Example: with the need "security", a PR fixing that the login's too-many-attempts notice was empty is `relacionada`, not `directa`: it changes a text, not what can be done.
+- Unrelated: not returned.
 
-Reglas:
+Rules:
 
-- La señal principal es el título y la rama. Los archivos solo ayudan a confirmar de qué trata; un archivo de pruebas o de nombre genérico no basta por sí solo.
-- Ante la duda entre `directa` y `relacionada`, elegir `relacionada`.
-- Por cada PR devuelta, un motivo de una frase (máximo 20 palabras) con la señal concreta: la palabra del título, la rama o el archivo.
-- Devolver solo ids de la lista, sin repetir, en el formato pedido. Si ninguna encaja, devolver la lista vacía.
+- The main signal is the title and branch. Files only help confirm what it is about; a test file or a generically named file is not enough on its own.
+- When in doubt between `directa` and `relacionada`, choose `relacionada`.
+- For each PR returned, a one-sentence reason (20 words maximum) with the concrete signal: the word in the title, the branch or the file.
+- Return only ids from the list, without repeats, in the requested format. If none fit, return an empty list.

@@ -6,16 +6,16 @@ import { ghJson } from '../lib/proceso.mjs';
 export default {
   name: 'pr_detalle',
   description:
-    'Contexto completo de una PR para entenderla y explicarla: descripción, commits, archivos con su diff (recortado), ' +
-    'estado frente a pruebas, PR gemela y la explicación guardada si existe.',
+    'Full context of a PR for understanding and explaining it: description, commits, files with their (truncated) diff, ' +
+    'status against the testing branch, twin PR, and the saved explanation if one exists.',
   inputSchema: {
     type: 'object',
     required: ['repo', 'numero'],
     properties: {
-      proyecto: { type: 'string', description: 'Clave del proyecto en proyectos.json; si se omite, el predeterminado' },
+      proyecto: { type: 'string', description: 'Project key in proyectos.json; defaults to the default project if omitted' },
       repo: { type: 'string' },
       numero: { type: 'integer' },
-      max_lineas_diff: { type: 'integer', default: 600, description: 'Tope de líneas de diff en total' },
+      max_lineas_diff: { type: 'integer', default: 600, description: 'Maximum total diff lines' },
     },
   },
   async handler({ proyecto, repo, numero, max_lineas_diff = 600 }) {
@@ -37,7 +37,7 @@ export default {
         archivo: a.filename,
         estado: a.status,
         cambios: `+${a.additions}/-${a.deletions}`,
-        diff: a.patch === undefined ? '(binario o demasiado grande)' : tomadas.join('\n') + (tomadas.length < lineas.length ? `\n... (${lineas.length - tomadas.length} líneas omitidas)` : ''),
+        diff: a.patch === undefined ? '(binary or too large)' : tomadas.join('\n') + (tomadas.length < lineas.length ? `\n... (${lineas.length - tomadas.length} lines omitted)` : ''),
       };
     });
 
@@ -50,7 +50,7 @@ export default {
       rama: pr.headRefName,
       headSha: pr.headRefOid,
       estado: pr.state,
-      cambios: `+${pr.additions}/-${pr.deletions} en ${archivos.length} archivos`,
+      cambios: `+${pr.additions}/-${pr.deletions} in ${archivos.length} files`,
       descripcion: pr.body,
       commits: pr.commits.map((c) => c.messageHeadline),
       ambiente: enFoto?.ambiente,

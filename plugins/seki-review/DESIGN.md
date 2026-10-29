@@ -1,31 +1,31 @@
 # Design
 
-Tablero de revisión de PRs (`mcp/tablero/plantilla.html`). Modo Operate: herramienta de trabajo diario. Referencias tomadas de Mobbin (27-10-2026): GitHub (lista de PRs), Linear (grupos colapsables, bandeja dividida), Graphite y GitLab (detalle de PR con secciones fijas y pila de estados), Vercel (estado como punto más palabra).
+PR review dashboard (`mcp/tablero/plantilla.html`). Operate mode: a daily work tool. References taken from Mobbin (2026-10-27): GitHub (PR list), Linear (collapsible groups, split inbox), Graphite and GitLab (PR detail with fixed sections and a status stack), Vercel (status as a dot plus a word).
 
-## Estructura
+## Structure
 
-- Barra superior: proyecto, fecha de la foto, búsqueda (`/`), selector Autor / Revisor.
-- Lateral (segunda capa neutra): vistas, portal y filtros con conteos; exportar e importar revisión; atajos.
-- Cola: grupos colapsables por acción (autor) o por decisión del revisor; filas de una línea con punto de tono, id en mono, título truncado y hasta cuatro señales (hallazgos, revisión, seguridad, esfuerzo, días).
-- Detalle: estado, título, rama y tamaño; acciones; pila de estados (pruebas, producción, gemela, otros portales, verificaciones, revisor); pestañas Resumen, Archivos (diff unificado estilo GitHub: índice con +/−, archivos plegables, casilla Visto, orden de lectura, hallazgos bajo su línea, Ampliar), Verificaciones, Cómo probar, Revisión.
-- Lateral plegable con el botón de la barra o `[`; el estado se recuerda en el navegador.
-- Comentarios en el diff: clic en el número de línea selecciona, Shift + clic extiende el rango dentro del archivo. Bajo la selección aparece una caja con tres tipos (Preguntar, Pedir cambio, Nota con código sugerido opcional). Los comentarios se muestran como hilos bajo su última línea; los que ya no coinciden con el diff van en un bloque "Comentarios sobre líneas que cambiaron" al inicio del archivo. Preguntas y pedidos de cambio son borradores hasta enviarlos desde la barra "Revisión pendiente (N)", fija al pie de la pestaña. La respuesta de la IA va dentro del hilo, separada por una línea, con modelo y costo en tono tenue y la acción Repreguntar; un error muestra el motivo en rojo y Reintentar. La barra superior muestra "Gasto de IA hoy" cuando hubo trabajos. Una propuesta de cambio se muestra dentro de su hilo: resumen, mini diff por archivo (los que no son el comentado llevan "Fuera del comentario"), filas de comprobación (Reglas, Tipos, Tests) y acciones según estado: Aprobar y subir a la rama (o "Aprobar con fallos" con doble confirmación), Pedir ajuste, Descartar; en conflicto o rechazada, el motivo con Regenerar y Copiar parche; aprobada, el enlace al commit.
-- Menos de 900 px: lateral como fila deslizable, cola y detalle como vistas separadas con botón "Cola".
+- Top bar: project, snapshot date, search (`/`), Author / Reviewer selector.
+- Sidebar (second neutral layer): views, portal and filters with counts; export and import review; shortcuts.
+- Queue: collapsible groups by action (author) or by reviewer decision; single-line rows with a tone dot, id in mono, truncated title and up to four signals (findings, review, security, effort, days).
+- Detail: status, title, branch and size; actions; status stack (testing, production, twin, other portals, verifications, reviewer); tabs Summary, Files (GitHub-style unified diff: index with +/−, collapsible files, Viewed checkbox, reading order, findings under their line, Expand), Verifications, How to test, Review.
+- Sidebar collapsible with the top bar button or `[`; the state is remembered in the browser.
+- Diff comments: clicking a line number selects it, Shift + click extends the range within the file. Below the selection a box appears with three types (Ask, Request change, Note with optional suggested code). Comments are shown as threads under their last line; those that no longer match the diff go in a "Comments on lines that changed" block at the top of the file. Questions and change requests are drafts until sent from the "Pending review (N)" bar, fixed at the bottom of the tab. The AI's answer goes inside the thread, separated by a rule, with model and cost in a muted tone and the Ask again action; an error shows the reason in red and Retry. The top bar shows "AI spend today" when there were jobs. A change proposal is shown inside its thread: summary, mini diff per file (files other than the commented one carry "Outside the comment"), check rows (Rules, Types, Tests) and actions by state: Approve and push to the branch (or "Approve with failures" with double confirmation), Request adjustment, Discard; when conflicting or rejected, the reason with Regenerate and Copy patch; when approved, the link to the commit.
+- Under 900 px: sidebar as a scrollable row, queue and detail as separate views with a "Queue" button.
 
 ## Color
 
-Neutros cálidos; el color solo marca estado. Un tono por PR, el más grave: rojo bloquea (verificación bloqueante o seguridad sin salir a producción), ámbar pide mirar, verde listo para producción, violeta mergeada. Acento azul solo para la acción primaria, la selección y el foco. Claro por defecto, oscuro con `prefers-color-scheme`; los dos juegos de tokens están en `:root`.
+Warm neutrals; color only marks status. One tone per PR, the most severe: red blocks (blocking verification or security not yet in production), amber asks for a look, green ready for production, violet merged. Blue accent only for the primary action, selection and focus. Light by default, dark with `prefers-color-scheme`; both token sets live in `:root`.
 
-## Tipografía
+## Typography
 
-Sans del sistema. Escala de producto: 12 px (metadatos, conteos, mono), 13 px (texto y controles), 20 px (título de la PR). Mono solo para ids, ramas, rutas y código. Números tabulares.
+System sans. Product scale: 12 px (metadata, counts, mono), 13 px (text and controls), 20 px (PR title). Mono only for ids, branches, paths and code. Tabular numbers.
 
-## Componentes
+## Components
 
-- Estado: píldora con fondo tintado y texto del mismo tono.
-- Check: icono, nombre y valor con una línea de evidencia debajo ("cómo se comprobó").
-- Iconos: símbolos SVG propios, trazo 1.6, 14 px. Sin emojis ni glifos Unicode.
+- Status: pill with a tinted background and text in the same tone.
+- Check: icon, name and value with a line of evidence below ("how it was checked").
+- Icons: custom SVG symbols, 1.6 stroke, 14 px. No emojis or Unicode glyphs.
 
-## Rechazos deliberados
+## Deliberate rejections
 
-Sin fichas de números grandes, sin tarjetas por fila, sin sopa de etiquetas, sin etiquetas en mayúsculas sobre los títulos, sin bordes laterales de color. La versión anterior tenía todo eso.
+No big-number tiles, no card per row, no tag soup, no uppercase labels above titles, no colored side borders. The previous version had all of that.

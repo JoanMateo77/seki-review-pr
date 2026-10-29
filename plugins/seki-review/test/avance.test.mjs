@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { avances, contarHerramienta, fijarAvance, quitarAvance } from '../mcp/lib/avance.mjs';
 
-test('cuenta lecturas, búsquedas y ediciones y deja el último archivo relativo a su raíz', () => {
+test('counts reads, searches and edits and records the last file relative to its root', () => {
   fijarAvance('c:1', { fase: 'leyendo' });
   contarHerramienta('c:1', { nombre: 'Read', entrada: { file_path: '/copias/web/src/a.ts' } }, ['/copias/api', '/copias/web']);
   contarHerramienta('c:1', { nombre: 'Read', entrada: { file_path: '/otro/lugar/x/y/z.ts' } }, ['/copias/web']);
@@ -18,7 +18,7 @@ test('cuenta lecturas, búsquedas y ediciones y deja el último archivo relativo
   assert.equal(avances()['c:1'], undefined);
 });
 
-test('cambiar de fase conserva los contadores', () => {
+test('changing phase keeps the counters', () => {
   fijarAvance('pr:a#1', { fase: 'preparando' });
   contarHerramienta('pr:a#1', { nombre: 'Read', entrada: { file_path: '/r/b.ts' } }, '/r');
   fijarAvance('pr:a#1', { fase: 'leyendo' });

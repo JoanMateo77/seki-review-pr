@@ -8,11 +8,11 @@ const PLANTILLA = join(dirname(fileURLToPath(import.meta.url)), '../tablero/plan
 const ANCLAJE = join(dirname(fileURLToPath(import.meta.url)), '../tablero/anclaje.js');
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), '../../.claude-plugin/plugin.json');
 
-// La plantilla se lee del disco en cada pedido y el código del servidor queda en memoria desde que arrancó: tras
-// actualizar el plugin, la página puede ser más nueva que el servidor. La página compara ambas versiones.
+// The template is read from disk on every request while the server code stays in memory since startup: after
+// a plugin update, the page can be newer than the server. The page compares both versions.
 export const versionEnDisco = () => { try { return JSON.parse(readFileSync(PLUGIN, 'utf8')).version; } catch { return null; } };
 
-// La foto con las explicaciones vigentes al momento de servirla (pueden haberse escrito después de la foto).
+// The snapshot with the explanations current at serving time (they may have been written after the snapshot).
 export function fotoConExplicaciones(p) {
   const foto = leerJson(rutaInstantanea(p.salida));
   if (!foto) return null;
@@ -25,8 +25,8 @@ export function fotoConExplicaciones(p) {
 
 const incrustar = (v) => JSON.stringify(v).replace(/</g, '\\u003c');
 
-// api: null para el archivo estático; { token } cuando lo sirve el servidor local con acciones.
-// p: proyecto, para incrustar los diffs guardados.
+// api: null for the static file; { token } when served by the local server with actions.
+// p: project, to embed the saved diffs.
 export const construirHtml = (p, foto, api = null) =>
   readFileSync(PLANTILLA, 'utf8')
     .replace('/*ANCLAJE*/', () => readFileSync(ANCLAJE, 'utf8'))

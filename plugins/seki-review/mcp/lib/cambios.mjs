@@ -1,5 +1,5 @@
-// Qué cambió entre dos fotos: PRs que salieron de la lista de abiertas (y si se mergearon o se
-// cerraron), PRs nuevas y PRs que cambiaron de grupo. La salida se consulta a GitHub una por una.
+// What changed between two snapshots: PRs that left the open list (and whether they were merged or
+// closed), new PRs and PRs that changed group. Departures are looked up on GitHub one by one.
 import { enParalelo, ghJson } from './proceso.mjs';
 
 const abiertas = (foto) => new Map((foto?.prs ?? []).filter((x) => x.estadoPr !== 'MERGED').map((x) => [x.id, x]));

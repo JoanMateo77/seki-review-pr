@@ -7,8 +7,8 @@ import { comprobar } from '../mcp/lib/calidad.mjs';
 import { crearCopia, diffCopia } from '../mcp/lib/copias.mjs';
 import { repoConPr, sh } from './util/repo.mjs';
 
-// "tsc" falso: siempre informa un error viejo en b.ts; informa uno nuevo si a.ts contiene "malo";
-// tarda 2 s si a.ts no contiene "malo" (sirve para forzar que el baseline se exceda).
+// Fake "tsc": always reports an old error in b.ts; reports a new one if a.ts contains "malo";
+// takes 2 s if a.ts does not contain "malo" (used to force the baseline to time out).
 const TSC = `const f=require('fs');const t=f.readFileSync('a.ts','utf8');
 console.log('b.ts(1,1): error TS1000: viejo');
 if(t.includes('malo'))console.log('a.ts(3,5): error TS2322: tipo incorrecto');
@@ -25,7 +25,7 @@ async function preparar(antes = 'export const a = 1;\n', comandos = {}) {
   return { r, p, dir };
 }
 
-test('comprobar detecta regla bloqueante en el patch', async () => {
+test('comprobar detects a blocking rule in the patch', async () => {
   const { r, p, dir } = await preparar('export const a = 1;\n', { tipos: null });
   writeFileSync(join(dir, 'a.ts'), 'export const a = 1;\nqb.where(`M.apikey = \'${x}\'`);\n');
   const c = await comprobar(p, 'api', dir, await diffCopia(dir), r.head);
@@ -33,7 +33,7 @@ test('comprobar detecta regla bloqueante en el patch', async () => {
   assert.equal(c.tipos, null);
 });
 
-test('comprobar no atribuye fallos que ya estaban en el baseline', async () => {
+test('comprobar does not attribute failures that were already in the baseline', async () => {
   const { r, p, dir } = await preparar();
   writeFileSync(join(dir, 'a.ts'), 'export const a = 1;\n// malo\n');
   const c = await comprobar(p, 'api', dir, await diffCopia(dir), r.head);
@@ -42,7 +42,7 @@ test('comprobar no atribuye fallos que ya estaban en el baseline', async () => {
   assert.equal(c.tipos.sinBaseline, undefined);
 });
 
-test('comprobar sin fallos nuevos queda ok aunque el comando falle por fallos viejos', async () => {
+test('comprobar with no new failures stays ok even if the command fails on old failures', async () => {
   const { r, p, dir } = await preparar();
   writeFileSync(join(dir, 'a.ts'), 'export const a = 2;\n');
   const c = await comprobar(p, 'api', dir, await diffCopia(dir), r.head);
@@ -50,7 +50,7 @@ test('comprobar sin fallos nuevos queda ok aunque el comando falle por fallos vi
   assert.deepEqual(c.tipos.nuevosFallos, []);
 });
 
-test('comprobar marca sinBaseline si el baseline se excede', async () => {
+test('comprobar sets sinBaseline if the baseline times out', async () => {
   const { r, p, dir } = await preparar('export const a = 1; // lento\n');
   writeFileSync(join(dir, 'a.ts'), 'export const a = 1; // lento malo\n');
   const c = await comprobar(p, 'api', dir, await diffCopia(dir), r.head, { limiteMs: 800 });
@@ -58,7 +58,7 @@ test('comprobar marca sinBaseline si el baseline se excede', async () => {
   assert.ok(c.tipos.nuevosFallos.includes('a.ts: TS2322: tipo incorrecto'));
 });
 
-test('comprobar deja la copia con el cambio aplicado', async () => {
+test('comprobar leaves the copy with the change applied', async () => {
   const { r, p, dir } = await preparar();
   writeFileSync(join(dir, 'a.ts'), 'export const a = 3;\n');
   const patch = await diffCopia(dir);
@@ -66,7 +66,7 @@ test('comprobar deja la copia con el cambio aplicado', async () => {
   assert.equal(await diffCopia(dir), patch);
 });
 
-test('el baseline no toca los stash del checkout aunque la propuesta esté vacía', async () => {
+test('the baseline does not touch the checkout stash even if the proposal is empty', async () => {
   const { r, p, dir } = await preparar();
   writeFileSync(join(r.checkout, 'a.ts'), 'trabajo sin guardar del usuario\n');
   sh(r.checkout, 'stash', 'push', '-q', '-m', 'del usuario');

@@ -1,7 +1,7 @@
-// ¿El cambio de una PR hacia prod ya está en la rama de pruebas?
-// 1) Compara blob por blob los archivos de la PR contra el árbol de pruebas (API, sin checkout).
-// 2) Si no todo coincide y hay checkout local, intenta aplicar el parche al revés sobre pruebas:
-//    si entra, el cambio ya está aunque pruebas haya tocado otras líneas de esos archivos.
+// Is the change of a PR to prod already in the testing branch?
+// 1) Compares the PR's files blob by blob against the testing tree (API, no checkout).
+// 2) If not everything matches and there is a local checkout, tries to reverse-apply the patch on testing:
+//    if it applies, the change is already there even if testing touched other lines of those files.
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -33,7 +33,7 @@ export const commitsPr = async (owner, repo, numero) =>
     return { oid: c.sha, messageHeadline: titulo, messageBody: cuerpo.join('\n').trim(), autor: c.author?.login ?? c.commit.author?.name, fecha: c.commit.author?.date };
   });
 
-// Un fetch a la vez por repo: git no tolera bien fetches concurrentes en el mismo .git.
+// One fetch at a time per repo: git does not handle concurrent fetches on the same .git well.
 const colas = new Map();
 export const enCola = (dir, fn) => {
   const previa = colas.get(dir) ?? Promise.resolve();
@@ -42,15 +42,15 @@ export const enCola = (dir, fn) => {
   return actual;
 };
 
-// Las ramas base se traen a un espacio propio: refs/remotes/origin/* puede reescribirlo
-// en paralelo otro fetch del usuario (IDE, otra sesión) y dejar la referencia inválida.
+// Base branches are fetched into a dedicated namespace: refs/remotes/origin/* can be rewritten
+// concurrently by another user fetch (IDE, another session), leaving the ref invalid.
 async function probarParche(dir, numero, prod, pruebas, baseSha) {
   const ns = `refs/seki-review/${numero}`;
   const ref = `${ns}/head`;
   const tmp = mkdtempSync(join(tmpdir(), 'seki-review-'));
   try {
     await git(dir, ['fetch', '-q', '--no-write-fetch-head', 'origin', `+pull/${numero}/head:${ref}`, `+refs/heads/${prod}:${ns}/prod`, `+refs/heads/${pruebas}:${ns}/pruebas`]);
-    // Una PR ya mergeada es ancestro de su base: el punto de partida es el sha de base que guardó GitHub.
+    // An already merged PR is an ancestor of its base: the starting point is the base sha GitHub recorded.
     const base = (await git(dir, ['merge-base', baseSha ?? `${ns}/prod`, ref])).trim();
     const parche = join(tmp, 'pr.diff');
     writeFileSync(parche, await git(dir, ['diff', '--binary', base, ref]));
@@ -80,7 +80,7 @@ export async function estadoFrentePruebas({ owner, repo, cfgRepo, numero, prod, 
   if (dir && existsSync(dir)) {
     const parche = await enCola(dir, () => probarParche(dir, numero, prod, pruebas, baseSha))
       .catch(() => enCola(dir, () => probarParche(dir, numero, prod, pruebas, baseSha)))
-      .catch((e) => { console.error('seki-review: parche de la PR', numero, e.message.slice(0, 300)); return null; });
+      .catch((e) => { console.error('seki-review: patch check for PR', numero, e.message.slice(0, 300)); return null; });
     if (parche === 'en_pruebas' || parche === 'no_en_pruebas') return { ...resultado, estado: parche, metodo: 'parche' };
     if (parche === 'conflicto') resultado.conflicto = true;
     if (parche === null) resultado.provisional = true;

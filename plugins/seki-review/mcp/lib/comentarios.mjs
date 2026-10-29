@@ -1,5 +1,5 @@
-// Comentarios sobre líneas del diff, guardados por PR. El navegador crea y edita borradores y notas; los demás
-// estados (en cola, respondido, propuesta...) los pone el servidor y el navegador no puede revertirlos.
+// Comments on diff lines, stored per PR. The browser creates and edits drafts and notes; the other
+// states (queued, answered, proposal...) are set by the server and the browser cannot revert them.
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { leerJson, escribirJson, rutaComentarios } from './cache.mjs';
@@ -9,17 +9,17 @@ const DEL_NAVEGADOR = new Set(['borrador', 'nota']);
 const MAX_TEXTO = 4000;
 const MAX_SUGERIDO = 20000;
 const LADOS = new Set(['nuevo', 'viejo', 'mixto']);
-// Secciones de la explicación sobre las que se puede preguntar o pedir que se amplíe.
+// Explanation sections that can be asked about or expanded on request.
 export const SECCIONES = {
-  resumen: 'Qué resuelve', por_que: 'Por qué', impacto_usuario: 'Qué nota quien usa el portal', que_cambia: 'Qué cambia',
-  orden_lectura: 'Orden de lectura', diagrama: 'Flujo', tecnologias: 'Tecnologías', alternativas: 'Alternativas consideradas',
-  dependencias: 'Debe ir antes', riesgos: 'Riesgos', como_probar: 'Cómo probar',
+  resumen: 'What it solves', por_que: 'Why', impacto_usuario: 'What users notice', que_cambia: 'What changes',
+  orden_lectura: 'Reading order', diagrama: 'Flow', tecnologias: 'Technologies', alternativas: 'Alternatives considered',
+  dependencias: 'Must go first', riesgos: 'Risks', como_probar: 'How to test',
 };
 const PENDIENTES = new Set(['en_cola', 'en_curso']);
-// Lo que el navegador puede escribir; respuesta, costo, propuesta y demás los pone solo el servidor.
+// What the browser may write; answer, cost, proposal and the rest are set only by the server.
 const CAMPOS = ['id', 'tipo', 'estado', 'ambito', 'seccion', 'citado', 'citadoDe', 'respondeA', 'investigar', 'archivo', 'lado', 'desde', 'hasta', 'claves', 'textoOriginal', 'texto', 'sugerido', 'headSha', 'creado', 'actualizado'];
 
-// Última escritura por PR, para que el tablero sepa cuándo recargar sin leer todos los archivos.
+// Last write per PR, so the dashboard knows when to reload without reading every file.
 const marcas = new Map();
 export const marcasComentarios = () => Object.fromEntries(marcas);
 
@@ -31,30 +31,30 @@ function escribir(p, repo, numero, lista) {
 export const leerComentarios = (p, repo, numero) => leerJson(rutaComentarios(p.salida, repo, numero), []);
 
 function validar(c) {
-  if (typeof c?.id !== 'string' || !/^c-[a-z0-9]{4,32}$/.test(c.id)) throw new Error('Comentario sin id válido');
-  if (!TIPOS.has(c.tipo)) throw new Error(`Comentario ${c.id}: tipo desconocido "${c.tipo}"`);
-  if (typeof c.texto !== 'string' || c.texto.length > MAX_TEXTO) throw new Error(`Comentario ${c.id}: texto vacío o de más de ${MAX_TEXTO} caracteres`);
-  if (c.sugerido !== undefined && (typeof c.sugerido !== 'string' || c.sugerido.length > MAX_SUGERIDO)) throw new Error(`Comentario ${c.id}: código sugerido de más de ${MAX_SUGERIDO} caracteres`);
-  if (!DEL_NAVEGADOR.has(c.estado)) throw new Error(`Comentario ${c.id}: estado no permitido`);
-  if (c.headSha !== undefined && (typeof c.headSha !== 'string' || !/^[0-9a-z]{0,64}$/i.test(c.headSha))) throw new Error(`Comentario ${c.id}: commit inválido`);
-  if (c.respondeA !== undefined && (typeof c.respondeA !== 'string' || !/^c-[a-z0-9]{4,32}$/.test(c.respondeA))) throw new Error(`Comentario ${c.id}: responde a un comentario inválido`);
-  if (c.investigar !== undefined && typeof c.investigar !== 'boolean') throw new Error(`Comentario ${c.id}: investigar debe ser verdadero o falso`);
-  if (c.citado !== undefined && (typeof c.citado !== 'string' || c.citado.length > 2000)) throw new Error(`Comentario ${c.id}: texto citado de más de 2000 caracteres`);
-  // Un fragmento citado de una respuesta solo tiene sentido como repregunta de ese hilo.
-  if (c.citadoDe !== undefined && (c.citadoDe !== 'respuesta' || c.citado === undefined || c.respondeA === undefined)) throw new Error(`Comentario ${c.id}: cita de respuesta sin texto o sin hilo`);
+  if (typeof c?.id !== 'string' || !/^c-[a-z0-9]{4,32}$/.test(c.id)) throw new Error('Comment without a valid id');
+  if (!TIPOS.has(c.tipo)) throw new Error(`Comment ${c.id}: unknown type "${c.tipo}"`);
+  if (typeof c.texto !== 'string' || c.texto.length > MAX_TEXTO) throw new Error(`Comment ${c.id}: text empty or longer than ${MAX_TEXTO} characters`);
+  if (c.sugerido !== undefined && (typeof c.sugerido !== 'string' || c.sugerido.length > MAX_SUGERIDO)) throw new Error(`Comment ${c.id}: suggested code longer than ${MAX_SUGERIDO} characters`);
+  if (!DEL_NAVEGADOR.has(c.estado)) throw new Error(`Comment ${c.id}: state not allowed`);
+  if (c.headSha !== undefined && (typeof c.headSha !== 'string' || !/^[0-9a-z]{0,64}$/i.test(c.headSha))) throw new Error(`Comment ${c.id}: invalid commit`);
+  if (c.respondeA !== undefined && (typeof c.respondeA !== 'string' || !/^c-[a-z0-9]{4,32}$/.test(c.respondeA))) throw new Error(`Comment ${c.id}: replies to an invalid comment`);
+  if (c.investigar !== undefined && typeof c.investigar !== 'boolean') throw new Error(`Comment ${c.id}: investigar must be true or false`);
+  if (c.citado !== undefined && (typeof c.citado !== 'string' || c.citado.length > 2000)) throw new Error(`Comment ${c.id}: quoted text longer than 2000 characters`);
+  // A fragment quoted from an answer only makes sense as a follow-up question in that thread.
+  if (c.citadoDe !== undefined && (c.citadoDe !== 'respuesta' || c.citado === undefined || c.respondeA === undefined)) throw new Error(`Comment ${c.id}: answer quote without text or thread`);
   if (c.ambito !== undefined) return validarDePr(c);
-  if (!LADOS.has(c.lado)) throw new Error(`Comentario ${c.id}: lado desconocido`);
-  if (!Number.isInteger(c.desde) || !Number.isInteger(c.hasta) || c.desde < 1 || c.hasta < c.desde) throw new Error(`Comentario ${c.id}: rango de líneas inválido`);
-  if (c.claves !== undefined && (!Array.isArray(c.claves) || c.claves.length > 2000 || !c.claves.every((k) => /^[nv]\d{1,7}$/.test(k)))) throw new Error(`Comentario ${c.id}: claves de línea inválidas`);
-  if (typeof c.archivo !== 'string' || !c.archivo || c.archivo.length > 500) throw new Error(`Comentario ${c.id}: archivo inválido`);
-  if (c.textoOriginal !== undefined && (typeof c.textoOriginal !== 'string' || c.textoOriginal.length > MAX_SUGERIDO)) throw new Error(`Comentario ${c.id}: texto original demasiado largo`);
+  if (!LADOS.has(c.lado)) throw new Error(`Comment ${c.id}: unknown side`);
+  if (!Number.isInteger(c.desde) || !Number.isInteger(c.hasta) || c.desde < 1 || c.hasta < c.desde) throw new Error(`Comment ${c.id}: invalid line range`);
+  if (c.claves !== undefined && (!Array.isArray(c.claves) || c.claves.length > 2000 || !c.claves.every((k) => /^[nv]\d{1,7}$/.test(k)))) throw new Error(`Comment ${c.id}: invalid line keys`);
+  if (typeof c.archivo !== 'string' || !c.archivo || c.archivo.length > 500) throw new Error(`Comment ${c.id}: invalid file`);
+  if (c.textoOriginal !== undefined && (typeof c.textoOriginal !== 'string' || c.textoOriginal.length > MAX_SUGERIDO)) throw new Error(`Comment ${c.id}: original text too long`);
 }
 
-// Pregunta sobre la PR o una sección de su explicación, sin líneas del diff.
+// Question about the PR or a section of its explanation, without diff lines.
 function validarDePr(c) {
-  if (c.ambito !== 'pr') throw new Error(`Comentario ${c.id}: ámbito desconocido`);
-  if (c.tipo !== 'pregunta') throw new Error(`Comentario ${c.id}: sobre la PR solo se admite una pregunta`);
-  if (c.seccion !== undefined && !Object.hasOwn(SECCIONES, c.seccion)) throw new Error(`Comentario ${c.id}: sección desconocida`);
+  if (c.ambito !== 'pr') throw new Error(`Comment ${c.id}: unknown scope`);
+  if (c.tipo !== 'pregunta') throw new Error(`Comment ${c.id}: only a question is allowed on the PR`);
+  if (c.seccion !== undefined && !Object.hasOwn(SECCIONES, c.seccion)) throw new Error(`Comment ${c.id}: unknown section`);
 }
 
 const limpiar = (c) => Object.fromEntries(CAMPOS.filter((k) => c[k] !== undefined).map((k) => [k, c[k]]));
@@ -81,13 +81,13 @@ export function guardarComentarios(p, repo, numero, entrantes, borrados = []) {
 export function actualizarComentario(p, repo, numero, id, cambios) {
   const lista = leerComentarios(p, repo, numero);
   const i = lista.findIndex((c) => c.id === id);
-  if (i < 0) throw new Error(`Comentario ${id} no existe en ${repo}#${numero}`);
+  if (i < 0) throw new Error(`Comment ${id} does not exist in ${repo}#${numero}`);
   lista[i] = { ...lista[i], ...cambios, actualizado: new Date().toISOString() };
   escribir(p, repo, numero, lista);
   return lista[i];
 }
 
-// Un trabajo que falla antes o durante su ejecución no debe dejar comentarios en cola o en curso para siempre.
+// A job that fails before or during its run must not leave comments queued or in progress forever.
 export function rescatarPendientes(p, repo, numero, ids, cambios) {
   const quedan = new Set(ids);
   const lista = leerComentarios(p, repo, numero);
@@ -101,7 +101,7 @@ export function rescatarPendientes(p, repo, numero, ids, cambios) {
   return n;
 }
 
-// Al arrancar el servidor ningún trabajo sigue vivo: lo que quedó en cola o en curso se interrumpió.
+// When the server starts no job is still alive: whatever was queued or in progress was interrupted.
 export function recuperarInterrumpidos(p) {
   const dir = join(p.salida, 'comentarios');
   if (!existsSync(dir)) return 0;
@@ -110,12 +110,12 @@ export function recuperarInterrumpidos(p) {
     const m = /^(.+)-(\d+)\.json$/.exec(nombre);
     if (!m) continue;
     const lista = leerComentarios(p, m[1], Number(m[2]));
-    n += rescatarPendientes(p, m[1], Number(m[2]), lista.map((c) => c.id), { estado: 'error', motivo: 'El trabajo se interrumpió porque el servidor se reinició' });
+    n += rescatarPendientes(p, m[1], Number(m[2]), lista.map((c) => c.id), { estado: 'error', motivo: 'The job was interrupted because the server restarted' });
   }
   return n;
 }
 
-// Reparte los comentarios pedidos en preguntas y cambios enviables; los de otro commit no se envían.
+// Splits the requested comments into sendable questions and changes; those from another commit are not sent.
 export function separarEnviables(lista, ids, headSha) {
   const pedidos = new Set(ids);
   const r = { preguntas: [], cambios: [], desactualizados: [] };

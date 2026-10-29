@@ -1,118 +1,119 @@
 ---
 name: revisar-prs
-description: Usar cuando se pide revisar qué PRs están pendientes de pasar a pruebas o a producción, entender o explicar una PR (qué cambia, tecnologías, por qué, alternativas, cómo probar), o abrir el tablero local de revisión de PRs (Seki Review). Sin argumento abre el tablero servido. Argumentos opcionales - "pendientes", "explicar <repo>#<n>", "explicar pendientes", "verificar <repo>#<n>", "archivo".
+description: Use when asked to review which PRs are pending promotion to testing or production, to understand or explain a PR (what changes, technologies, why, alternatives, how to test), or to open the local PR review dashboard (Seki Review). With no argument it opens the served dashboard. Optional arguments - "pending", "explain <repo>#<n>", "explain pending", "verify <repo>#<n>", "file" (the Spanish forms "pendientes", "explicar", "verificar", "archivo" are also accepted).
 ---
 
-# Revisar PRs (seki-review)
+# Review PRs (seki-review)
 
-Herramientas del servidor MCP `seki-review`:
+Tools of the `seki-review` MCP server:
 
-| Herramienta | Para qué |
+| Tool | Purpose |
 |---|---|
-| `prs_pendientes` | Foto de las PRs abiertas agrupadas por acción, con estado real frente a pruebas |
-| `pr_detalle` | Descripción, commits y diff recortado de una PR, para entenderla |
-| `pr_verificaciones` | Reglas fijas sobre las líneas agregadas de una PR, o de una rama local antes de abrirla (`dir` + `base`) |
-| `pr_guardar_explicacion` | Guarda la explicación de una PR atada a su commit actual |
-| `tablero_generar` | Escribe y abre `revision-prs/tablero.html` (archivo local, sin acciones) |
-| `tablero_servir` | Sirve el tablero en 127.0.0.1 con acciones: actualizar estado y analizar con IA |
+| `prs_pendientes` | Snapshot of open PRs grouped by action, with real status against testing |
+| `pr_detalle` | Description, commits and trimmed diff of a PR, to understand it |
+| `pr_verificaciones` | Fixed rules over the added lines of a PR, or of a local branch before opening it (`dir` + `base`) |
+| `pr_guardar_explicacion` | Saves a PR's explanation tied to its current commit |
+| `tablero_generar` | Writes and opens `revision-prs/tablero.html` (local file, no actions) |
+| `tablero_servir` | Serves the dashboard on 127.0.0.1 with actions: refresh status and analyze with AI |
 
-Todo queda en archivos locales. No publicar el tablero ni las explicaciones en Artifacts, Claude Docs ni ningún servicio externo.
+Everything stays in local files. Do not publish the dashboard or the explanations to Artifacts, Claude Docs or any external service.
 
-## Flujo según el argumento
+## Workflow by argument
 
-**Sin argumento o "tablero":** llamar `tablero_servir` primero (abre el navegador con el tablero servido) y responder
-en una línea con el enlace. Desde el tablero, los botones lanzan la IA por su cuenta: no proponer comandos para copiar.
-No llamar `prs_pendientes` salvo que la persona pida el resumen.
+**No argument or "dashboard" ("tablero"):** call `tablero_servir` first (it opens the browser with the served dashboard) and reply
+in one line with the link. From the dashboard, the buttons launch the AI on their own: do not suggest commands to copy.
+Do not call `prs_pendientes` unless the person asks for the summary.
 
-**"pendientes":** llamar `prs_pendientes` y resumir por grupo. Señalar primero lo que exige acción:
-"En pruebas sin PR hacia producción" (código validado que nunca salió), PRs de seguridad sin
-pasar a producción, verificaciones bloqueantes o altas, "sin equivalente en <portal>" cuando el arreglo aplica a los
-dos portales, "otra versión en pruebas" y PRs viejas con conflicto. No repetir la lista entera si la persona solo pidió un resumen.
+**"pending" ("pendientes"):** call `prs_pendientes` and summarize by group. Point out first what requires action:
+"In testing with no PR to production" (validated code that never shipped), security PRs not yet
+promoted to production, blocking or high verifications, "no equivalent in <portal>" when the fix applies to
+both portals, "another version in testing" and old PRs with conflicts. Do not repeat the whole list if the person only asked for a summary.
 
-**"verificar <repo>#<n>"** o **"verificar <ruta> <base>"**: `pr_verificaciones`; explicar cada hallazgo bloqueante o alto
-mirando la línea en contexto y decir si es real o falso positivo. Antes de abrir una PR propia, correrlo sobre la rama local.
+**"verify <repo>#<n>"** or **"verify <path> <base>"** ("verificar"): `pr_verificaciones`; explain each blocking or high finding
+by looking at the line in context and say whether it is real or a false positive. Before opening your own PR, run it on the local branch.
 
-**"explicar <repo>#<n>":** `pr_detalle` → leer descripción, commits y diff → revisar los hallazgos de `pr_verificaciones` → si el diff viene recortado y hace falta, leer el archivo en el checkout local con lectura acotada (grep + rango) → `pr_guardar_explicacion` → `tablero_servir`.
+**"explain <repo>#<n>" ("explicar"):** `pr_detalle` → read description, commits and diff → review the findings from `pr_verificaciones` → if the diff comes trimmed and it is needed, read the file in the local checkout with a bounded read (grep + range) → `pr_guardar_explicacion` → `tablero_servir`.
 
-**"explicar pendientes":** tomar de `prs_pendientes` las PRs sin explicación o con explicación desactualizada, sin las de ramas inactivas. Priorizar seguridad y las que van a producción. Más de 5 PRs → repartir en subagentes con `model: "sonnet"`, cada uno con 3 a 5 PRs, y pedirles que llamen ellos mismos `pr_guardar_explicacion`. Al final, `tablero_servir`.
+**"explain pending" ("explicar pendientes"):** take from `prs_pendientes` the PRs with no explanation or an outdated one, excluding those on inactive branches. Prioritize security and those going to production. More than 5 PRs → split across subagents with `model: "sonnet"`, each with 3 to 5 PRs, and ask them to call `pr_guardar_explicacion` themselves. At the end, `tablero_servir`.
 
-**Revisión por otra persona:** el tablero es un archivo local que se puede enviar. Quien revisa elige "Revisor"
-arriba, deja su decisión y observaciones por PR y exporta un JSON; el autor lo importa en su tablero. Si piden leer
-esas decisiones, pedir la ruta del JSON exportado y resumirlo.
+**Review by another person:** the dashboard is a local file that can be sent. The reviewer chooses "Reviewer"
+at the top, records their decision and observations per PR and exports a JSON; the author imports it into their dashboard. If asked to read
+those decisions, ask for the path of the exported JSON and summarize it.
 
-**Comentarios sobre líneas:** en la pestaña Archivos se seleccionan líneas (clic en el número, Shift + clic para un
-rango) y se deja una nota manual, opcionalmente con código sugerido; las notas salen en la revisión exportada y en
-"Copiar resumen". Preguntar y Pedir cambio solo funcionan con el tablero servido: se acumulan en "Revisión pendiente"
-y "Enviar revisión" las manda juntas (todas las preguntas de una PR en una sola llamada). El costo de cada trabajo
-queda en `revision-prs/datos/costos.jsonl`. Un pedido de cambio genera una propuesta en una copia aparte de la rama (con
-comprobaciones de reglas, tipos y tests). Solo el botón Aprobar la sube a la rama de la PR, y nunca hace merge.
-**Filtro con IA:** se escribe una necesidad en el buscador ("PRs de ciberseguridad", "lo que toca el login") y
-"Filtrar con IA" deja las PRs cuyo propósito es esa necesidad, con el motivo de cada una; las que solo tocan el área (relacionadas) se muestran aparte con un botón. Decide con título, rama y archivos (no lee el
-diff); el resultado se guarda mientras la cola no cambie y se puede guardar como vista en la barra lateral.
+**Comments on lines:** in the Files tab, lines are selected (click the number, Shift + click for a
+range) and a manual note can be left, optionally with suggested code; notes appear in the exported review and in
+"Copy summary". Ask and Request change only work with the served dashboard: they accumulate in "Pending review"
+and "Submit review" sends them together (all questions for a PR in a single call). The cost of each job
+is logged in `revision-prs/datos/costos.jsonl`. A change request generates a proposal in a separate copy of the branch (with
+rule, type and test checks). Only the Approve button pushes it to the PR's branch, and it never merges.
 
-En el Resumen, al seleccionar texto de la explicación aparece una barra para preguntar sobre ese fragmento (o
-"¿Por qué?", "Dar un ejemplo", "Ampliar"); cada sección tiene "Ampliar" y al final hay una caja para preguntar sobre
-toda la PR. Seleccionar texto de una respuesta de la IA (en Resumen o Archivos) repregunta en ese hilo sobre el
-fragmento elegido. Las preguntas se envían al momento o se agregan a "Revisión pendiente" para mandarlas juntas.
-Las respuestas rápidas usan solo la explicación y el diff; "Investigar en el código" (o la casilla "Revisar el código")
-lanza a la IA con Read/Grep/Glob sobre una copia de solo lectura de la PR y copias de los otros repos en la rama
-equivalente (pruebas o producción, una por portal, traídas frescas de GitHub; nunca el checkout del usuario), sin
-acceso a archivos de secretos (.env, llaves, credenciales y los que liste `secretos` del proyecto). Cada respuesta guarda qué repo, rama y commit se leyó. Las
-copias de PRs cerradas o sin uso hace 7 días se borran al actualizar el estado. En Archivos, seleccionar código con el
-mouse abre la misma barra (Preguntar, Pedir cambio, Nota) sobre esas líneas. Repreguntar enlaza la pregunta a la anterior y la IA recibe el
-hilo completo.
+**AI filter:** type a need in the search box ("cybersecurity PRs", "whatever touches the login") and
+"Filter with AI" keeps the PRs whose purpose is that need, with the reason for each; those that only touch the area (related) are shown separately behind a button. It decides from title, branch and files (it does not read the
+diff); the result is kept while the queue does not change and can be saved as a view in the sidebar.
 
-**Pestaña Descripción:** muestra la descripción de la PR tal como la escribió el autor (con formato) y la lista de
-commits con enlace, autor y fecha. Se llena al actualizar el estado; una PR de seguridad sin descripción se avisa.
+In the Summary, selecting text from the explanation shows a bar to ask about that fragment (or
+"Why?", "Give an example", "Expand"); each section has "Expand" and at the end there is a box to ask about
+the whole PR. Selecting text from an AI answer (in Summary or Files) asks again in that thread about the
+chosen fragment. Questions are sent immediately or added to "Pending review" to send together.
+Quick answers use only the explanation and the diff; "Investigate in the code" (or the "Review the code" checkbox)
+launches the AI with Read/Grep/Glob over a read-only copy of the PR and copies of the other repos on the
+equivalent branch (testing or production, one per portal, freshly fetched from GitHub; never the user's checkout), without
+access to secret files (.env, keys, credentials and those listed in the project's `secretos`). Each answer saves which repo, branch and commit was read. The
+copies of closed PRs or those unused for 7 days are deleted when the status is refreshed. In Files, selecting code with the
+mouse opens the same bar (Ask, Request change, Note) over those lines. Asking again links the question to the previous one and the AI receives the
+full thread.
 
-**Quién dijo qué:** el Resumen se marca como explicación de IA (ayuda de lectura, no veredicto); Verificaciones son reglas
-fijas sin IA; las notas son de la persona. Si el diff vino recortado, la explicación muestra "Cobertura parcial" con los
-archivos no revisados. Al explicar desde el chat con lectura parcial, guardar `cobertura` con `completa: false` y la lista.
-Cada investigación lista los archivos que la IA abrió, sus búsquedas y lo que bloquearon los permisos. Cada respuesta
-tiene "¿Sirvió? Sí / No"; el título del gasto del día muestra los últimos 30 días por modelo frente a las respuestas
-útiles. Aprobar deja registrado el intento antes del push: si el proceso se corta, el siguiente Aprobar reconoce el
-commit ya subido y no lo repite. Prueba real de permisos (unos centavos): `SEKI_PRUEBA_REAL=1 node --test test/permisos-real.test.mjs`,
-antes de publicar una versión o tras actualizar Claude Code.
+**Description tab:** shows the PR description as the author wrote it (formatted) and the list of
+commits with link, author and date. It is filled when the status is refreshed; a security PR with no description is flagged.
 
-**"archivo":** `tablero_generar` solo cuando se necesita el archivo suelto (sin acciones) para enviarlo a quien
-revisa. El tablero servido vive mientras haya una sesión de Claude Code abierta; su enlace es fijo por máquina. Con varias sesiones, lo sirve la de versión más nueva y las demás quedan de reserva: si esa se cierra, otra lo toma en el mismo enlace y la página se reconecta sola. Fuera de Claude Code:
+**Who said what:** the Summary is marked as an AI explanation (a reading aid, not a verdict); Verifications are fixed
+rules without AI; notes belong to the person. If the diff came trimmed, the explanation shows "Partial coverage" with the
+unreviewed files. When explaining from the chat with a partial read, save `cobertura` with `completa: false` and the list.
+Each investigation lists the files the AI opened, its searches and what the permissions blocked. Each answer
+has "Was this helpful? Yes / No"; the title of the day's spend shows the last 30 days per model versus helpful
+answers. Approve records the attempt before the push: if the process is interrupted, the next Approve recognizes the
+already-pushed commit and does not repeat it. Real permissions test (a few cents): `SEKI_PRUEBA_REAL=1 node --test test/permisos-real.test.mjs`,
+before releasing a version or after updating Claude Code.
+
+**"file" ("archivo"):** `tablero_generar` only when the standalone file (no actions) is needed to send to the
+reviewer. The served dashboard lives as long as a Claude Code session is open; its link is fixed per machine. With several sessions, the one with the newest version serves it and the others stay on standby: if that one closes, another takes over on the same link and the page reconnects on its own. Outside Claude Code:
 `sh <plugin>/bin/tablero.sh`.
 
-**"qué se mergeó" / "qué cambió":** `prs_pendientes` compara con la foto anterior y abre su salida con
-"Cambios detectados": mergeadas (y en qué rama), cerradas sin mergear, nuevas y las que cambiaron de grupo.
+**"what was merged" / "what changed":** `prs_pendientes` compares with the previous snapshot and opens its output with
+"Detected changes": merged (and into which branch), closed without merging, new, and those that changed group.
 
-## Cómo redactar la explicación
+## How to write the explanation
 
-Pensada para alguien que no escribió el cambio y debe aprobarlo o probarlo.
+Written for someone who did not write the change and must approve or test it.
 
-- **resumen:** una frase con lo que resuelve.
-- **por_que:** el problema real (incidente, hallazgo de seguridad, caso de QA, pedido del banco). Si la descripción de la PR lo dice, usarlo; no inventar.
-- **que_cambia:** cambios concretos, uno por elemento, en hechos ("La ruta X exige sesión"), sin narrativa.
-- **impacto_usuario:** lo que nota quien usa el portal; "Ninguno visible" si es interno.
-- **tecnologias:** solo las que el cambio usa de verdad (librería, mecanismo de Express/TypeORM/EJS, API de GitHub, SQL). Para cada una: uso en este cambio, por qué esa, y qué alternativas se descartaron y por qué (por ejemplo: parametrizar la consulta en vez de escapar a mano; DOMPurify en vez de una expresión regular). Si no hay una decisión real, no rellenar.
-- **alternativas:** otras soluciones al problema completo y por qué no.
-- **como_probar:** pasos verificables en pruebas, cada uno con su resultado esperado.
-- **riesgos** y **dependencias:** SQL que debe correr antes, variables de entorno, PRs que van primero, orden de despliegue.
-- **riesgo:** bajo, medio o alto según lo que puede romper en producción.
-- **esfuerzo:** 1 a 5 para revisarla (1 = minutos; 5 = media jornada o más). Pesa más la lógica nueva que el tamaño.
-- **orden_lectura:** archivos en el orden en que conviene leerlos, empezando por donde nace el cambio (ruta, migración,
-  regla de negocio) y dejando pruebas y vistas al final. Un motivo corto por archivo. Omitir archivos triviales.
-- **diagrama:** solo si cambia un flujo entre componentes (portal, back, checkout, banco, cron). `sequenceDiagram` de
-  Mermaid con participantes en lenguaje del negocio, sin nombres de funciones, a lo sumo 12 mensajes.
+- **resumen:** one sentence with what it solves.
+- **por_que:** the real problem (incident, security finding, QA case, a bank's request). If the PR description says it, use it; do not invent.
+- **que_cambia:** concrete changes, one per item, as facts ("Route X requires a session"), no narrative.
+- **impacto_usuario:** what the portal user notices; "Nothing visible" if it is internal.
+- **tecnologias:** only those the change actually uses (library, Express/TypeORM/EJS mechanism, GitHub API, SQL). For each one: its use in this change, why that one, and which alternatives were discarded and why (for example: parameterizing the query instead of escaping by hand; DOMPurify instead of a regular expression). If there is no real decision, do not fill it in.
+- **alternativas:** other solutions to the whole problem and why not.
+- **como_probar:** verifiable steps in testing, each with its expected result.
+- **riesgos** and **dependencias:** SQL that must run first, environment variables, PRs that go first, deployment order.
+- **riesgo:** low, medium or high according to what it can break in production (stored as `bajo`, `medio` or `alto`).
+- **esfuerzo:** 1 to 5 to review it (1 = minutes; 5 = half a day or more). New logic weighs more than size.
+- **orden_lectura:** files in the order in which they are best read, starting where the change originates (route, migration,
+  business rule) and leaving tests and views for the end. A short reason per file. Omit trivial files.
+- **diagrama:** only if a flow between components changes (portal, backend, checkout, bank, cron). Mermaid `sequenceDiagram`
+  with participants in business language, no function names, at most 12 messages.
 
-Reglas de texto: español formal e impersonal (nunca voseo ni tuteo), sin emojis, y las reglas del contexto del proyecto (`contextoProyecto` en `pr_detalle`) sin excepción. Sin nombres de funciones cuando no aportan a quien prueba.
+Text rules: formal and impersonal register, no emojis, and the rules in the project context (`contextoProyecto` in `pr_detalle`) without exception. No function names when they do not help the tester.
 
-## Significado de los estados
+## Meaning of the statuses
 
-- **En pruebas sin PR hacia producción:** PR abierta o mergeada en pruebas (últimos 30 días) cuyo código no aparece en
-  producción (ningún archivo coincide) y que ninguna PR abierta hacia producción trae. Se omiten las sincronizaciones
-  y lo marcado como "solo pruebas". Puede ser intencional (una funcionalidad que aún no sale); confirmarlo.
-- **Sin equivalente en <portal>:** no hay PR con título parecido hacia la rama de producción del otro portal. No todos
-  los cambios aplican a ambos portales.
+- **In testing with no PR to production:** PR open or merged into testing (last 30 days) whose code does not appear in
+  production (no file matches) and that no open PR to production brings. Syncs
+  and anything marked as "testing only" are omitted. It may be intentional (a feature that has not shipped yet); confirm it.
+- **No equivalent in <portal>:** there is no PR with a similar title to the other portal's production branch. Not all
+  changes apply to both portals.
 
-- **Ya está en pruebas:** el cambio aplicado al revés sobre la rama de pruebas entra limpio, o todos sus archivos son idénticos. Falta solo producción.
-- **Otra versión en pruebas:** parte de los archivos coincide. Normalmente la PR de pruebas se ajustó después. Revisar diferencias antes de mergear a producción.
-- **No está en pruebas:** el cambio entra limpio sobre pruebas (no está), o no coincide ningún archivo.
-- **Gemela:** la PR equivalente contra la otra rama de la línea, detectada por título. Es una pista, no una prueba: confirmar con el estado.
+- **Already in testing:** the change applied in reverse on the testing branch applies cleanly, or all its files are identical. Only production is missing.
+- **Another version in testing:** some of the files match. Usually the testing PR was adjusted afterwards. Review the differences before merging to production.
+- **Not in testing:** the change applies cleanly on testing (it is not there), or no file matches.
+- **Twin:** the equivalent PR against the other branch of the line, detected by title. It is a hint, not proof: confirm with the status.
 
-La configuración de proyectos, repos, ramas, contexto y reglas propias vive fuera del plugin, en `~/.config/seki-review/proyectos.json` (o la ruta de `SEKI_REVIEW_CONFIG`); el plugin trae `config/proyectos.ejemplo.json` como punto de partida. Sin proyecto indicado se usa `SEKI_PROYECTO` o el primero del archivo.
+The configuration of projects, repos, branches, context and custom rules lives outside the plugin, in `~/.config/seki-review/proyectos.json` (or the path in `SEKI_REVIEW_CONFIG`); the plugin ships `config/proyectos.ejemplo.json` as a starting point. When no project is given, `SEKI_PROYECTO` or the first one in the file is used.

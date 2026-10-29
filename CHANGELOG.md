@@ -1,109 +1,109 @@
-# Cambios
+# Changelog
 
-Cada versión tiene su etiqueta `seki-review-vX.Y.Z` en el commit que la publica.
+Each version has its `seki-review-vX.Y.Z` tag on the commit that releases it.
 
 ## seki-review
 
 ### 0.20.0 (2026-10-29)
-- Explicaciones con más cobertura del diff: el cupo de líneas se reparte por prioridad (esquema y código primero; pantallas, pruebas y documentación después; archivos generados fuera) y por archivo, de modo que un archivo enorme ya no deja sin revisar a los demás.
-- Lo que no entra en el mensaje queda como parche en disco, y la IA lo lee sobre una copia de solo lectura de la PR, con los mismos bloqueos de secretos que Investigar.
-- La cobertura se mide con lo que la IA leyó de verdad (traza de herramientas), no con lo que declara. Si quedan archivos de código sin ver, una segunda pasada los completa sola.
-- Botón "Revisar lo que faltó" en el aviso de cobertura parcial: amplía la explicación con los archivos pendientes.
-- La explicación se guarda atada al commit analizado; antes tomaba el commit actual de GitHub y, si la PR avanzaba durante el análisis, la marcaba como vigente sin serlo.
+- Explanations with more diff coverage: the line budget is split by priority (schema and code first; screens, tests and documentation after; generated files left out) and per file, so one huge file no longer leaves the others unreviewed.
+- Whatever does not fit in the message is kept as a patch on disk, and the AI reads it over a read-only copy of the PR, with the same secret blocks as Investigate.
+- Coverage is measured from what the AI actually read (tool trace), not from what it claims. If code files remain unseen, a second pass completes them automatically.
+- "Review what was missed" button in the partial coverage notice: extends the explanation with the pending files.
+- The explanation is saved tied to the analyzed commit; previously it took GitHub's current commit and, if the PR advanced during the analysis, marked it as current when it was not.
 
 ### 0.19.4 (2026-10-28)
-- Filtro con IA más preciso: cada PR se clasifica como directa (su propósito es la necesidad) o relacionada (toca el área con otro propósito, como corregir un texto del login). Por defecto se ven solo las directas; "Mostrar relacionadas" agrega las demás con su etiqueta.
-- Las instrucciones del filtro ya no traen una lista de temas de seguridad que hacía entrar cualquier PR del área. Los resultados guardados con las instrucciones anteriores se descartan.
+- More precise AI filter: each PR is classified as direct (its purpose is the need) or related (it touches the area for another purpose, such as fixing a login text). By default only direct ones are shown; "Show related" adds the rest with their label.
+- The filter instructions no longer include a list of security topics that let any PR in the area in. Results saved with the previous instructions are discarded.
 
 ### 0.19.3 (2026-10-28)
-- Relevo entre sesiones: las sesiones de Claude Code que no sirven el tablero quedan de reserva y, si la que lo sirve se cierra, una de ellas lo toma en el mismo enlace a los pocos segundos.
-- Solo una versión más nueva pide el puerto (comparación numérica): una sesión vieja ya no le quita el tablero a una nueva.
-- La página se reconecta sola: sin servidor muestra "Sin conexión: reintentando" y vuelve a consultar cada 5 segundos.
+- Handover between sessions: Claude Code sessions that do not serve the dashboard stay on standby and, if the serving one closes, one of them takes over on the same link within a few seconds.
+- Only a newer version requests the port (numeric comparison): an old session no longer takes the dashboard away from a new one.
+- The page reconnects on its own: without a server it shows "Offline: retrying" and polls again every 5 seconds.
 
 ### 0.19.2 (2026-10-28)
-- Con varias sesiones de Claude Code abiertas, el tablero lo servía la primera que lo abrió, aunque tuviera una versión vieja del plugin. Ahora, si el tablero abierto es de otra versión y no tiene trabajos en curso, la sesión nueva le pide el puerto y lo sirve en el mismo enlace. Con trabajos en curso, o si la versión vieja no sabe ceder, se avisa qué hacer.
+- With several Claude Code sessions open, the dashboard was served by the first one that opened it, even if it had an old version of the plugin. Now, if the open dashboard is from another version and has no jobs in progress, the new session requests the port and serves it on the same link. With jobs in progress, or if the old version cannot hand over, it explains what to do.
 
 ### 0.19.1 (2026-10-28)
-- Si el plugin se actualiza con el tablero abierto, la página (que se lee del disco) es más nueva que el servidor (que sigue en memoria): el tablero lo avisa con ambas versiones y pide reiniciar Claude Code, en vez de responder "No existe" al usar una función nueva.
+- If the plugin is updated with the dashboard open, the page (read from disk) is newer than the server (still in memory): the dashboard reports both versions and asks to restart Claude Code, instead of answering "Does not exist" when a new feature is used.
 
 ### 0.19.0 (2026-10-28)
-- Filtro con IA: se escribe una necesidad en el buscador ("PRs de ciberseguridad") y "Filtrar con IA" (o Ctrl + Enter) deja en la cola solo las PRs que encajan, cada una con su motivo. La IA decide con título, rama y archivos, sin leer el diff (unos segundos, centavos por consulta).
-- El resultado se guarda por necesidad y estado de la cola: repetirlo no cuesta mientras ninguna PR cambie; si la cola cambia, el aviso ofrece volver a filtrar.
-- "Guardar como vista" deja la necesidad en "Vistas con IA" de la barra lateral.
-- El buscador conserva un ancho mínimo y el texto de gasto se recorta en pantallas medianas.
+- AI filter: type a need in the search box ("cybersecurity PRs") and "Filter with AI" (or Ctrl + Enter) leaves in the queue only the PRs that match, each with its reason. The AI decides from title, branch and files, without reading the diff (a few seconds, cents per query).
+- The result is saved per need and queue state: repeating it costs nothing while no PR changes; if the queue changes, the notice offers to filter again.
+- "Save as view" keeps the need under "AI views" in the sidebar.
+- The search box keeps a minimum width and the spend text is truncated on medium screens.
 
 ### 0.18.0 (2026-10-28)
-- Seleccionar texto en la respuesta de la IA de un hilo (Resumen o Archivos) abre la barra para repreguntar sobre ese fragmento: la pregunta queda en el mismo hilo, cita el fragmento y lo resalta en la respuesta. La IA recibe el fragmento como parte de la respuesta anterior, no de la explicación. La caja de pregunta sobre toda la PR se mantiene.
-- Avance real mientras la IA trabaja: etapas (copias, lectura, cambio, comprobaciones, corrección) y cuántos archivos leyó y buscó, con el último archivo abierto; también en el análisis de la PR.
-- Aviso cuando un trabajo tarda más de lo habitual, con el límite de 10 minutos.
-- La barra y el ícono de progreso ya no se reinician con cada actualización del tablero (cada 3 s).
-- El reloj de los trabajos en curso no se anuncia cada segundo en lectores de pantalla.
-- El pie de las respuestas pasa a otra línea en lugar de cortar las palabras.
+- Selecting text in the AI's answer in a thread (Summary or Files) opens the bar to ask again about that fragment: the question stays in the same thread, quotes the fragment and highlights it in the answer. The AI receives the fragment as part of the previous answer, not of the explanation. The question box for the whole PR remains.
+- Real progress while the AI works: stages (copies, reading, change, checks, correction) and how many files it read and searched, with the last file opened; also in the PR analysis.
+- Notice when a job takes longer than usual, with the 10-minute limit.
+- The progress bar and icon no longer restart with every dashboard refresh (every 3 s).
+- The clock of jobs in progress is no longer announced every second by screen readers.
+- The answer footer wraps to another line instead of breaking words.
 
 ### 0.17.1 (2026-10-28)
-- Mientras la IA trabaja en una pregunta o un cambio, el hilo muestra qué está haciendo, el tiempo transcurrido, una barra en movimiento y cuánto suele tardar; la respuesta anterior queda atenuada. El estado late en lugar de quedarse quieto.
-- El tablero se titula Seki Review.
+- While the AI works on a question or a change, the thread shows what it is doing, the elapsed time, a moving bar and how long it usually takes; the previous answer is dimmed. The status pulses instead of staying still.
+- The dashboard is titled Seki Review.
 
 ### 0.17.0 (2026-10-28)
-- Nuevo nombre: Seki Review (`seki-review`, antes `pw-revision`). Comando `/seki-review:revisar-prs`; variables de entorno `SEKI_*`.
-- Herramienta general: la configuración de proyectos, su contexto (stack y reglas de texto) y sus reglas propias viven en `~/.config/seki-review/proyectos.json`; el plugin trae solo un ejemplo.
-- Sin proyecto indicado se usa `SEKI_PROYECTO` o el primero de la configuración.
-- Las reglas genéricas explican su motivo sin referirse a incidentes de un proyecto.
+- New name: Seki Review (`seki-review`, formerly `pw-revision`). Command `/seki-review:revisar-prs`; environment variables `SEKI_*`.
+- General-purpose tool: the project configuration, its context (stack and text rules) and its custom rules live in `~/.config/seki-review/proyectos.json`; the plugin ships only an example.
+- When no project is given, `SEKI_PROYECTO` or the first one in the configuration is used.
+- Generic rules explain their reason without referring to a specific project's incidents.
 
 ### 0.16.0 (2026-10-28)
-- Cada afirmación dice su origen: explicación de IA, reglas fijas (Verificaciones) o nota de la persona.
-- La explicación registra la cobertura del diff y muestra "Cobertura parcial" con los archivos no revisados.
-- Investigar guarda los archivos que la IA abrió, sus búsquedas y los intentos que bloquearon los permisos.
-- "¿Sirvió? Sí / No" en cada respuesta; costo de 30 días por modelo frente a respuestas útiles.
-- Aprobar registra el intento antes del push y, si el proceso se corta, reconoce el commit ya subido en vez de repetirlo.
-- Prompts contra respuestas complacientes; prueba real de permisos opcional (`SEKI_PRUEBA_REAL=1`).
-- Corrige la prueba inestable: el repositorio de prueba no detectaba un cambio de igual tamaño hecho en el mismo instante.
+- Every statement states its source: AI explanation, fixed rules (Verifications) or the person's note.
+- The explanation records diff coverage and shows "Partial coverage" with the unreviewed files.
+- Investigate saves the files the AI opened, its searches and the attempts blocked by permissions.
+- "Was this helpful? Yes / No" on each answer; 30-day cost per model versus helpful answers.
+- Approve records the attempt before the push and, if the process is interrupted, recognizes the already-pushed commit instead of repeating it.
+- Prompts against sycophantic answers; optional real permissions test (`SEKI_PRUEBA_REAL=1`).
+- Fixes the flaky test: the test repository did not detect a same-size change made at the same instant.
 
 ### 0.15.0 (2026-10-28)
-- Pestaña Descripción con la descripción de la PR y sus commits.
+- Description tab with the PR description and its commits.
 
 ### 0.14.0 (2026-10-27)
-- Investigar lee los otros repos en su rama equivalente de pruebas o producción, guarda qué leyó y limpia las copias viejas.
-- Preguntar sobre código seleccionado en Archivos.
+- Investigate reads the other repos on their equivalent testing or production branch, saves what it read and cleans up old copies.
+- Ask about selected code in Files.
 
 ### 0.13.0 (2026-10-27)
-- Investigar en el código (solo lectura, sin secretos), hilos completos al repreguntar y respuestas con formato.
+- Investigate in the code (read-only, no secrets), full threads when asking again and formatted answers.
 
 ### 0.12.0 (2026-10-27)
-- Preguntar sobre texto seleccionado del resumen, con cita resaltada y envío en lote.
+- Ask about selected text in the summary, with highlighted quote and batch sending.
 
 ### 0.11.0 (2026-10-27)
-- Cola más angosta y ocultable; preguntar y ampliar secciones del resumen.
+- Narrower, hideable queue; ask about and expand summary sections.
 
 ### 0.10.1 (2026-10-27)
-- Animación de trabajo en curso.
+- Work-in-progress animation.
 
 ### 0.10.0 (2026-10-27)
-- La skill abre el tablero servido; enlace fijo por máquina.
+- The skill opens the served dashboard; fixed link per machine.
 
 ### 0.9.0 (2026-10-27)
-- Correcciones de la revisión final: permisos de edición, comentarios colgados, XSS, cadena de aprobaciones y forks.
+- Fixes from the final review: edit permissions, orphaned comments, XSS, approval chain and forks.
 
 ### 0.8.0 (2026-10-27)
-- Pedidos de cambio con propuesta comprobada, ajuste y aprobación que sube a la rama.
+- Change requests with a checked proposal, adjustment and approval that pushes to the branch.
 
 ### 0.7.0 (2026-10-27)
-- Preguntas a la IA sobre líneas, agrupadas por PR, con caché y costo visible.
+- Questions to the AI about lines, grouped by PR, with cache and visible cost.
 
 ### 0.6.0 (2026-10-27)
-- Menú lateral plegable, selección de líneas y notas manuales con código sugerido.
+- Collapsible sidebar, line selection and manual notes with suggested code.
 
 ### 0.5.0 (2026-10-27)
-- Pestaña Archivos con diff estilo GitHub.
+- Files tab with GitHub-style diff.
 
 ### 0.4.0 (2026-10-27)
-- Tablero servido con acciones (actualizar estado, analizar con IA).
+- Served dashboard with actions (refresh status, analyze with AI).
 
 ### 0.3.0 (2026-10-27)
-- Tablero como bandeja de revisión; vista de revisor con exportar e importar.
+- Dashboard as a review inbox; reviewer view with export and import.
 
 ### 0.2.0 (2026-10-26)
-- Verificaciones fijas, PRs de pruebas sin producción, gemelas entre portales, esfuerzo, orden de lectura y diagrama.
+- Fixed verifications, testing PRs not in production, twin PRs across portals, effort, reading order and diagram.
 
 ### 0.1.0 (2026-10-26)
-- Servidor MCP, skill revisar-prs y tablero local de PRs.
+- MCP server, revisar-prs skill and local PR dashboard.
