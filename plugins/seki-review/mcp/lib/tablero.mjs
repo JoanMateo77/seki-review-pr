@@ -6,6 +6,11 @@ import { diffsDeFoto } from './diffs.mjs';
 
 const PLANTILLA = join(dirname(fileURLToPath(import.meta.url)), '../tablero/plantilla.html');
 const ANCLAJE = join(dirname(fileURLToPath(import.meta.url)), '../tablero/anclaje.js');
+const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), '../../.claude-plugin/plugin.json');
+
+// La plantilla se lee del disco en cada pedido y el código del servidor queda en memoria desde que arrancó: tras
+// actualizar el plugin, la página puede ser más nueva que el servidor. La página compara ambas versiones.
+export const versionEnDisco = () => { try { return JSON.parse(readFileSync(PLUGIN, 'utf8')).version; } catch { return null; } };
 
 // La foto con las explicaciones vigentes al momento de servirla (pueden haberse escrito después de la foto).
 export function fotoConExplicaciones(p) {
@@ -27,4 +32,5 @@ export const construirHtml = (p, foto, api = null) =>
     .replace('/*ANCLAJE*/', () => readFileSync(ANCLAJE, 'utf8'))
     .replace('/*DATOS*/null', () => incrustar(foto))
     .replace('/*API*/null', () => incrustar(api))
+    .replace('/*VERSION*/null', () => JSON.stringify(versionEnDisco()))
     .replace('/*DIFFS*/null', () => incrustar(diffsDeFoto(p, foto)));

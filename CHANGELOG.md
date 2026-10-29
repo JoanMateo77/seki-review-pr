@@ -4,6 +4,9 @@ Cada versión tiene su etiqueta `seki-review-vX.Y.Z` en el commit que la publica
 
 ## seki-review
 
+### 0.19.1 (2026-10-28)
+- Si el plugin se actualiza con el tablero abierto, la página (que se lee del disco) es más nueva que el servidor (que sigue en memoria): el tablero lo avisa con ambas versiones y pide reiniciar Claude Code, en vez de responder "No existe" al usar una función nueva.
+
 ### 0.19.0 (2026-10-28)
 - Filtro con IA: se escribe una necesidad en el buscador ("PRs de ciberseguridad") y "Filtrar con IA" (o Ctrl + Enter) deja en la cola solo las PRs que encajan, cada una con su motivo. La IA decide con título, rama y archivos, sin leer el diff (unos segundos, centavos por consulta).
 - El resultado se guarda por necesidad y estado de la cola: repetirlo no cuesta mientras ninguna PR cambie; si la cola cambia, el aviso ofrece volver a filtrar.

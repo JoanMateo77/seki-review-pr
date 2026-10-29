@@ -4,7 +4,9 @@ import { execFile } from 'node:child_process';
 import { createServer } from 'node:http';
 import { proyecto as cargarProyecto } from './config.mjs';
 import { recolectar } from './recolectar.mjs';
-import { construirHtml, fotoConExplicaciones } from './tablero.mjs';
+import { construirHtml, fotoConExplicaciones, versionEnDisco } from './tablero.mjs';
+
+const VERSION = versionEnDisco();
 import { crearCola } from './trabajos.mjs';
 import { asegurarDiff, diffParaTablero } from './diffs.mjs';
 import { actualizarComentario, guardarComentarios, leerComentarios, marcasComentarios, recuperarInterrumpidos, rescatarPendientes, separarEnviables } from './comentarios.mjs';
@@ -192,7 +194,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true 
         return responder(res, 200, diffParaTablero(await asegurarDiff(p, pr.repo, pr.numero, pr.headSha)));
       }
       if (req.method === 'GET' && url.pathname === '/api/estado') {
-        return responder(res, 200, { refrescando: !!refresco, ultimoRefresco, trabajos: cola.lista(), comentarios: marcasComentarios(), avances: avances(), costoHoy: costosDelDia(p) });
+        return responder(res, 200, { refrescando: !!refresco, ultimoRefresco, trabajos: cola.lista(), comentarios: marcasComentarios(), avances: avances(), costoHoy: costosDelDia(p), version: VERSION });
       }
       if (req.method === 'POST' && url.pathname === '/api/refrescar') {
         refrescar();

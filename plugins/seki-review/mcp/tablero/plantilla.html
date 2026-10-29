@@ -455,6 +455,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 let FOTO = /*DATOS*/null;
 // Con el servidor local (tablero_servir) llega { token } y aparecen las acciones; como archivo suelto es null.
 const API = /*API*/null;
+const VERSION_PAGINA = /*VERSION*/null;
 // Diffs por PR, ya recortados. En el servidor se piden a /api/diff si faltan.
 const DIFFS = /*DIFFS*/null ?? {};
 
@@ -623,7 +624,7 @@ function senales(pr) {
 function pintarCola() {
   const prs = FOTO.prs.filter(pasaFiltros);
   if (!prs.length) {
-    $('cola').innerHTML = `${bannerFiltroIa()}<div class="vacio"><p>Ninguna PR coincide con la búsqueda y los filtros activos.</p><button class="btn" data-accion="limpiar">Quitar filtros</button></div>`;
+    $('cola').innerHTML = `${avisoVersion()}${bannerFiltroIa()}<div class="vacio"><p>Ninguna PR coincide con la búsqueda y los filtros activos.</p><button class="btn" data-accion="limpiar">Quitar filtros</button></div>`;
     return;
   }
   const defs = definicionGrupos();
@@ -635,7 +636,7 @@ function pintarCola() {
     porGrupo.get(g).push(pr);
   }
   const posicion = (g) => (orden.includes(g) ? orden.indexOf(g) : 99);
-  $('cola').innerHTML = bannerFiltroIa() + (estado.filtroIa ? '' : seccionCambios()) + [...porGrupo.keys()].sort((a, b) => posicion(a) - posicion(b)).map((g) => {
+  $('cola').innerHTML = avisoVersion() + bannerFiltroIa() + (estado.filtroIa ? '' : seccionCambios()) + [...porGrupo.keys()].sort((a, b) => posicion(a) - posicion(b)).map((g) => {
     const [nombre, desc] = defs[g] ?? GRUPOS[g] ?? [FOTO.acciones?.[g] ?? g, ''];
     const filas = porGrupo.get(g).sort((a, b) => a.repo.localeCompare(b.repo) || b.numero - a.numero);
     const cerrado = estado.cerrados.has(g);
@@ -662,6 +663,7 @@ const firmaFoto = () => FOTO.prs.map((x) => `${x.id}@${x.headSha}`).sort().join(
 async function filtrarConIa(consulta) {
   const q = (consulta ?? $('buscar').value).replace(/\s+/g, ' ').trim();
   if (!q) { avisar('Escriba en el buscador qué PRs busca, por ejemplo «PRs de ciberseguridad».'); return $('buscar').focus(); }
+  if (servidorDesfasado()) return avisar('Reinicie Claude Code: el servidor del tablero es de una versión anterior y todavía no tiene Filtrar con IA.');
   if (estado.filtroIa?.estado === 'cargando' && mismaConsulta(estado.filtroIa.consulta, q)) return;
   const pedido = { consulta: q, estado: 'cargando', inicio: new Date().toISOString(), firma: firmaFoto() };
   estado.filtroIa = pedido;
@@ -679,6 +681,12 @@ async function filtrarConIa(consulta) {
   estado.filtroIa = siguiente;
   pintarTodo({ detalle: false });
   if (siguiente.estado === 'listo' && !siguiente.desdeCache) sondear();
+}
+
+const servidorDesfasado = () => !!(API && VERSION_PAGINA && estado.versionServidor && estado.versionServidor !== VERSION_PAGINA);
+function avisoVersion() {
+  if (!servidorDesfasado()) return '';
+  return `<div class="filtro-ia error" role="alert"><p>${icono('alerta')} El plugin se actualizó a la versión ${esc(VERSION_PAGINA)}, pero el servidor del tablero sigue con la ${esc(estado.versionServidor)}. Las funciones nuevas (como Filtrar con IA) no responden hasta reiniciar Claude Code.</p></div>`;
 }
 
 function bannerFiltroIa() {
@@ -1797,6 +1805,7 @@ async function api(ruta, cuerpo) {
     headers: { 'X-Seki-Token': API.token, 'Content-Type': 'application/json' },
     body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo),
   });
+  if (r.status === 404 && servidorDesfasado()) throw new Error('El servidor del tablero es de una versión anterior y no tiene esta función: reinicie Claude Code.');
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`);
   return r.json();
 }
@@ -1820,6 +1829,7 @@ async function sondear() {
     }
     estado.marcasComentarios = marcas;
     estado.avances = e.avances ?? {};
+    estado.versionServidor = e.version ?? 'anterior';
     const termino = e.trabajos.some((t) => t.estado === 'terminado' && previo.get(t.id) !== 'terminado') || (eraRefresco && !e.refrescando);
     if (termino) FOTO = await api('/api/foto');
     // Si la persona está escribiendo en el detalle, no se repinta: perdería el foco y el texto a medio escribir.
