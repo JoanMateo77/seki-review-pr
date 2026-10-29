@@ -4,6 +4,10 @@ Cada versión tiene su etiqueta `seki-review-vX.Y.Z` en el commit que la publica
 
 ## seki-review
 
+### 0.19.4 (2026-10-28)
+- Filtro con IA más preciso: cada PR se clasifica como directa (su propósito es la necesidad) o relacionada (toca el área con otro propósito, como corregir un texto del login). Por defecto se ven solo las directas; "Mostrar relacionadas" agrega las demás con su etiqueta.
+- Las instrucciones del filtro ya no traen una lista de temas de seguridad que hacía entrar cualquier PR del área. Los resultados guardados con las instrucciones anteriores se descartan.
+
 ### 0.19.3 (2026-10-28)
 - Relevo entre sesiones: las sesiones de Claude Code que no sirven el tablero quedan de reserva y, si la que lo sirve se cierra, una de ellas lo toma en el mismo enlace a los pocos segundos.
 - Solo una versión más nueva pide el puerto (comparación numérica): una sesión vieja ya no le quita el tablero a una nueva.

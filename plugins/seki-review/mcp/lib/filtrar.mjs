@@ -8,10 +8,17 @@ import { argsClaude, dirVacio, ejecutarClaude, registrarCosto, sistemaDe, tope, 
 
 const SCHEMA = {
   type: 'object',
-  properties: { coincidencias: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, motivo: { type: 'string' } }, required: ['id', 'motivo'] } } },
+  properties: {
+    coincidencias: {
+      type: 'array',
+      items: { type: 'object', properties: { id: { type: 'string' }, relacion: { type: 'string', enum: ['directa', 'relacionada'] }, motivo: { type: 'string' } }, required: ['id', 'relacion', 'motivo'] },
+    },
+  },
   required: ['coincidencias'],
 };
 const MAX_ARCHIVOS = 40;
+// Sube cuando cambian las instrucciones o el formato: los resultados guardados con las anteriores ya no valen.
+const VERSION_FILTRO = 2;
 export const MAX_CONSULTA = 300;
 
 export const normalizarConsulta = (q) => String(q ?? '').replace(/\s+/g, ' ').trim();
@@ -41,7 +48,7 @@ export async function filtrarPrs(p, prs, consulta) {
   if (!q) throw new Error('Escriba qué PRs busca.');
   if (q.length > MAX_CONSULTA) throw new Error(`La necesidad no puede pasar de ${MAX_CONSULTA} caracteres.`);
   const firma = firmaCola(prs);
-  const clave = createHash('sha256').update(`${q.toLowerCase()}|${firma}`).digest('hex').slice(0, 32);
+  const clave = createHash('sha256').update(`${VERSION_FILTRO}|${q.toLowerCase()}|${firma}`).digest('hex').slice(0, 32);
   const guardado = leerJson(rutaFiltro(p, clave));
   if (guardado) return { ...guardado, costo: 0, desdeCache: true };
   // Un doble clic o dos pestañas con la misma consulta comparten la llamada en vez de pagarla dos veces.
@@ -61,7 +68,7 @@ async function consultar(p, prs, q, firma, clave) {
   const vistos = new Set();
   const coincidencias = (r.salida.coincidencias ?? [])
     .filter((c) => ids.has(c.id) && !vistos.has(c.id) && vistos.add(c.id))
-    .map((c) => ({ id: c.id, motivo: String(c.motivo).slice(0, 240) }));
+    .map((c) => ({ id: c.id, relacion: c.relacion === 'directa' ? 'directa' : 'relacionada', motivo: String(c.motivo).slice(0, 240) }));
   const resultado = { consulta: q, firma, total: prs.length, coincidencias, modelo: r.modelo ?? modelo, fecha: new Date().toISOString() };
   escribirJson(rutaFiltro(p, clave), resultado);
   return { ...resultado, costo: r.costo, desdeCache: false };

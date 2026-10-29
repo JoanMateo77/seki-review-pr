@@ -103,6 +103,7 @@ kbd { font: 12px/1.2 var(--mono); padding: 1px 5px; border: 1px solid var(--line
 .filtro-ia p { margin: 0; }
 .filtro-ia .progreso { margin: 2px 0; }
 .filtro-ia .i { vertical-align: -2px; }
+.etiqueta-relacionada { padding: 0 5px; border: 1px solid var(--linea-fuerte); border-radius: 3px; font-size: 11px; color: var(--texto-3); }
 .filtrar-ia { flex: none; display: inline-flex; align-items: center; gap: 6px; }
 .vista-ia { display: flex; align-items: center; }
 .vista-ia .nav { min-width: 0; }
@@ -547,7 +548,7 @@ const enVista = (pr) => (estado.vista === 'inactivas' ? pr.ambiente === 'inactiv
 
 function pasaFiltros(pr) {
   if (!enVista(pr)) return false;
-  if (estado.filtroIa?.estado === 'listo' && !estado.filtroIa.motivos.has(pr.id)) return false;
+  if (estado.filtroIa?.estado === 'listo' && !incluidaEnFiltro(estado.filtroIa, pr.id)) return false;
   if (estado.portal && pr.portal !== estado.portal) return false;
   const v = pr.verificaciones?.resumen ?? {};
   if (estado.filtros.has('seguridad') && !pr.seguridad) return false;
@@ -583,7 +584,7 @@ function pintarLateral() {
     ${filtro('sinRevisar', `${icono('ojo')} Sin revisar`, cuenta((x) => !revision(x)))}
     ${API && vistasIa().length ? `<h2>Vistas con IA</h2>${vistasIa().map((v, i) => {
       const activa = mismaConsulta(estado.filtroIa?.consulta, v);
-      return `<div class="vista-ia">${nav(`data-vista-ia="${i}" title="${esc(v)}"`, `${icono('chispa')}<span class="recorte">${esc(v)}</span>`, activa && estado.filtroIa.estado === 'listo' ? estado.filtroIa.motivos.size : '', activa)}<button type="button" class="btn-texto quitar-vista" data-quitar-vista-ia="${i}" aria-label="Quitar la vista ${esc(v)}" title="Quitar la vista">×</button></div>`;
+      return `<div class="vista-ia">${nav(`data-vista-ia="${i}" title="${esc(v)}"`, `${icono('chispa')}<span class="recorte">${esc(v)}</span>`, activa && estado.filtroIa.estado === 'listo' ? cuentaFiltro(estado.filtroIa).directas : '', activa)}<button type="button" class="btn-texto quitar-vista" data-quitar-vista-ia="${i}" aria-label="Quitar la vista ${esc(v)}" title="Quitar la vista">×</button></div>`;
     }).join('')}` : ''}
     ${API ? `<h2>Análisis con IA</h2>
       ${estado.confirmarPendientes
@@ -648,7 +649,7 @@ function pintarCola() {
           <span class="id mono">${esc(pr.repoEtiqueta)} #${pr.numero}</span>
           <span class="titulo" title="${esc(pr.titulo)}">${esc(pr.titulo)}</span>
           <span class="senales">${senales(pr)}</span>
-          ${estado.filtroIa?.estado === 'listo' ? `<span class="motivo-ia">${esc(estado.filtroIa.motivos.get(pr.id))}</span>` : ''}
+          ${estado.filtroIa?.estado === 'listo' ? motivoHtml(estado.filtroIa.motivos.get(pr.id)) : ''}
         </button>`).join('')}</div>
     </section>`;
   }).join('');
@@ -658,6 +659,13 @@ function pintarCola() {
 const claveVistasIa = () => `seki-review:vistas-ia:${FOTO.proyecto}`;
 const vistasIa = () => almacen.leer(claveVistasIa(), []);
 const mismaConsulta = (a, b) => a?.toLowerCase() === b?.toLowerCase();
+// Directa: el propósito de la PR es la necesidad. Relacionada: toca el área con otro propósito; se ve solo si se pide.
+const incluidaEnFiltro = (f, id) => { const m = f.motivos.get(id); return !!m && (m.relacion !== 'relacionada' || f.conRelacionadas); };
+const cuentaFiltro = (f) => {
+  const todas = [...f.motivos.values()];
+  return { directas: todas.filter((m) => m.relacion !== 'relacionada').length, relacionadas: todas.filter((m) => m.relacion === 'relacionada').length };
+};
+const motivoHtml = (m) => (m ? `<span class="motivo-ia">${m.relacion === 'relacionada' ? '<span class="etiqueta-relacionada">Relacionada</span> ' : ''}${esc(m.motivo)}</span>` : '');
 const firmaFoto = () => FOTO.prs.map((x) => `${x.id}@${x.headSha}`).sort().join('|');
 
 async function filtrarConIa(consulta) {
@@ -672,7 +680,7 @@ async function filtrarConIa(consulta) {
   let siguiente;
   try {
     const r = await api('/api/filtrar', { consulta: q });
-    siguiente = { ...pedido, estado: 'listo', motivos: new Map(r.coincidencias.map((c) => [c.id, c.motivo])), costo: r.costo, desdeCache: r.desdeCache };
+    siguiente = { ...pedido, estado: 'listo', motivos: new Map(r.coincidencias.map((c) => [c.id, c])), conRelacionadas: false, costo: r.costo, desdeCache: r.desdeCache };
   } catch (err) {
     siguiente = { ...pedido, estado: 'error', mensaje: err.message };
   }
@@ -703,12 +711,15 @@ function bannerFiltroIa() {
       <p><button type="button" class="btn chico" data-accion="reintentarFiltroIa">Reintentar</button> ${quitar}</p></div>`;
   }
   const visibles = FOTO.prs.filter(pasaFiltros).length;
-  const ocultas = f.motivos.size - visibles;
+  const { directas, relacionadas } = cuentaFiltro(f);
+  const ocultas = (f.conRelacionadas ? directas + relacionadas : directas) - visibles;
+  const verRelacionadas = relacionadas
+    ? ` · <button type="button" class="btn-texto" data-accion="relacionadasFiltroIa" aria-pressed="${f.conRelacionadas}" title="PRs que tocan el área pero cuyo propósito es otro (un texto, un ajuste visual, una funcionalidad)">${f.conRelacionadas ? 'Ocultar' : 'Mostrar'} ${plural(relacionadas, 'relacionada', 'relacionadas')}</button>` : '';
   const guardada = vistasIa().some((v) => mismaConsulta(v, f.consulta));
   const cambio = f.firma !== firmaFoto()
     ? `<p class="aviso-lento">${icono('reloj')} La cola cambió después de filtrar. <button type="button" class="btn-texto" data-accion="reintentarFiltroIa">Volver a filtrar</button></p>` : '';
   return `<div class="filtro-ia" role="status">
-    <p><strong>${icono('chispa')} Filtro con IA</strong> ${q}: ${f.motivos.size ? plural(f.motivos.size, 'PR encaja', 'PRs encajan') : 'ninguna PR encaja'}${ocultas > 0 ? ` · ${plural(ocultas, 'oculta', 'ocultas')} por los demás filtros o la vista` : ''}</p>
+    <p><strong>${icono('chispa')} Filtro con IA</strong> ${q}: ${directas ? plural(directas, 'PR trata de esto', 'PRs tratan de esto') : 'ninguna PR trata de esto'}${verRelacionadas}${ocultas > 0 ? ` · ${plural(ocultas, 'oculta', 'ocultas')} por los demás filtros o la vista` : ''}</p>
     <p class="muy-tenue">${f.desdeCache ? 'Resultado guardado, sin costo' : usd(f.costo)} · decidido por título, rama y archivos: revise el motivo de cada una.</p>
     <p>${guardada ? '' : '<button type="button" class="btn-texto" data-accion="guardarFiltroIa">Guardar como vista</button> · '}${quitar}</p>${cambio}</div>`;
 }
@@ -2044,6 +2055,7 @@ document.addEventListener('click', (ev) => {
   if (d.accion === 'limpiar') { estado.filtros.clear(); estado.portal = null; estado.filtroIa = null; $('buscar').value = ''; return pintarTodo(); }
   if (d.accion === 'filtrarIa') return filtrarConIa();
   if (d.accion === 'reintentarFiltroIa') { const q = estado.filtroIa?.consulta; estado.filtroIa = null; return filtrarConIa(q); }
+  if (d.accion === 'relacionadasFiltroIa' && estado.filtroIa?.estado === 'listo') { estado.filtroIa.conRelacionadas = !estado.filtroIa.conRelacionadas; return pintarTodo({ detalle: false }); }
   if (d.accion === 'quitarFiltroIa') { estado.filtroIa = null; return pintarTodo({ detalle: false }); }
   if (d.accion === 'guardarFiltroIa' && estado.filtroIa) {
     almacen.escribir(claveVistasIa(), [...vistasIa().filter((v) => !mismaConsulta(v, estado.filtroIa.consulta)), estado.filtroIa.consulta]);

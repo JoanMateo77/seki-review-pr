@@ -38,7 +38,7 @@ async function atender(msg) {
       return responder(id, {
         protocolVersion: params?.protocolVersion ?? VERSION_PROTOCOLO,
         capabilities: { tools: {} },
-        serverInfo: { name: 'seki-review', version: '0.19.3' },
+        serverInfo: { name: 'seki-review', version: '0.19.4' },
       });
     case 'ping':
       return responder(id, {});

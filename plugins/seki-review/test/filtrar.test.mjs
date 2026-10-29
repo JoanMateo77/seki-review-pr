@@ -16,9 +16,9 @@ const preparar = () => ({ salida: mkdtempSync(join(tmpdir(), 'seki-filtrar-')) }
 
 test('devuelve solo ids de la cola, sin repetir, y guarda el resultado', async () => {
   const p = preparar();
-  process.env.SEKI_CLAUDE = falsoClaude(exito([{ id: 'api#1', motivo: 'SQLi en el título' }, { id: 'api#1', motivo: 'otra' }, { id: 'ajena#9', motivo: 'x' }]));
+  process.env.SEKI_CLAUDE = falsoClaude(exito([{ id: 'api#1', relacion: 'directa', motivo: 'SQLi en el título' }, { id: 'api#1', relacion: 'directa', motivo: 'otra' }, { id: 'ajena#9', relacion: 'directa', motivo: 'x' }, { id: 'web#2', relacion: 'otra cosa', motivo: 'toca el listado' }]));
   const r = await filtrarPrs(p, prs, '  PRs de   ciberseguridad ');
-  assert.deepEqual(r.coincidencias, [{ id: 'api#1', motivo: 'SQLi en el título' }]);
+  assert.deepEqual(r.coincidencias, [{ id: 'api#1', relacion: 'directa', motivo: 'SQLi en el título' }, { id: 'web#2', relacion: 'relacionada', motivo: 'toca el listado' }]);
   assert.equal(r.consulta, 'PRs de ciberseguridad');
   assert.equal(r.total, 2);
   assert.equal(r.desdeCache, false);
