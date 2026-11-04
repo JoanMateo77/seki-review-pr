@@ -6,7 +6,7 @@
 // repos (optional), patron (regex on the added line), excluir (optional), cuando(linea, archivo)
 // (optional, extra filter), mensaje, origen.
 
-import { compilarPatron, probarSeguro } from './patrones.mjs';
+import { AGOTADO, compilarPatron, probarSeguro } from './patrones.mjs';
 
 const VISTAS = /\.(ejs|html)$/;
 const CODIGO = /\.(ts|js|mjs|cjs)$/;
@@ -135,6 +135,16 @@ export const REGLAS = [
 
 // Project-specific rules, under `reglas` in proyectos.json, with the expressions as strings.
 // soloEnTexto: the line counts only in views or if the pattern appears inside a string literal (visible text).
+// Tests a config pattern with a time limit; on timeout the rule is disabled and warned about once.
+export function probarRegla(regla, re, texto) {
+  if (regla.agotada) return false;
+  const r = probarSeguro(re, texto);
+  if (r !== AGOTADO) return r;
+  regla.agotada = true;
+  console.error(`[seki-review/reglas] rule ${String(regla.id ?? '(no id)').slice(0, 60)} disabled: pattern exceeded its time limit`);
+  return false;
+}
+
 export function reglasDeConfig(lista = []) {
   const reglas = [];
   for (const r of lista) {
@@ -147,16 +157,17 @@ export function reglasDeConfig(lista = []) {
       const excluir = re(r.excluir);
       // The user source was validated above; the wrapper adds no quantifier.
       const enCadena = r.patron && new RegExp(`['"\`][^'"\`]*(?:${r.patron})`, flags);
-      reglas.push({
+      const regla = {
         ...r,
         deConfig: true,
         severidad: SEVERIDADES.includes(r.severidad) ? r.severidad : 'aviso',
         archivos,
         patron,
         excluir,
-        ...(r.soloEnTexto ? { cuando: (linea, archivo) => VISTAS.test(archivo) || probarSeguro(enCadena, linea) === true } : {}),
+        ...(r.soloEnTexto ? { cuando: (linea, archivo) => VISTAS.test(archivo) || probarRegla(regla, enCadena, linea) } : {}),
         origen: r.origen ?? 'Project rule.',
-      });
+      };
+      reglas.push(regla);
     } catch (e) {
       const id = String(r?.id ?? '(no id)').slice(0, 60);
       console.error(`[seki-review/reglas] rule ${id} dropped: ${String(e.message).slice(0, 120)}`);

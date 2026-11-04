@@ -26,7 +26,8 @@ export function coincidencias(re, texto, { maxLargo = 4096, maxCoincidencias = 5
 }
 
 // Runs a config regex over the first maxLargo characters with a hard time limit (vm timeout
-// interrupts catastrophic backtracking, which a length cap alone does not). Returns null on timeout.
+// interrupts catastrophic backtracking, which a length cap alone does not). Returns AGOTADO on timeout.
+export const AGOTADO = Symbol('agotado');
 const contexto = vm.createContext({ re: null, s: '' });
 const guion = new vm.Script('re.test(s)');
 export function probarSeguro(re, texto, { maxLargo = 4096, timeoutMs = 50 } = {}) {
@@ -36,7 +37,7 @@ export function probarSeguro(re, texto, { maxLargo = 4096, timeoutMs = 50 } = {}
   try {
     return guion.runInContext(contexto, { timeout: timeoutMs });
   } catch (e) {
-    if (e?.code === 'ERR_SCRIPT_EXECUTION_TIMEOUT') return null;
+    if (e?.code === 'ERR_SCRIPT_EXECUTION_TIMEOUT') return AGOTADO;
     throw e;
   } finally {
     contexto.re = null;

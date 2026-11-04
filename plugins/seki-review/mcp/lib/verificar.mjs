@@ -1,5 +1,4 @@
-import { SEVERIDADES, reglasDelRepo } from './reglas.mjs';
-import { probarSeguro } from './patrones.mjs';
+import { SEVERIDADES, probarRegla, reglasDelRepo } from './reglas.mjs';
 
 // Accepts both `ignore` and the original Spanish `ignorar`, so existing directives keep working.
 const IGNORAR = /seki-review:\s*(?:ignore|ignorar)\s+([\w-]+)/;
@@ -48,19 +47,14 @@ export function verificar({ repo, archivos, commits = [], omitidas = [], extra =
       for (const { linea, texto } of lineasAgregadas(a.patch)) {
         if (r.deConfig) {
           if (r.agotada) break;
-          const coincide = probarSeguro(r.patron, texto);
-          if (coincide === null) {
-            r.agotada = true;
-            console.error(`[seki-review/reglas] rule ${String(r.id).slice(0, 60)} disabled: pattern exceeded its time limit`);
-            break;
-          }
-          if (!coincide) continue;
-          if (r.excluir && probarSeguro(r.excluir, texto)) continue;
+          if (!probarRegla(r, r.patron, texto)) continue;
+          if (r.excluir && probarRegla(r, r.excluir, texto)) continue;
         } else {
           if (!r.patron.test(texto)) continue;
           if (r.excluir && r.excluir.test(texto)) continue;
         }
         if (r.cuando && !r.cuando(texto, a.filename)) continue;
+        if (r.agotada) break;
         if (IGNORAR.exec(texto)?.[1] === r.id) continue;
         const severidad = r.severidadPara ? r.severidadPara(texto) : r.severidad;
         if (!severidad) continue;

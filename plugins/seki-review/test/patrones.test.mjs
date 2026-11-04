@@ -98,3 +98,27 @@ test('verificar: a backtracking config rule over a 2 MB line stays under 200 ms'
   });
   assert.equal(avisos.length, 1);
 });
+
+const lineaPesada = `${'a'.repeat(4000)}b${'c'.repeat(1000)}`;
+const dosLineas = parche(`x ${lineaPesada}`, `x ${lineaPesada}`, `x ${lineaPesada}`);
+
+test('verificar: a catastrophic excluir disables the rule after one warning', () => {
+  const reglas = reglasDeConfig([{ id: 'ex', titulo: 't', patron: 'x', excluir: '(a|aa)+$', archivos: '\\.js$', mensaje: 'm' }]);
+  const [, avisos] = silenciar(() => {
+    const t0 = performance.now();
+    verificar({ repo: 'r', archivos: [{ filename: 'a.js', status: 'modified', patch: dosLineas }], extra: reglas });
+    assert.ok(performance.now() - t0 < 200);
+  });
+  assert.equal(avisos.length, 1);
+});
+
+test('verificar: a catastrophic soloEnTexto (cuando) disables the rule after one warning', () => {
+  const reglas = reglasDeConfig([{ id: 'cu', titulo: 't', patron: '(a|aa)+$', soloEnTexto: true, archivos: '\\.js$', mensaje: 'm' }]);
+  reglas[0].patron = /x/;
+  const [, avisos] = silenciar(() => {
+    const t0 = performance.now();
+    verificar({ repo: 'r', archivos: [{ filename: 'a.js', status: 'modified', patch: parche(`x "${lineaPesada}`, `x "${lineaPesada}`, `x "${lineaPesada}`) }], extra: reglas });
+    assert.ok(performance.now() - t0 < 200);
+  });
+  assert.equal(avisos.length, 1);
+});
