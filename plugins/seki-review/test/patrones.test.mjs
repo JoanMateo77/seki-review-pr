@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { compilarPatron, coincidencias } from '../mcp/lib/patrones.mjs';
 import { reglasDeConfig } from '../mcp/lib/reglas.mjs';
+import { verificar } from '../mcp/lib/verificar.mjs';
 
 test('compilarPatron rejects nested quantifiers, long and malformed patterns', () => {
   assert.throws(() => compilarPatron('(a+)+$'), /Invalid pattern/);
@@ -47,4 +48,53 @@ test('reglasDeConfig drops an invalid rule with a warning and keeps valid ones',
   } finally {
     console.error = original;
   }
+});
+
+const silenciar = (fn) => {
+  const original = console.error;
+  const llamadas = [];
+  console.error = (...a) => llamadas.push(a.join(' '));
+  try { return [fn(), llamadas]; } finally { console.error = original; }
+};
+const parche = (...lineas) => `@@ -0,0 +1,${lineas.length} @@\n${lineas.map((l) => `+${l}`).join('\n')}`;
+
+test('reglasDeConfig drops rules with invalid archivos or excluir', () => {
+  const [r, avisos] = silenciar(() => reglasDeConfig([
+    { id: 'a', patron: 'x', archivos: '(' },
+    { id: 'b', patron: 'x', excluir: '(a+)+' },
+    { id: 'c', patron: 'x' },
+  ]));
+  assert.deepEqual(r.map((x) => x.id), ['c']);
+  assert.equal(avisos.length, 2);
+});
+
+test('reglasDeConfig keeps a 295-char soloEnTexto pattern and caps warning text', () => {
+  const [r] = silenciar(() => reglasDeConfig([{ id: 'l', patron: 'a'.repeat(295), soloEnTexto: true }]));
+  assert.equal(r.length, 1);
+  const [, avisos] = silenciar(() => reglasDeConfig([{ id: 'i'.repeat(200), patron: 'a)|(b' }]));
+  assert.ok(avisos[0].length < 250);
+});
+
+test('soloEnTexto matches inside a string literal only', () => {
+  const [r] = reglasDeConfig([{ id: 't', patron: 'comercio', soloEnTexto: true }]);
+  assert.ok(r.cuando('x = "el comercio"', 'a.js'));
+  assert.ok(!r.cuando('const comercio = 1', 'a.js'));
+  assert.ok(r.cuando('const comercio = 1', 'a.ejs'));
+});
+
+test('verificar: a g-flag config rule does not alternate across lines', () => {
+  const [reglas] = [reglasDeConfig([{ id: 'g', titulo: 't', patron: 'foo', flags: 'g', archivos: '\\.js$', mensaje: 'm' }])];
+  const { hallazgos: h } = verificar({ repo: 'r', archivos: [{ filename: 'a.js', status: 'modified', patch: parche('foo', 'foo', 'foo') }], extra: reglas });
+  assert.equal(h.filter((x) => x.regla === 'g').length, 3);
+});
+
+test('verificar: a backtracking config rule over a 2 MB line stays under 200 ms', () => {
+  const reglas = reglasDeConfig([{ id: 'bt', titulo: 't', patron: '(a|aa)+$', archivos: '\\.js$', mensaje: 'm' }]);
+  const linea = `${'a'.repeat(4000)}b${'c'.repeat(2 * 1024 * 1024)}`;
+  const [, avisos] = silenciar(() => {
+    const t0 = performance.now();
+    verificar({ repo: 'r', archivos: [{ filename: 'a.js', status: 'modified', patch: parche(linea) }], extra: reglas });
+    assert.ok(performance.now() - t0 < 200);
+  });
+  assert.equal(avisos.length, 1);
 });

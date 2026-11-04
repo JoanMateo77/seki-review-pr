@@ -1,6 +1,7 @@
+import vm from 'node:vm';
 // Guarded compilation of regular expressions that come from user config.
 const MAX_FUENTE = 300;
-// Heuristic guard only: the input length cap (maxLargo in coincidencias) is the real bound.
+// The nested-quantifier check is a heuristic; the real bounds are the input length cap and probarSeguro's time limit.
 const GRUPO_CUANTIFICADO = /\((?:[^()\\]|\\.)*[+*}]\)[+*{]/;
 
 export function compilarPatron(fuente, banderas = '') {
@@ -22,4 +23,22 @@ export function coincidencias(re, texto, { maxLargo = 4096, maxCoincidencias = 5
     if (unicas.size >= maxCoincidencias) break;
   }
   return [...unicas];
+}
+
+// Runs a config regex over the first maxLargo characters with a hard time limit (vm timeout
+// interrupts catastrophic backtracking, which a length cap alone does not). Returns null on timeout.
+const contexto = vm.createContext({ re: null, s: '' });
+const guion = new vm.Script('re.test(s)');
+export function probarSeguro(re, texto, { maxLargo = 4096, timeoutMs = 50 } = {}) {
+  contexto.re = re;
+  contexto.s = String(texto).slice(0, maxLargo);
+  re.lastIndex = 0;
+  try {
+    return guion.runInContext(contexto, { timeout: timeoutMs });
+  } catch (e) {
+    if (e?.code === 'ERR_SCRIPT_EXECUTION_TIMEOUT') return null;
+    throw e;
+  } finally {
+    contexto.re = null;
+  }
 }

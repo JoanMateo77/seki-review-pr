@@ -6,7 +6,7 @@
 // repos (optional), patron (regex on the added line), excluir (optional), cuando(linea, archivo)
 // (optional, extra filter), mensaje, origen.
 
-import { compilarPatron } from './patrones.mjs';
+import { compilarPatron, probarSeguro } from './patrones.mjs';
 
 const VISTAS = /\.(ejs|html)$/;
 const CODIGO = /\.(ts|js|mjs|cjs)$/;
@@ -139,20 +139,27 @@ export function reglasDeConfig(lista = []) {
   const reglas = [];
   for (const r of lista) {
     try {
-      const re = (x) => (x ? compilarPatron(x, r.flags ?? '') : undefined);
+      // g/y would make .test() stateful across lines.
+      const flags = (r.flags ?? '').replace(/[gy]/g, '');
+      const re = (x) => (x ? compilarPatron(x, flags) : undefined);
       const patron = re(r.patron);
-      const enCadena = r.patron && compilarPatron(`['"\`][^'"\`]*(?:${r.patron})`, r.flags ?? '');
+      const archivos = re(r.archivos) ?? /./;
+      const excluir = re(r.excluir);
+      // The user source was validated above; the wrapper adds no quantifier.
+      const enCadena = r.patron && new RegExp(`['"\`][^'"\`]*(?:${r.patron})`, flags);
       reglas.push({
         ...r,
+        deConfig: true,
         severidad: SEVERIDADES.includes(r.severidad) ? r.severidad : 'aviso',
-        archivos: re(r.archivos) ?? /./,
+        archivos,
         patron,
-        excluir: re(r.excluir),
-        ...(r.soloEnTexto ? { cuando: (linea, archivo) => VISTAS.test(archivo) || enCadena.test(linea) } : {}),
+        excluir,
+        ...(r.soloEnTexto ? { cuando: (linea, archivo) => VISTAS.test(archivo) || probarSeguro(enCadena, linea) === true } : {}),
         origen: r.origen ?? 'Project rule.',
       });
     } catch (e) {
-      console.error(`[seki-review/reglas] rule ${r?.id ?? '(no id)'} dropped: ${e.message}`);
+      const id = String(r?.id ?? '(no id)').slice(0, 60);
+      console.error(`[seki-review/reglas] rule ${id} dropped: ${String(e.message).slice(0, 120)}`);
     }
   }
   return reglas;
