@@ -85,13 +85,22 @@ test('body list is capped at 20 items and no cell leaks PR numbers, branches or 
 
 test('entregasDesdeCorte excludes a covered track and includes it again after a newer merge', () => {
   const { e, prsPorId } = base({ ids: ['X-001'], portales: ['p1', 'p2'] });
-  const guias = [{ id: 'g1', fusiones: fusionesDe([e], prsPorId) }];
+  const guias = [{ id: 'g1', filas: filas({ entregas: [e], prsPorId }), fusiones: fusionesDe([e], prsPorId) }];
   assert.equal(entregasDesdeCorte({ entregas: [e], guias: [], prsPorId }).length, 1);
   assert.equal(entregasDesdeCorte({ entregas: [e], guias, prsPorId }).length, 0);
   prsPorId.get('r#2').mergeada = '2026-11-03T10:00:00Z';
   const r = entregasDesdeCorte({ entregas: [e], guias, prsPorId });
   assert.equal(r.length, 1);
   assert.deepEqual(r[0].pistas.map((x) => x.portal), ['p2']);
+});
+
+test('entregasDesdeCorte ignores a guide merge recorded for another portal that shares a PR', () => {
+  const a = pr('r#1', 'A', { mergeada: '2026-11-03T10:00:00Z' });
+  const eA = { clave: 'ka', titulo: 't', ids: ['X-001'], prs: [a.id], pistas: [pista('A', [a.id])] };
+  const eB = { clave: 'kb', titulo: 't', ids: ['X-001'], prs: [a.id], pistas: [pista('B', [a.id])] };
+  const prsPorId = mapa(a);
+  const guias = [{ id: 'g1', filas: filas({ entregas: [eA], prsPorId }), fusiones: fusionesDe([eA], prsPorId) }];
+  assert.deepEqual(entregasDesdeCorte({ entregas: [eA, eB], guias, prsPorId }).map((x) => x.clave), ['kb']);
 });
 
 test('firmaFila changes with any key field and not with PR order', () => {
@@ -115,6 +124,14 @@ test('secretoQa is stable and mode 0600; registrarGuia round-trips', async () =>
   const { guias } = leerGuias(p);
   assert.equal(guias.length, 1);
   assert.deepEqual(guias[0].filas[0], { etiqueta: 'X-001', portal: 'p1', entrega: 'k', prs: ['a#1'] });
+});
+
+test('registrarGuia refuses a duplicate id and guide ids never repeat after files are deleted', async () => {
+  const p = { salida: mkdtempSync(join(tmpdir(), 'seki-qa-')) };
+  const guia = { id: 'g1', fecha: '2026-11-04', entregas: ['k'], filas: [], fusiones: {} };
+  await registrarGuia(p, guia);
+  await assert.rejects(registrarGuia(p, guia), (e) => e.codigo === 'QA_GUIA_DUPLICADA');
+  assert.equal(leerGuias(p).guias.length, 1);
 });
 
 test('limpiarParaQa strips dotted names, absolute paths, schemeless URLs, origin and case-variant branches', () => {
@@ -219,7 +236,7 @@ test('track keys survive ids that contain commas', () => {
   const a = pr('r,x#1', 'p1', { mergeada: '2026-11-01T10:00:00Z' }); const b = pr('s#2', 'p1', { mergeada: '2026-11-01T10:00:00Z' });
   const e = { clave: 'k', titulo: 't', ids: [], prs: [a.id, b.id], pistas: [{ ...pista('p1', [a.id, b.id]), etapa: 'esperando_qa' }] };
   const prsPorId = mapa(a, b);
-  const guias = [{ id: 'g', fusiones: fusionesDe([e], prsPorId) }];
+  const guias = [{ id: 'g', filas: [{ etiqueta: 'E1', portal: 'p1', prs: [a.id, b.id] }], fusiones: fusionesDe([e], prsPorId) }];
   assert.deepEqual(entregasDesdeCorte({ entregas: [e], guias, prsPorId }), []);
   const solo = { ...e, pistas: [{ ...pista('p1', ['r']), etapa: 'esperando_qa' }] };
   assert.equal(entregasDesdeCorte({ entregas: [solo], guias, prsPorId }).length, 1);

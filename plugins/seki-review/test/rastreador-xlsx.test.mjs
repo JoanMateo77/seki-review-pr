@@ -90,18 +90,53 @@ test('a missing configured header fails with RASTREADOR_COLUMNA naming the text'
   assert.throws(() => leerRastreador(cfg), (e) => e.codigo === 'RASTREADOR_COLUMNA' && /Nope/.test(e.message));
 });
 
-test('most advanced delivery wins per ID and ties go to the latest merge', () => {
+test('per ID: discarded ignored, finished ignored while another is active, then least advanced and latest merge', () => {
   const { cfg } = escenario('inline');
   const otras = [
     { clave: 'a', ids: ['X-001'], etapa: 'esperando_qa', prs: ['r#1'] },
     { clave: 'c', ids: ['X-001'], etapa: 'en_produccion', prs: ['r#2'] },
     { clave: 'd', ids: ['X-002'], etapa: 'esperando_qa', prs: ['r#1'] },
     { clave: 'e', ids: ['X-002'], etapa: 'esperando_qa', prs: ['r#3'] },
+    { clave: 'f', ids: ['X-002'], etapa: 'descartada', prs: ['r#2'] },
+    { clave: 'g', ids: ['X-003'], etapa: 'cerrada', prs: ['r#2'] },
+    { clave: 'h', ids: ['X-003'], etapa: 'en_produccion', prs: ['r#2'] },
   ];
   const c = cambiosPendientes(cfg, otras, prs);
-  assert.equal(c.find((x) => x.id === 'X-001' && x.columna === 'estado').nuevo, 'Closed');
+  assert.equal(c.find((x) => x.id === 'X-001' && x.columna === 'estado').nuevo, 'In progress');
   assert.equal(c.find((x) => x.id === 'X-002' && x.columna === 'prPruebas').nuevo, 'https://example.test/pr/3');
+  assert.ok(!c.some((x) => x.id === 'X-002' && x.columna === 'prProd'));
+  assert.ok(c.some((x) => x.id === 'X-003' && x.columna === 'prProd'));
   assert.ok(!c.some((x) => x.id === 'Z-999'));
+  const soloTerminadas = cambiosPendientes(cfg, [otras[1], { clave: 'z', ids: ['X-001'], etapa: 'descartada', prs: ['r#1'] }], prs);
+  assert.equal(soloTerminadas.find((x) => x.id === 'X-001' && x.columna === 'estado').nuevo, 'Closed');
+});
+
+test('a LibreOffice lock file refuses the write without a backup', async () => {
+  const { dir, ruta, p } = escenario('inline');
+  writeFileSync(join(dir, '.~lock.tracker.xlsx#'), '');
+  const antes = readFileSync(ruta);
+  const r = await aplicarRastreador(p, entregas, prs);
+  assert.equal(r.escrito, false);
+  assert.match(r.motivo, /open in another program: close it and use Update spreadsheet/);
+  assert.ok(readFileSync(ruta).equals(antes));
+  assert.equal(existsSync(join(p.salida, 'respaldos')), false);
+});
+
+for (const descriptores of [true, 'sin-firma']) {
+  test(`a tracker saved with data descriptors is read and written (${descriptores})`, async () => {
+    const { ruta, p, cfg } = escenario('inline');
+    writeFileSync(ruta, trackerFixture({ descriptores }));
+    assert.equal(contenidoRastreador(cfg).get('X-001').pasos, 'Open the page\nClick the button');
+    const r = await aplicarRastreador(p, entregas, prs);
+    assert.equal(r.escrito, true);
+    assert.equal(leerXlsx(readFileSync(ruta)).hojas[0].filas[1][4], 'In progress');
+  });
+}
+
+test('backups are written readable only by the owner', async () => {
+  const { p } = escenario('inline');
+  const r = await aplicarRastreador(p, entregas, prs);
+  assert.equal(statSync(r.respaldo).mode & 0o777, 0o600);
 });
 
 test('an Office lock file refuses the write without a backup', async () => {

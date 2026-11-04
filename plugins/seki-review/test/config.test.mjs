@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { proyecto, QA_DEFECTO } from '../mcp/lib/config.mjs';
@@ -128,4 +128,58 @@ test('qa defaults are copies; mapeo values, duplicate columns and tracker path a
   } finally {
     console.error = previo;
   }
+});
+
+function conAvisos(clave) {
+  const previo = console.error;
+  const avisos = [];
+  console.error = (m) => avisos.push(String(m));
+  try {
+    const p = proyecto(clave);
+    proyecto(clave);
+    return { qa: p.qa, avisos: avisos.filter((m) => m.includes('qa.resultados')) };
+  } finally {
+    console.error = previo;
+  }
+}
+
+test('qa resultados must agree with mapeo and the validation list limits, else both defaults with one warning', () => {
+  const caso = (qa) => ({ salida: '/s/r', repos: {}, qa });
+  config({
+    traducido: caso({ resultados: ['Si', 'No'] }),
+    coherente: caso({ resultados: ['Si', 'NO', 'Pend'], mapeo: { si: 'ok', no: 'fallo', Pend: null } }),
+    coma: caso({ resultados: ['OK, bien', 'Fail'], mapeo: { 'OK, bien': 'ok', Fail: 'fallo' } }),
+    comilla: caso({ resultados: ['"OK"', 'Fail'], mapeo: { '"OK"': 'ok', Fail: 'fallo' } }),
+    larga: caso({ resultados: Array.from({ length: 30 }, (_, i) => `Result number ${i}`), mapeo: Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`Result number ${i}`, 'ok'])) }),
+  });
+  const ok = conAvisos('coherente');
+  assert.deepEqual(ok.qa.resultados, ['Si', 'NO', 'Pend']);
+  assert.equal(ok.avisos.length, 0);
+  for (const clave of ['traducido', 'coma', 'comilla', 'larga']) {
+    const { qa, avisos } = conAvisos(clave);
+    assert.deepEqual(qa.resultados, QA_DEFECTO.resultados, clave);
+    assert.deepEqual(qa.mapeo, QA_DEFECTO.mapeo, clave);
+    assert.equal(avisos.length, 1, clave);
+  }
+});
+
+test('a relative tracker path is ignored with a warning', () => {
+  config({ rel: { salida: '/s/rel', repos: {}, qa: { rastreador: { tipo: 'xlsx', ruta: 'tracker.xlsx', hoja: 'S', columnaId: 'ID' } } } });
+  const previo = console.error;
+  const avisos = [];
+  console.error = (m) => avisos.push(String(m));
+  try {
+    assert.equal(proyecto('rel').qa.rastreador, null);
+  } finally {
+    console.error = previo;
+  }
+  assert.equal(avisos.filter((m) => m.includes('absolute')).length, 1);
+});
+
+test('the example project that reads the finding column also lists Finding in the guide columns', () => {
+  const ejemplo = JSON.parse(readFileSync(new URL('../config/proyectos.ejemplo.json', import.meta.url), 'utf8'));
+  const qa = ejemplo['demo-tracker'].qa;
+  assert.ok(qa.rastreador.lectura.hallazgo);
+  assert.ok(qa.columnas.includes('Finding'));
+  assert.ok(['ID', 'Portal', 'Result'].every((c) => qa.columnas.includes(c)));
 });

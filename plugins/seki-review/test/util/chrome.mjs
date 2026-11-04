@@ -1,5 +1,6 @@
 // Fake Chrome: a Node script. Every call appends its argv (JSON) to `<ruta>.llamadas` and its pid to `<ruta>.pid`.
 // modo 'nieto' hangs after spawning a sleeping grandchild (pid in `<ruta>.nieto`), 'bloquea' is 'ok' leaving a profile subfolder that cannot be removed; 'ok' writes %PDF-1.4 to the --print-to-pdf path, 'falla' exits 1, 'cuelga' sleeps until killed.
+// A `<ruta>.copiar` file holding `origen|destino` makes every call copy that file first (to observe state during the run).
 // Test files register `after(limpiarChrome)` to remove the temp folders.
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -10,6 +11,10 @@ const fs = require('node:fs');
 const args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(`${base}.llamadas`)}, JSON.stringify(args) + '\\n');
 fs.writeFileSync(${JSON.stringify(`${base}.pid`)}, String(process.pid));
+if (fs.existsSync(${JSON.stringify(`${base}.copiar`)})) {
+  const [origen, destino] = fs.readFileSync(${JSON.stringify(`${base}.copiar`)}, 'utf8').split('|');
+  fs.copyFileSync(origen, destino);
+}
 const modo = ${JSON.stringify(modo)};
 if (modo === 'falla') process.exit(1);
 if (modo === 'bloquea') {

@@ -132,16 +132,19 @@ export function firmaFila(secreto, { guia, etiqueta, portal, prs, entrega }) {
 }
 
 // Tracks waiting for QA whose newest testing merge is later than the one every covering guide recorded.
+// A guide covers a track through its rows (same portal, shared PR), and records the merge under that row's track key.
 export function entregasDesdeCorte({ entregas, guias, prsPorId }) {
-  const registros = (guias ?? []).flatMap((g) => Object.entries(g.fusiones ?? {}).map(([k, f]) => ({ ids: new Set(JSON.parse(k)), f })));
   return entregas.flatMap((e) => {
     const pistas = e.pistas.filter((pista) => {
       if (pista.etapa !== 'esperando_qa') return false;
-      const cubiertos = registros.filter((r) => pista.prs.some((id) => r.ids.has(id)));
-      if (!cubiertos.length) return true;
+      const propios = new Set(pista.prs);
+      const previas = (guias ?? []).flatMap((g) => (g.filas ?? [])
+        .filter((f) => f.portal === pista.portal && cruzan(f.prs ?? [], propios))
+        .map((f) => g.fusiones?.[claveFusion(f.prs)])
+        .filter(Boolean));
+      if (!previas.length) return true;
       const nueva = fusionDePista(pista, prsPorId);
-      const previa = cubiertos.map((r) => r.f).sort().at(-1);
-      return Boolean(nueva) && cmp(nueva, previa) > 0;
+      return Boolean(nueva) && cmp(nueva, previas.sort().at(-1)) > 0;
     });
     return pistas.length ? [{ ...e, pistas }] : [];
   });
@@ -156,9 +159,20 @@ export async function registrarGuia(p, guia) {
   const ruta = rutaGuias(p.salida);
   return conBloqueo(ruta, () => {
     const actual = leerJson(ruta, { guias: [] });
+    const previas = Array.isArray(actual?.guias) ? actual.guias : [];
+    if (previas.some((g) => g?.id === guia.id)) throw Object.assign(new Error(`[seki-review/qa] The guide id ${guia.id} is already registered`), { codigo: 'QA_GUIA_DUPLICADA' });
     const nueva = { id: guia.id, fecha: guia.fecha, entregas: guia.entregas, filas: guia.filas.map(({ etiqueta, portal, entrega, prs }) => ({ etiqueta, portal, entrega, prs })), fusiones: guia.fusiones };
-    escribirAtomico(ruta, JSON.stringify({ guias: [...(Array.isArray(actual?.guias) ? actual.guias : []), nueva] }, null, 2) + '\n');
+    escribirAtomico(ruta, JSON.stringify({ guias: [...previas, nueva] }, null, 2) + '\n');
     return nueva;
+  });
+}
+
+export async function quitarGuia(p, id) {
+  const ruta = rutaGuias(p.salida);
+  return conBloqueo(ruta, () => {
+    const actual = leerJson(ruta, { guias: [] });
+    const guias = (Array.isArray(actual?.guias) ? actual.guias : []).filter((g) => g?.id !== id);
+    escribirAtomico(ruta, JSON.stringify({ guias }, null, 2) + '\n');
   });
 }
 

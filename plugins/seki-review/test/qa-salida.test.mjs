@@ -1,10 +1,10 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { secretoQa } from '../mcp/lib/acceso.mjs';
-import { escribirJson, rutaEntregas, rutaInstantanea } from '../mcp/lib/cache.mjs';
+import { escribirJson, rutaEntregas, rutaGuias, rutaInstantanea } from '../mcp/lib/cache.mjs';
 import { QA_DEFECTO } from '../mcp/lib/config.mjs';
 import { firmaFila, leerGuias } from '../mcp/lib/qa-guia.mjs';
 import { COLUMNAS_SEKI, FORMATO_SEKI, generarGuia, htmlGuia } from '../mcp/lib/qa-salida.mjs';
@@ -87,6 +87,32 @@ test('second call the same day takes -2', async () => {
   assert.equal(a.id, 'guia-2026-11-04-1');
   assert.equal(b.id, 'guia-2026-11-04-2');
   assert.equal(leerGuias(p).guias.length, 2);
+});
+
+test('guide ids never repeat after their files are deleted', async () => {
+  const p = proyecto();
+  const a = await generarGuia(p, { ahora: AHORA, chrome: null });
+  const b = await generarGuia(p, { ahora: AHORA, chrome: null });
+  for (const g of [a, b]) for (const ruta of [g.archivos.xlsx, g.archivos.html]) unlinkSync(ruta);
+  const c = await generarGuia(p, { ahora: AHORA, chrome: null });
+  assert.equal(c.id, 'guia-2026-11-04-3');
+  assert.deepEqual(leerGuias(p).guias.map((g) => g.id), ['guia-2026-11-04-1', 'guia-2026-11-04-2', 'guia-2026-11-04-3']);
+});
+
+test('the guide is registered before the PDF step and unregistered if a later step fails', async () => {
+  const p = proyecto();
+  const chrome = chromeFalso({ modo: 'ok' });
+  const visto = join(p.salida, 'visto.json');
+  writeFileSync(`${chrome}.copiar`, `${rutaGuias(p.salida)}|${visto}`);
+  const r = await generarGuia(p, { ahora: AHORA, chrome });
+  assert.deepEqual(JSON.parse(readFileSync(visto, 'utf8')).guias.map((g) => g.id), [r.id]);
+
+  const q = proyecto();
+  const chrome2 = chromeFalso({ modo: 'ok' });
+  mkdirSync(join(q.salida, 'qa'), { recursive: true });
+  mkdirSync(join(q.salida, 'qa', 'guia-2026-11-04-1.pdf'));
+  await assert.rejects(generarGuia(q, { ahora: AHORA, chrome: chrome2 }));
+  assert.equal(leerGuias(q).guias.length, 0);
 });
 
 test('concurrent calls take different numbers', async () => {

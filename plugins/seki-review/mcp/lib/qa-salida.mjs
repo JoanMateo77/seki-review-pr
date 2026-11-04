@@ -1,12 +1,13 @@
 // QA guide files: xlsx (visible QA sheet + hidden _seki signatures), html and pdf under salida/qa.
-import { closeSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, readFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { secretoQa } from './acceso.mjs';
+import { quitar } from './archivos.mjs';
 import { conBloqueo, escribirAtomico } from './bloqueo.mjs';
 import { dirQa, leerJson, rutaEntregas, rutaExplicacion, rutaGuias, rutaInstantanea } from './cache.mjs';
 import { QA_DEFECTO } from './config.mjs';
 import { htmlAPdf, rutaChrome } from './pdf.mjs';
-import { entregasDesdeCorte, filasDeGuia, firmaFila, fusionesDe, leerGuias, registrarGuia } from './qa-guia.mjs';
+import { entregasDesdeCorte, filasDeGuia, firmaFila, fusionesDe, leerGuias, quitarGuia, registrarGuia } from './qa-guia.mjs';
 import { contenidoRastreador, fechaLocal } from './rastreador-xlsx.mjs';
 import { mapaPrs } from './tablero-entregas.mjs';
 import { columnaLetra, escribirXlsx, limpiar } from './xlsx.mjs';
@@ -43,9 +44,11 @@ ${tr}
 }
 
 // Reserves guia-<date>-<n> by creating its xlsx exclusively: two racing calls never take the same n.
-function reservar(dir, dia) {
+// Ids already registered are skipped even when their files were deleted, so an id is never reused.
+function reservar(dir, dia, registrados) {
   for (let n = 1; ; n++) {
     const id = `guia-${dia}-${n}`;
+    if (registrados.has(id)) continue;
     try {
       closeSync(openSync(join(dir, `${id}.xlsx`), 'wx'));
       return id;
@@ -63,12 +66,6 @@ const filaSeki = (secreto, guia) => (f) => [f.etiqueta, f.portal, f.entrega, JSO
 // The writer strips XML-invalid characters from every cell: the key fields are cleaned once here so that what is
 // signed, registered and written is the same text.
 const limpiarClaves = (f) => ({ ...f, etiqueta: limpiar(f.etiqueta), portal: limpiar(f.portal), entrega: limpiar(f.entrega), prs: f.prs.map(limpiar), celdas: f.celdas.map(limpiar) });
-
-const quitar = (ruta) => {
-  try {
-    unlinkSync(ruta);
-  } catch { /* not created */ }
-};
 
 function columnasValidas(p) {
   const c = p.qa?.columnas;
@@ -106,8 +103,9 @@ async function generar(p, { claves, desde, ahora = new Date(), rastreador = null
 
   const dir = dirQa(p.salida);
   mkdirSync(dir, { recursive: true });
-  const id = reservar(dir, fechaLocal(ahora));
+  const id = reservar(dir, fechaLocal(ahora), new Set(leerGuias(p).guias.map((g) => g.id)));
   const rutas = { xlsx: join(dir, `${id}.xlsx`), html: join(dir, `${id}.html`), pdf: join(dir, `${id}.pdf`) };
+  let registrada = false;
   try {
     const generado = ahora.toISOString();
     const secreto = secretoQa(p);
@@ -137,6 +135,11 @@ async function generar(p, { claves, desde, ahora = new Date(), rastreador = null
     escribirAtomico(rutas.xlsx, libro);
     escribirAtomico(rutas.html, htmlGuia({ titulo: `QA guide ${id}`, columnas, filas: filas.map((f) => f.celdas) }));
 
+    const pendientes = [...new Set(filas.filter((f) => f.pendiente).flatMap((f) => f.prs))].sort();
+    // Registered before the slow PDF step: an interrupted run leaves a guide that can still be imported.
+    await registrarGuia(p, { id, fecha: generado, entregas: [...new Set(filas.map((f) => f.entrega))], filas, fusiones: fusionesDe(entregasLimpias(entregas), new Map([...prsPorId].map(([k, v]) => [limpiar(k), v]))) });
+    registrada = true;
+
     let pdf = null;
     let avisoPdf = null;
     const exe = chrome === undefined ? rutaChrome(p) : chrome;
@@ -154,12 +157,11 @@ async function generar(p, { claves, desde, ahora = new Date(), rastreador = null
       }
     }
 
-    const pendientes = [...new Set(filas.filter((f) => f.pendiente).flatMap((f) => f.prs))].sort();
-    await registrarGuia(p, { id, fecha: generado, entregas: [...new Set(filas.map((f) => f.entrega))], filas, fusiones: fusionesDe(entregasLimpias(entregas), new Map([...prsPorId].map(([k, v]) => [limpiar(k), v]))) });
     return { id, archivos: { xlsx: rutas.xlsx, html: rutas.html, pdf }, filas: filas.length, pendientes, avisoPdf, vacia: false };
   } catch (e) {
     for (const r of Object.values(rutas)) quitar(r);
     quitar(`${rutas.pdf}.tmp.pdf`);
+    if (registrada) await quitarGuia(p, id).catch(() => {});
     throw e;
   }
 }

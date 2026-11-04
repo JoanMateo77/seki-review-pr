@@ -1,15 +1,15 @@
 // Tracker spreadsheet adapter: reads finding content for the QA guide and writes the delivery progress back.
 // Columns are located by header text (trimmed, case-insensitive), never by letter. Writes touch only the cells that differ.
 import { createHash, randomBytes } from 'node:crypto';
-import { chmodSync, closeSync, existsSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
+import { chmodSync, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync, writeSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
+import { MAX_ARCHIVO, leerAcotado, quitar } from './archivos.mjs';
 import { conBloqueo } from './bloqueo.mjs';
 import { dirRespaldos, rutaGuias } from './cache.mjs';
 import { RANGO_ETAPA } from './etapas.mjs';
 import { columnaLetra, leerXlsx } from './xlsx.mjs';
 import { editarCeldas } from './xlsx-editar.mjs';
 
-const MAX_ARCHIVO = 5 * 1024 * 1024;
 const MAX_RESPALDOS = 20;
 const LECTURA = ['hallazgo', 'pasos', 'esperado', 'pantalla', 'prioridad'];
 const ESCRITURA = ['estado', 'prPruebas', 'prProd', 'enPruebas', 'enProd'];
@@ -41,13 +41,11 @@ function leerBuffer(ruta) {
     fallar('RASTREADOR_ARCHIVO', 'The tracker file cannot be opened');
   }
   try {
-    const st = fstatSync(fd);
-    if (!st.isFile()) fallar('RASTREADOR_ARCHIVO', 'The tracker path is not a regular file');
-    if (st.size > MAX_ARCHIVO) fallar('RASTREADOR_ARCHIVO', 'The tracker file exceeds 5 MB');
-    const b = Buffer.alloc(st.size);
-    let n = 0;
-    for (let k; n < b.length && (k = readSync(fd, b, n, b.length - n, n)) > 0;) n += k;
-    return { buf: b.subarray(0, n), st };
+    return leerAcotado(fd, MAX_ARCHIVO);
+  } catch (e) {
+    if (e?.motivo === 'no-regular') fallar('RASTREADOR_ARCHIVO', 'The tracker path is not a regular file');
+    if (e?.motivo === 'grande') fallar('RASTREADOR_ARCHIVO', 'The tracker file exceeds 5 MB');
+    throw e;
   } finally {
     closeSync(fd);
   }
@@ -100,18 +98,25 @@ export function contenidoRastreador(cfg) {
 
 const fusion = (prs) => prs.map((p) => p?.mergeada).filter(Boolean).sort().at(-1) ?? '';
 
-// The most advanced delivery wins per finding ID; a tie goes to the most recent merge.
+const TERMINADAS = new Set(['cerrada', 'en_produccion']);
+
+// One delivery per finding ID. Discarded deliveries are ignored, and finished ones (in production, closed) are
+// ignored while another delivery of the ID is still active, so a reopened or split finding shows open work.
+// Among the rest the least advanced wins; a tie goes to the most recent merge.
 function entregaDe(entregas, prsPorId) {
-  const mejor = new Map();
+  const porId = new Map();
   for (const e of entregas) {
-    const rango = RANGO_ETAPA[e.etapa] ?? -1;
-    const merge = fusion((e.prs ?? []).map((id) => prsPorId.get(id)));
-    for (const id of new Set(e.ids ?? [])) {
-      const a = mejor.get(id);
-      if (!a || rango > a.rango || (rango === a.rango && merge > a.merge)) mejor.set(id, { entrega: e, rango, merge });
-    }
+    if (e.etapa === 'descartada') continue;
+    const candidata = { entrega: e, rango: RANGO_ETAPA[e.etapa] ?? -1, merge: fusion((e.prs ?? []).map((id) => prsPorId.get(id))) };
+    for (const id of new Set(e.ids ?? [])) porId.set(id, [...(porId.get(id) ?? []), candidata]);
   }
-  return mejor;
+  const elegida = new Map();
+  for (const [id, lista] of porId) {
+    const activas = lista.filter((c) => !TERMINADAS.has(c.entrega.etapa));
+    const pool = activas.length ? activas : lista;
+    elegida.set(id, pool.reduce((a, c) => (c.rango < a.rango || (c.rango === a.rango && c.merge > a.merge) ? c : a)));
+  }
+  return elegida;
 }
 
 function deseados(cfg, entrega, prsPorId) {
@@ -156,12 +161,6 @@ export function cambiosPendientes(cfg, entregas, prsPorId) {
 const rechazo = (motivo) => ({ escrito: false, celdas: 0, motivo });
 const sello = (d) => `${fechaLocal(d).replaceAll('-', '')}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
 const sha = (b) => createHash('sha256').update(b).digest('hex');
-const quitar = (ruta) => {
-  if (!ruta) return;
-  try {
-    unlinkSync(ruta);
-  } catch { /* already gone */ }
-};
 
 function respaldar(p, ruta, buf, ahora) {
   const dir = dirRespaldos(p.salida);
@@ -170,7 +169,7 @@ function respaldar(p, ruta, buf, ahora) {
   for (let n = 1; ; n++) {
     const destino = join(dir, `${base}-${sello(ahora)}${n > 1 ? `-${n}` : ''}.xlsx`);
     try {
-      writeFileSync(destino, buf, { flag: 'wx' });
+      writeFileSync(destino, buf, { flag: 'wx', mode: 0o600 });
       return destino;
     } catch (e) {
       if (e.code !== 'EEXIST') throw e;
@@ -222,7 +221,8 @@ export async function aplicarRastreador(p, entregas, prsPorId, { ahora = new Dat
     if (st.isSymbolicLink()) return 'The tracker path is a symbolic link';
     if (!st.isFile()) return 'The tracker path is not a regular file';
     if (typeof uidProceso === 'number' && st.uid !== uidProceso) return 'The spreadsheet belongs to another user';
-    if (existsSync(join(dirname(ruta), `~$${basename(ruta)}`))) return 'The tracker is open in another program: close it and import again';
+    // Excel marks an open file with ~$<name>, LibreOffice with .~lock.<name>#.
+    if (existsSync(join(dirname(ruta), `~$${basename(ruta)}`)) || existsSync(join(dirname(ruta), `.~lock.${basename(ruta)}#`))) return 'The spreadsheet is open in another program: close it and use Update spreadsheet';
     return null;
   };
   const previo = impedimento();
@@ -259,7 +259,7 @@ export async function aplicarRastreador(p, entregas, prsPorId, { ahora = new Dat
       if (cambio) {
         quitar(tmp);
         tmp = null;
-        return rechazo(cambio === 'changed' ? 'The tracker changed while it was being updated: import again' : cambio);
+        return rechazo(cambio === 'changed' ? 'The spreadsheet changed while it was being updated: use Update spreadsheet again' : cambio);
       }
       respaldo = respaldar(p, ruta, buf, ahora);
       renameSync(tmp, ruta);

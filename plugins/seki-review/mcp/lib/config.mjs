@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const EJEMPLO = join(dirname(fileURLToPath(import.meta.url)), '../../config/proyectos.ejemplo.json');
@@ -72,9 +72,14 @@ function validarRastreador(r) {
   }
   const fila = Number.isInteger(r.filaEncabezado) && r.filaEncabezado >= 1 ? r.filaEncabezado : 1;
   if (r.filaEncabezado !== undefined && fila !== r.filaEncabezado) avisar('qa.rastreador.filaEncabezado has an invalid value; 1 is used');
+  const ruta = expandir(r.ruta);
+  if (!isAbsolute(ruta)) {
+    avisar('qa.rastreador.ruta must be an absolute path (or start with ~/); the tracker is ignored');
+    return null;
+  }
   return {
     tipo: 'xlsx',
-    ruta: expandir(r.ruta),
+    ruta,
     hoja: r.hoja,
     filaEncabezado: fila,
     columnaId: r.columnaId,
@@ -83,6 +88,19 @@ function validarRastreador(r) {
     estados,
     escribir: typeof r.escribir === 'boolean' ? r.escribir : true,
   };
+}
+
+const MAX_LISTA_VALIDACION = 255;
+
+// The Result list feeds the cell validation (comma separated, 255 characters at most) and the import maps each
+// text through `mapeo`: an inconsistent pair would only fail after QA has filled the guide.
+function resultadosCoherentes(qa) {
+  const claves = new Set(Object.keys(qa.mapeo).map((k) => k.trim().toLowerCase()));
+  if (qa.resultados.some((t) => t.trim() === '' || /[,"]/.test(t))) return 'a result text is empty or contains a comma or a quote';
+  if (new Set(qa.resultados.map((t) => t.trim().toLowerCase())).size !== qa.resultados.length) return 'a result text is repeated';
+  if (qa.resultados.some((t) => !claves.has(t.trim().toLowerCase()))) return 'a result text has no entry in qa.mapeo';
+  if (qa.resultados.join(',').length > MAX_LISTA_VALIDACION) return `the result list is longer than ${MAX_LISTA_VALIDACION} characters`;
+  return null;
 }
 
 // proyecto() runs on every tool call: each bad key is reported once per process.
@@ -114,6 +132,12 @@ export function proyecto(clave) {
   const vigia = conDefectos(VIGIA_DEFECTO, p.vigia, 'vigia');
   vigia.intervaloSeg = Math.max(VIGIA_INTERVALO_MIN, vigia.intervaloSeg);
   const qa = conDefectos(QA_DEFECTO, p.qa, 'qa');
+  const incoherencia = resultadosCoherentes(qa);
+  if (incoherencia) {
+    avisar(`qa.resultados and qa.mapeo of project "${elegida}" are inconsistent (${incoherencia}); both defaults are used`);
+    qa.resultados = structuredClone(QA_DEFECTO.resultados);
+    qa.mapeo = structuredClone(QA_DEFECTO.mapeo);
+  }
   qa.rastreador = validarRastreador(p.qa?.rastreador);
   return { clave: elegida, ...p, qa, entregas: conDefectos(ENTREGAS_DEFECTO, p.entregas, 'entregas'), vigia, salida: expandir(p.salida), copias: expandir(p.copias ?? `~/.cache/seki-review/copias/${elegida}`) };
 }
