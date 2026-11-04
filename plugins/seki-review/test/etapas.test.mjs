@@ -98,3 +98,42 @@ test('ultimoEvento is the newest event touching a PR of the delivery', () => {
   const [res] = construirEntregas({ entregas: [{ clave: 'x', prs: [a.id] }], prsPorId: mapa(a), cfgRepos, cfg, eventos, ahora: AHORA });
   assert.equal(res.ultimoEvento.id, '2');
 });
+
+test('production is decided per line: a shared merged back does not put a track with only a testing PR in production', () => {
+  const back = pr('back', 'Back', 'prod', 'MERGED', reciente);
+  for (const [estado, merg, esperada] of [['OPEN', null, 'por_mergear_pruebas'], ['MERGED', reciente, 'esperando_qa']]) {
+    const fb = pr('front', 'portal-b', 'pruebas', estado, merg);
+    const p = { portal: 'portal-b', prs: [back.id, fb.id] };
+    const m = mapa(back, fb);
+    assert.equal(etapaDePista(p, m, { ahora: AHORA, cfg }), esperada);
+    assert.ok(alertasDePista(p, m, { etapa: esperada, ahora: AHORA, cfg, cfgRepos }).some((x) => x.tipo === 'gemela_faltante' && x.prs.includes(fb.id)));
+  }
+});
+test('two-track delivery where portal-b has no prod PR is not in production', () => {
+  const back = pr('back', 'Back', 'prod', 'MERGED', reciente);
+  const fa = pr('front', 'portal-a', 'prod', 'MERGED', reciente);
+  const fb = pr('front', 'portal-b', 'pruebas');
+  const ent = { clave: 'x', prs: [back.id, fa.id, fb.id] };
+  const [res] = construirEntregas({ entregas: [ent], prsPorId: mapa(back, fa, fb), cfgRepos, cfg, ahora: AHORA });
+  assert.deepEqual(res.pistas.map((x) => x.etapa), ['en_produccion', 'por_mergear_pruebas']);
+  assert.equal(res.etapa, 'por_mergear_pruebas');
+});
+test('deliveries and tracks without prod or testing PRs are dropped', () => {
+  const o = pr('back', 'x', 'otra');
+  const i = pr('back', 'y', 'inactiva');
+  const real = pr('back', 'Back', 'prod');
+  const res = construirEntregas({ entregas: [{ clave: 'a', prs: [o.id, i.id] }, { clave: 'b', prs: [real.id, o.id] }], prsPorId: mapa(o, i, real), cfgRepos, cfg, ahora: AHORA });
+  assert.deepEqual(res.map((e) => e.clave), ['b']);
+});
+test('ahora is required and validated', () => {
+  const b = pr('back', 'Back', 'prod');
+  assert.throws(() => etapaDePista(pista(b), mapa(b), {}), TypeError);
+  assert.throws(() => etapaDePista(pista(b), mapa(b), { ahora: new Date('x') }), TypeError);
+  assert.throws(() => construirEntregas({ entregas: [], prsPorId: mapa(), cfgRepos }), TypeError);
+});
+test('estancada in listo_produccion measures from the later of the QA result and the last testing merge', () => {
+  const prs = [pr('back', 'Back', 'pruebas', 'MERGED', '2026-11-01T00:00:00Z'), pr('back', 'Back', 'prod')];
+  const args = (qa) => ({ etapa: 'listo_produccion', qa, ahora: AHORA, cfg, cfgRepos });
+  assert.ok(alertasDePista(pista(...prs), mapa(prs), args({ resultado: 'ok', ts: '2026-11-02T00:00:00Z' })).some((x) => x.tipo === 'estancada'));
+  assert.ok(!alertasDePista(pista(...prs), mapa(prs), args({ resultado: 'ok', ts: '2026-11-09T00:00:00Z' })).some((x) => x.tipo === 'estancada'));
+});

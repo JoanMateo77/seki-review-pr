@@ -40,10 +40,10 @@ test('eventosDe emits merges and closures with a stable sha256 id and the delive
 
 test('registrarEventos returns N then 0 on the same snapshot; a changed mergedAt yields exactly one new event', async () => {
   await conProyecto(async (p) => {
-    assert.equal(await registrarEventos(p, eventosDe(foto())), 2);
-    assert.equal(await registrarEventos(p, eventosDe(foto())), 0);
-    assert.equal(await registrarEventos(p, eventosDe(foto('2026-11-05T10:00:00Z'))), 1);
-    assert.equal(await registrarEventos(p, eventosDe(foto('2026-11-05T10:00:00Z'))), 0);
+    assert.equal((await registrarEventos(p, eventosDe(foto()))).nuevos, 2);
+    assert.equal((await registrarEventos(p, eventosDe(foto()))).nuevos, 0);
+    assert.equal((await registrarEventos(p, eventosDe(foto('2026-11-05T10:00:00Z')))).nuevos, 1);
+    assert.equal((await registrarEventos(p, eventosDe(foto('2026-11-05T10:00:00Z')))).nuevos, 0);
     assert.equal(leerEventos(p).length, 3);
   });
 });
@@ -52,7 +52,7 @@ test('concurrent registrarEventos from two promises leaves no duplicate ids', as
   await conProyecto(async (p) => {
     const ev = eventosDe(foto());
     const cuentas = await Promise.all([registrarEventos(p, ev), registrarEventos(p, ev)]);
-    assert.equal(cuentas[0] + cuentas[1], ev.length);
+    assert.equal(cuentas[0].nuevos + cuentas[1].nuevos, ev.length);
     assert.equal(new Set(ids(p)).size, ids(p).length);
   });
 });
@@ -61,7 +61,7 @@ test('concurrent registrarEventos from two processes leaves no duplicate ids', a
   await conProyecto(async (p) => {
     const codigo = `import { registrarEventos } from ${JSON.stringify(EVENTOS)};
       const ev = Array.from({ length: 40 }, (_, i) => ({ id: 'id' + i, ts: '2026-11-01T00:00:00Z', tipo: 'pr_mergeada', pr: 'back#' + i }));
-      console.log(await registrarEventos({ salida: process.argv[1] }, ev));`;
+      console.log((await registrarEventos({ salida: process.argv[1] }, ev)).nuevos);`;
     const salidas = await Promise.all([1, 2].map(() => ejecutar(process.execPath, ['--input-type=module', '-e', codigo, p.salida])));
     assert.equal(salidas.reduce((s, r) => s + Number(r.stdout), 0), 40);
     assert.equal(new Set(ids(p)).size, 40);
@@ -82,7 +82,7 @@ test('leerEventos skips a truncated last line, warns once, and registrarEventos 
       console.error = original;
     }
     assert.equal(avisos.filter((m) => m.includes('[seki-review/eventos]')).length, 1);
-    assert.equal(await registrarEventos(p, eventosDe(foto('2026-11-09T00:00:00Z'))), 1);
+    assert.equal((await registrarEventos(p, eventosDe(foto('2026-11-09T00:00:00Z')))).nuevos, 1);
     assert.equal(leerEventos(p).length, 3);
   });
 });

@@ -11,7 +11,7 @@ import { compararFotos, hayCambios } from './cambios.mjs';
 import { asegurarDiff } from './diffs.mjs';
 import { agrupar } from './entregas.mjs';
 import { construirEntregas } from './etapas.mjs';
-import { eventosDe, leerEventos, registrarEventos } from './eventos.mjs';
+import { eventosDe, registrarEventos } from './eventos.mjs';
 
 const CAMPOS = 'number,title,url,baseRefName,headRefName,createdAt,updatedAt,additions,deletions,changedFiles,isDraft,headRefOid,author,reviewDecision,body';
 
@@ -108,12 +108,12 @@ function accionSugerida(pr) {
 async function derivarEntregas(p, foto) {
   const ajustes = { unir: [], separar: [], titulo: {}, ...(leerJson(rutaAjustes(p.salida), null) ?? {}) };
   const bases = Object.values(p.repos).flatMap((r) => r.lineas.flatMap((l) => [l.prod, l.pruebas])).filter((b) => typeof b === 'string');
-  const cfg = { sufijosRama: p.entregas.sufijosRama, patronId: p.entregas.patronId, maxPorSenal: p.entregas.maxPorSenal, bases, mapaRepos: {} };
+  const cfg = { sufijosRama: p.entregas.sufijosRama, patronId: p.entregas.patronId, maxPorSenal: p.entregas.maxPorSenal, bases, owner: p.owner };
   const prsPorId = new Map();
   for (const pr of [...foto.prs, ...(foto.recientes ?? [])]) if (!prsPorId.has(pr.id)) prsPorId.set(pr.id, pr);
   const entregas = agrupar([...prsPorId.values()], cfg, ajustes);
-  await registrarEventos(p, eventosDe(foto, entregas));
-  const construidas = construirEntregas({ entregas, prsPorId, cfgRepos: p.repos, cfg: p.entregas, eventos: leerEventos(p), ahora: new Date() });
+  const { todos } = await registrarEventos(p, eventosDe(foto, entregas));
+  const construidas = construirEntregas({ entregas, prsPorId, cfgRepos: p.repos, cfg: p.entregas, eventos: todos, ahora: new Date() });
   escribirJson(rutaEntregas(p.salida), { generado: new Date().toISOString(), entregas: construidas });
 }
 

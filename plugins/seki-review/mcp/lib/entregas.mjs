@@ -36,13 +36,14 @@ export function idsDe(pr, re) {
   return [...todos].sort();
 }
 
-// `owner/name#n` references on "Related:" lines. `mapaRepos` maps a GitHub repo name to the snapshot
-// repo key when they differ; unknown names are kept as `name#n`.
-export function relacionadasDe(descripcion, mapaRepos = {}) {
+// `owner/name#n` references on "Related:" lines, keyed `name#n` (snapshot repo keys are GitHub names).
+// With `owner` given, references to another owner's repository are ignored.
+export function relacionadasDe(descripcion, owner = null) {
   const salida = new Set();
-  const re = /^(?:Relacionada|Related):\s*[\w.-]+\/([\w.-]+)#(\d+)/gim;
+  const re = /^(?:Relacionada|Related):\s*([\w.-]+)\/([\w.-]+)#(\d+)/gim;
   for (const m of String(descripcion ?? '').slice(0, 4096).matchAll(re)) {
-    salida.add(`${Object.hasOwn(mapaRepos ?? {}, m[1]) ? mapaRepos[m[1]] : m[1]}#${m[2]}`);
+    if (owner && m[1].toLowerCase() !== String(owner).toLowerCase()) continue;
+    salida.add(`${m[2]}#${m[3]}`);
   }
   return [...salida];
 }
@@ -114,7 +115,7 @@ export function agrupar(prs, cfg = {}, ajustes = {}) {
   indice('id', (p) => idsPr.get(p.id));
   if (omitidas.length) console.error(`[seki-review/entregas] values shared by more than ${maxPorSenal} PRs not used as join signals: ${omitidas.slice(0, 5).join(', ')}${omitidas.length > 5 ? ', ...' : ''}`);
   for (const p of lista) {
-    for (const ref of relacionadasDe(textoDe(p), cfg.mapaRepos)) {
+    for (const ref of relacionadasDe(textoDe(p), cfg.owner)) {
       if (ref !== p.id && porId.has(ref)) unir(p.id, ref, 'relacionada');
     }
   }

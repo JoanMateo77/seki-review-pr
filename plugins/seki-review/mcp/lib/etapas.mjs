@@ -3,6 +3,9 @@
 const DIA = 86400000;
 export const RANGO_ETAPA = { por_mergear_pruebas: 0, qa_fallo: 1, esperando_qa: 2, listo_produccion: 3, en_produccion: 4, cerrada: 5 };
 
+function exigirAhora(ahora) {
+  if (!(ahora instanceof Date) || Number.isNaN(ahora.getTime())) throw new TypeError('`ahora` must be a valid Date');
+}
 const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 const lineasDe = (cfgRepos, repo) => cfgRepos?.[repo]?.lineas ?? [];
 const esAmbiente = (pr) => pr.ambiente === 'prod' || pr.ambiente === 'pruebas';
@@ -30,13 +33,17 @@ const relevantes = (pista, prsPorId) => pista.prs.map((id) => prsPorId.get(id)).
 const resultadoQa = (qa) => (qa?.resultado === 'ok' ? 'ok' : qa?.resultado === 'fallo' || qa?.resultado === 'fail' ? 'fallo' : null);
 
 // Spec 6.2 order. A QA result older than the newest testing merge of the track is ignored.
-export function etapaDePista(pista, prsPorId, { qa = null, cerrada = false, ahora = new Date(), cfg = {} } = {}) {
+export function etapaDePista(pista, prsPorId, { qa = null, cerrada = false, ahora, cfg = {} } = {}) {
+  exigirAhora(ahora);
   const todas = relevantes(pista, prsPorId);
   const vivasPista = vivas(pista, prsPorId);
   if (todas.length && !vivasPista.length) return 'descartada';
   const prod = vivasPista.filter((pr) => pr.ambiente === 'prod');
   const pruebas = vivasPista.filter((pr) => pr.ambiente === 'pruebas');
-  if (prod.length && prod.every(fusionada)) {
+  // Production needs every live line of the track to have a production PR, all merged.
+  const lineasVivas = new Set(vivasPista.map((x) => `${x.repo}|${x.portal}`));
+  const lineasProd = new Set(prod.map((x) => `${x.repo}|${x.portal}`));
+  if (prod.length && prod.every(fusionada) && [...lineasVivas].every((l) => lineasProd.has(l))) {
     const fecha = masReciente(prod);
     const dias = cfg.cerrarTrasDias ?? 7;
     return cerrada || (fecha && new Date(ahora) - new Date(fecha) > dias * DIA) ? 'cerrada' : 'en_produccion';
@@ -52,7 +59,8 @@ export function etapaDePista(pista, prsPorId, { qa = null, cerrada = false, ahor
 
 const ordenDe = (cfgRepos, repo) => cfgRepos?.[repo]?.orden ?? (lineasDe(cfgRepos, repo).length > 1 ? 2 : 1);
 
-export function alertasDePista(pista, prsPorId, { etapa, qa = null, ahora = new Date(), cfg = {}, cfgRepos = {} } = {}) {
+export function alertasDePista(pista, prsPorId, { etapa, qa = null, ahora, cfg = {}, cfgRepos = {} } = {}) {
+  exigirAhora(ahora);
   const alertas = [];
   const lista = vivas(pista, prsPorId);
 
@@ -92,7 +100,8 @@ export function alertasDePista(pista, prsPorId, { etapa, qa = null, ahora = new 
   }
   if (etapa === 'qa_fallo') alertas.push({ tipo: 'qa_fallo', prs: pruebas.map((pr) => pr.id), detalle: 'The last QA result failed' });
   if (etapa === 'esperando_qa' || etapa === 'listo_produccion') {
-    const desde = masReciente(pruebas) ?? lista.map((pr) => pr.creada).filter(Boolean).sort().at(-1);
+    const base = masReciente(pruebas) ?? lista.map((pr) => pr.creada).filter(Boolean).sort().at(-1);
+    const desde = etapa === 'listo_produccion' && qa?.ts && (!base || qa.ts > base) ? qa.ts : base;
     const limite = cfg.alertaDias ?? 5;
     if (desde && new Date(ahora) - new Date(desde) > limite * DIA) {
       alertas.push({ tipo: 'estancada', prs: lista.map((pr) => pr.id), detalle: `More than ${limite} days in ${etapa}` });
@@ -109,16 +118,17 @@ export function etapaDeEntrega(pistas) {
 }
 
 // entregas.json content from grouped deliveries and the events read so far.
-export function construirEntregas({ entregas, prsPorId, cfgRepos, cfg = {}, eventos = [], ahora = new Date(), qaDe = () => null }) {
+export function construirEntregas({ entregas, prsPorId, cfgRepos, cfg = {}, eventos = [], ahora, qaDe = () => null }) {
+  exigirAhora(ahora);
   const cerradas = new Set(eventos.filter((e) => e.tipo === 'entrega_cerrada').map((e) => e.entrega));
-  return entregas.map((entrega) => {
-    const pistas = pistasDe(entrega, prsPorId, cfgRepos).map((pista) => {
+  return entregas.flatMap((entrega) => {
+    const pistas = pistasDe(entrega, prsPorId, cfgRepos).filter((pista) => relevantes(pista, prsPorId).length).map((pista) => {
       const qa = qaDe(entrega, pista) ?? null;
       const etapa = etapaDePista(pista, prsPorId, { qa, cerrada: cerradas.has(entrega.clave), ahora, cfg });
       return { ...pista, etapa, alertas: alertasDePista(pista, prsPorId, { etapa, qa, ahora, cfg, cfgRepos }) };
     });
     const mios = new Set(entrega.prs);
     const ultimoEvento = eventos.filter((e) => e.pr && mios.has(e.pr)).sort((a, b) => cmp(b.ts, a.ts) || cmp(b.id, a.id))[0] ?? null;
-    return { ...entrega, pistas, etapa: etapaDeEntrega(pistas), ultimoEvento };
+    return pistas.length ? [{ ...entrega, pistas, etapa: etapaDeEntrega(pistas), ultimoEvento }] : [];
   });
 }

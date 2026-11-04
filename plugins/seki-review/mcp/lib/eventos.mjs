@@ -55,14 +55,16 @@ export async function registrarEventos(p, eventos) {
   const ruta = rutaEventos(p.salida);
   return conBloqueo(ruta, () => {
     const existe = existsSync(ruta);
-    const conocidos = new Set(existe ? analizar(readFileSync(ruta, 'utf8'), ruta, false).map((e) => e.id) : []);
+    const previos = existe ? analizar(readFileSync(ruta, 'utf8'), ruta, false) : [];
+    const conocidos = new Set(previos.map((e) => e.id));
     const nuevos = [];
     for (const e of eventos) {
       if (conocidos.has(e.id)) continue;
       conocidos.add(e.id);
       nuevos.push(e);
     }
-    if (!nuevos.length) return 0;
+    const ordenar = (l) => l.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : a.id < b.id ? -1 : 1));
+    if (!nuevos.length) return { nuevos: 0, todos: ordenar(previos) };
     // A crash mid-write can leave a last line without newline: start on a fresh line.
     let prefijo = '';
     if (existe && statSync(ruta).size > 0) {
@@ -73,6 +75,6 @@ export async function registrarEventos(p, eventos) {
       if (b[0] !== 10) prefijo = '\n';
     }
     appendFileSync(ruta, prefijo + nuevos.map((e) => JSON.stringify(e)).join('\n') + '\n');
-    return nuevos.length;
+    return { nuevos: nuevos.length, todos: ordenar([...previos, ...nuevos]) };
   });
 }

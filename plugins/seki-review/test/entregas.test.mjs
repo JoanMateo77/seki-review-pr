@@ -51,7 +51,9 @@ test('shared finding id joins; invalid pattern warns once and groups without ids
 
 test('Related reference joins, with repo-key mapping and unknown ids ignored', () => {
   assert.deepEqual(relacionadasDe('x\nRelated: o/front#5\nRelacionada: o/zz#9'), ['front#5', 'zz#9']);
-  assert.deepEqual(relacionadasDe('Related: o/front#5', { front: 'fe' }), ['fe#5']);
+  assert.deepEqual(relacionadasDe('Related: o/front#5', 'o'), ['front#5']);
+  assert.deepEqual(relacionadasDe('Related: otro/front#5', 'o'), []);
+  assert.deepEqual(relacionadasDe('Related: otro/front#5'), ['front#5']);
   const r = agrupar([pr('front', 5), pr('back', 1, { descripcion: 'Related: o/front#5\nRelated: o/nope#1' })], cfg, sin);
   assert.equal(r.length, 1);
   assert.deepEqual(r[0].señales, ['relacionada']);
