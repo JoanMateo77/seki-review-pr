@@ -308,11 +308,11 @@ function atributoId(attrs) {
   return undefined;
 }
 
-function resolverRuta(objetivo) {
+export function resolverRuta(objetivo, desde = ['xl']) {
   if (typeof objetivo !== 'string' || objetivo === '' || objetivo.includes('\\') || objetivo.includes('\0')) {
     fallar('XLSX_RUTA', 'Invalid relationship target');
   }
-  const base = objetivo.startsWith('/') ? [] : ['xl'];
+  const base = objetivo.startsWith('/') ? [] : desde.slice();
   const segs = base.slice();
   for (const s of objetivo.split('/')) {
     if (s === '' || s === '.') continue;
@@ -331,7 +331,7 @@ function parte(partes, nombre) {
   return decodificarParte(b);
 }
 
-function leerRelaciones(xml) {
+export function leerRelaciones(xml) {
   const rels = new Map();
   for (const t of tokens(xml)) {
     if (t.tipo === 'abre' && t.nombre === 'Relationship') {
@@ -455,7 +455,7 @@ function valorCelda(c, compartidas) {
   }
 }
 
-export const LIMITES_XLSX = { MAX_FILAS, MAX_COLUMNAS, MAX_CELDA, MAX_FILA_EXCEL, MAX_COL_EXCEL, MAX_CELDAS_TOTAL };
+export const LIMITES_XLSX = { MAX_FILAS, MAX_COLUMNAS, MAX_CELDA, MAX_CELDAS_TOTAL };
 export { fallar, decodificarParte, escTexto, limpiar };
 
 // Opens the package and resolves the declared sheets to their part names.

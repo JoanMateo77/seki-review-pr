@@ -41,13 +41,17 @@ for (const variante of ['inline', 'compartidas']) {
   });
 }
 
-test('style survives a shared-string cell turned inline; formula is dropped', () => {
-  const buf = conHoja(trackerFixture({ variante: 'compartidas' }), (x) => x.replace('<c r="B3" s="0" t="s"><v>', '<c r="B3" s="1" t="s"><f>1+1</f><v>'));
+test('style survives a shared-string cell turned inline', () => {
+  const buf = conHoja(trackerFixture({ variante: 'compartidas' }), (x) => x.replace('<c r="B3" s="0" t="s">', '<c r="B3" s="1" t="s">'));
   const out = editarCeldas(buf, { hoja: 'Sheet1', celdas: [{ ref: 'B3', valor: 'Z' }] });
-  const x = xmlHoja(out);
-  assert.match(x, /<c r="B3" s="1" t="inlineStr"><is><t xml:space="preserve">Z<\/t><\/is><\/c>/);
-  assert.doesNotMatch(x, /<f>/);
+  assert.match(xmlHoja(out), /<c r="B3" s="1" t="inlineStr"><is><t xml:space="preserve">Z<\/t><\/is><\/c>/);
   assert.ok(leerZip(out).get('xl/sharedStrings.xml').equals(leerZip(buf).get('xl/sharedStrings.xml')));
+});
+
+test('formula cells are refused, plain neighbours are not', () => {
+  const buf = conHoja(trackerFixture(), (x) => x.replace(/<c r="B3"[^>]*>[\s\S]*?<\/c>/, '<c r="B3" s="0"><f t="shared" ref="B3:B4" si="0">1+1</f><v>2</v></c>'));
+  assert.throws(() => editarCeldas(buf, { hoja: 'Sheet1', celdas: [{ ref: 'B3', valor: 'Z' }] }), { codigo: 'XLSX_FORMULA', message: /^\[seki-review\/xlsx\]/ });
+  assert.equal(leerXlsx(editarCeldas(buf, { hoja: 'Sheet1', celdas: [{ ref: 'A3', valor: 'Z' }] })).hojas[0].filas[2][0], 'Z');
 });
 
 test('a new cell lands in column order and extends spans and dimension', () => {
@@ -56,7 +60,7 @@ test('a new cell lands in column order and extends spans and dimension', () => {
   const fila = /<row r="2"[^>]*>[\s\S]*?<\/row>/.exec(xmlHoja(out))[0];
   const cols = [...fila.matchAll(/<c r="([A-Z]+)2"/g)].map((m) => m[1]);
   assert.deepEqual(cols, ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K']);
-  assert.match(fila, /<c r="D2" s="1" t="inlineStr">/);
+  assert.match(fila, /<c r="D2" t="inlineStr">/); // header row is never a style source
   assert.match(fila, /spans="1:11"/);
   assert.match(xmlHoja(out), /<dimension ref="A1:K4"\/>/);
   const hoja = leerXlsx(out).hojas[0];
@@ -78,7 +82,7 @@ test('new rows land in row order with the style of the cell above', () => {
   ] });
   const x = xmlHoja(out);
   assert.deepEqual([...x.matchAll(/<row r="(\d+)"/g)].map((m) => Number(m[1])), [1, 2, 3, 4, 7]);
-  assert.match(x, /<row r="3"><c r="A3" s="0" t="inlineStr">.*?<c r="B3" s="0" t="inlineStr">/);
+  assert.match(x, /<row r="3" spans="1:2"><c r="A3" s="0" t="inlineStr">.*?<c r="B3" s="0" t="inlineStr">/);
   assert.match(x, /<dimension ref="A1:I7"\/>/);
   const f = leerXlsx(out).hojas[0].filas;
   assert.equal(f[2][0], 'mid-a');
@@ -108,4 +112,73 @@ test('invalid input is rejected and duplicates keep the last value', () => {
   assert.throws(() => editarCeldas(Buffer.from('nope'), { hoja: 'Sheet1', celdas: [] }), { codigo: 'ZIP_CORRUPTO' });
   const out = editarCeldas(buf, { hoja: 'Sheet1', celdas: [{ ref: 'B2', valor: 'one' }, { ref: 'B2', valor: 'two' }] });
   assert.equal(leerXlsx(out).hojas[0].filas[1][1], 'two');
+});
+
+test('new cell styles: row customFormat, then column style, then cell above, never the header', () => {
+  const base = trackerFixture();
+  const sinC2 = (x) => x.replace(/<c r="C2"[\s\S]*?<\/c>/, '').replace(/<c r="D3"[^>]*>[\s\S]*?<\/c>/, '');
+  // row style wins over column style
+  const conFila = conHoja(base, (x) => sinC2(x).replace('<row r="2" spans="1:9">', '<row r="2" spans="1:9" s="1" customFormat="1">').replace('<sheetData>', '<cols><col min="3" max="3" width="9" style="1"/></cols><sheetData>'));
+  assert.match(xmlHoja(editarCeldas(conFila, { hoja: 'Sheet1', celdas: [{ ref: 'C2', valor: 'v' }] })), /<c r="C2" s="1" t="inlineStr">/);
+  // row s without customFormat is ignored; column style applies
+  const conCol = conHoja(base, (x) => sinC2(x).replace('<row r="2" spans="1:9">', '<row r="2" spans="1:9" s="1">').replace('<sheetData>', '<cols><col min="2" max="3" width="9" style="1"/></cols><sheetData>'));
+  assert.match(xmlHoja(editarCeldas(conCol, { hoja: 'Sheet1', celdas: [{ ref: 'C2', valor: 'v' }] })), /<c r="C2" s="1" t="inlineStr">/);
+  // cell above from a data row
+  assert.match(xmlHoja(editarCeldas(conHoja(base, sinC2), { hoja: 'Sheet1', celdas: [{ ref: 'D3', valor: 'v' }] })), /<c r="D3" s="0" t="inlineStr">/);
+  // header row configurable: with filaEncabezado 0 the header row is a valid source
+  assert.match(xmlHoja(editarCeldas(conHoja(base, sinC2), { hoja: 'Sheet1', celdas: [{ ref: 'C2', valor: 'v' }], filaEncabezado: 0 })), /<c r="C2" s="1" t="inlineStr">/);
+  assert.match(xmlHoja(editarCeldas(conHoja(base, sinC2), { hoja: 'Sheet1', celdas: [{ ref: 'C2', valor: 'v' }] })), /<c r="C2" t="inlineStr">/);
+});
+
+test('new rows omit spans when neighbours have none', () => {
+  const sin = conHoja(trackerFixture(), (x) => x.replace(/ spans="[^"]*"/g, ''));
+  assert.match(xmlHoja(editarCeldas(sin, { hoja: 'Sheet1', celdas: [{ ref: 'A6', valor: 'v' }] })), /<row r="6"><c r="A6"/);
+});
+
+test('rows appended below an autoFilter range extend it', () => {
+  const out = xmlHoja(editarCeldas(trackerFixture(), { hoja: 'Sheet1', celdas: [{ ref: 'A5', valor: 'a' }, { ref: 'A6', valor: 'b' }, { ref: 'A9', valor: 'c' }] }));
+  assert.match(out, /<autoFilter ref="A1:I6"\/>/);
+  assert.match(xmlHoja(editarCeldas(trackerFixture(), { hoja: 'Sheet1', celdas: [{ ref: 'A2', valor: 'a' }] })), /<autoFilter ref="A1:I4"\/>/);
+});
+
+function conTabla(ref, extra = '') {
+  const base = conHoja(trackerFixture(), (x) => x.replace('</worksheet>', '<tableParts count="1"><tablePart r:id="rId1"/></tableParts></worksheet>'));
+  return reemplazarEntradas(base, new Map([
+    ['xl/worksheets/_rels/sheet1.xml.rels', '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/></Relationships>'],
+    ['xl/tables/table1.xml', `<?xml version="1.0"?><table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="T1" displayName="T1" ref="${ref}"${extra}><tableColumns count="1"><tableColumn id="1" name="ID"/></tableColumns></table>`],
+  ]));
+}
+
+test('table header edits and rows outside the table are refused', () => {
+  const buf = conTabla('A1:I4');
+  const falla = (celdas) => assert.throws(() => editarCeldas(buf, { hoja: 'Sheet1', celdas }), { codigo: 'XLSX_TABLA' });
+  falla([{ ref: 'B1', valor: 'Renamed' }]);
+  falla([{ ref: 'A5', valor: 'x' }]);
+  assert.equal(leerXlsx(editarCeldas(buf, { hoja: 'Sheet1', celdas: [{ ref: 'B2', valor: 'ok' }] })).hojas[0].filas[1][1], 'ok');
+  // headerRowCount="0": row 1 is data, not header
+  const sinCab = conTabla('A1:I4', ' headerRowCount="0"');
+  assert.equal(leerXlsx(editarCeldas(sinCab, { hoja: 'Sheet1', celdas: [{ ref: 'B1', valor: 'ok' }] })).hojas[0].filas[0][1], 'ok');
+  // missing sheet rels with tableParts
+  const roto = reemplazarEntradas(conHoja(trackerFixture(), (x) => x.replace('</worksheet>', '<tableParts count="1"><tablePart r:id="rId1"/></tableParts></worksheet>')), new Map());
+  assert.throws(() => editarCeldas(roto, { hoja: 'Sheet1', celdas: [{ ref: 'B2', valor: 'x' }] }), { codigo: 'XLSX_ESTRUCTURA' });
+});
+
+test('cells and rows without r are positioned by order', () => {
+  const buf = conHoja(trackerFixture(), () => '<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:C2"/><sheetData><row><c t="inlineStr"><is><t>a</t></is></c><c t="inlineStr"><is><t>b</t></is></c><c t="inlineStr"><is><t>c</t></is></c></row><row><c t="inlineStr"><is><t>d</t></is></c><c r="C2" t="inlineStr"><is><t>f</t></is></c></row></sheetData></worksheet>');
+  const out = editarCeldas(buf, { hoja: 'Sheet1', celdas: [{ ref: 'B1', valor: 'B' }, { ref: 'B2', valor: 'e' }, { ref: 'D1', valor: 'z' }] });
+  const f = leerXlsx(out).hojas[0].filas;
+  assert.deepEqual(f[0], ['a', 'B', 'c', 'z']);
+  assert.deepEqual(f[1], ['d', 'e', 'f']);
+  assert.match(xmlHoja(out), /<dimension ref="A1:D2"\/>/);
+});
+
+test('extLst inside a row is preserved and cells are inserted before it', () => {
+  const buf = conHoja(trackerFixture(), (x) => x.replace(/(<row r="2"[^>]*>[\s\S]*?)<c r="I2" s="0"\/><\/row>/, '$1<extLst><ext uri="{x}"/></extLst></row>'));
+  const out = xmlHoja(editarCeldas(buf, { hoja: 'Sheet1', celdas: [{ ref: 'I2', valor: 'v' }, { ref: 'J2', valor: 'w' }] }));
+  assert.match(out, /<c r="J2" t="inlineStr"><is><t xml:space="preserve">w<\/t><\/is><\/c><extLst><ext uri="\{x\}"\/><\/extLst><\/row>/);
+});
+
+test('prefixed sheet elements are refused', () => {
+  const buf = conHoja(trackerFixture(), () => '<?xml version="1.0"?><x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:sheetData><x:row r="1"><x:c r="A1" t="inlineStr"><x:is><x:t>a</x:t></x:is></x:c></x:row></x:sheetData></x:worksheet>');
+  assert.throws(() => editarCeldas(buf, { hoja: 'Sheet1', celdas: [{ ref: 'A1', valor: 'b' }] }), { codigo: 'XLSX_ESTRUCTURA' });
 });
