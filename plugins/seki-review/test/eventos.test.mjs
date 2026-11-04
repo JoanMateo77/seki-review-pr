@@ -90,7 +90,29 @@ test('leerEventos skips a truncated last line, warns once, and registrarEventos 
 test('leerEventos filters by desde and returns [] without a file', async () => {
   await conProyecto(async (p) => {
     assert.deepEqual(leerEventos(p), []);
-    await registrarEventos(p, eventosDe(foto()));
-    assert.equal(leerEventos(p, { desde: '2026-11-02T12:00:00Z' }).length, 1);
+    await registrarEventos(p, eventosDe(foto()), { ahora: new Date('2026-11-02T11:00:00Z') });
+    assert.equal(leerEventos(p, { desde: '2026-11-02T12:00:00Z' }).length, 0);
+    assert.equal(leerEventos(p, { desde: '2026-11-02T10:30:00Z' }).length, 2);
+  });
+});
+
+test('an event with an old ts registered after the visit is listed since that visit, sorted by registration', async () => {
+  await conProyecto(async (p) => {
+    await registrarEventos(p, [{ id: 'nuevo', ts: '2026-11-03T09:00:00Z', tipo: 'pr_mergeada', pr: 'a#1' }], { ahora: new Date('2026-11-03T09:00:01Z') });
+    await registrarEventos(p, [{ id: 'viejo', ts: '2026-10-01T09:00:00Z', tipo: 'pr_mergeada', pr: 'a#2' }], { ahora: new Date('2026-11-04T09:00:00Z') });
+    const desde = leerEventos(p, { desde: '2026-11-03T12:00:00Z' });
+    assert.deepEqual(desde.map((e) => e.id), ['viejo']);
+    assert.equal(desde[0].registrado, '2026-11-04T09:00:00.000Z');
+    assert.deepEqual(leerEventos(p, { desde: '2026-11-03T08:00:00Z' }).map((e) => e.id), ['nuevo', 'viejo']);
+  });
+});
+
+test('registrado does not enter the id: registering the same events again adds nothing', async () => {
+  await conProyecto(async (p) => {
+    const a = await registrarEventos(p, eventosDe(foto()), { ahora: new Date('2026-11-03T00:00:00Z') });
+    const b = await registrarEventos(p, eventosDe(foto()), { ahora: new Date('2026-11-04T00:00:00Z') });
+    assert.equal(a.nuevos, 2);
+    assert.equal(b.nuevos, 0);
+    assert.ok(leerEventos(p).every((e) => e.registrado === '2026-11-03T00:00:00.000Z'));
   });
 });

@@ -9,6 +9,8 @@ const contexto = new AsyncLocalStorage();
 const reentrada = (ruta) => new Error(`Lock already held by this process: ${basename(ruta)}`);
 
 const OBSOLETO_MS = 30_000;
+// Locks are held for milliseconds; past this age the owner pid may have been reused by another process.
+const ABANDONADO_MS = 10 * 60_000;
 const REINTENTO_MS = 50;
 
 function procesoVivo(pid) {
@@ -21,14 +23,16 @@ function procesoVivo(pid) {
   }
 }
 
-// A lock is stale when it is older than 30 s and its owner is gone; an unreadable lock is judged by its mtime.
+// A lock is stale when it is older than 30 s and its owner is gone, or older than 10 min whatever the owner;
+// an unreadable lock is judged by its mtime.
 function esObsoleto(rutaLock, contenido) {
   let datos = null;
   try {
     datos = JSON.parse(contenido);
   } catch { /* corrupt */ }
   if (datos && Number.isFinite(datos.ts)) {
-    return Date.now() - datos.ts > OBSOLETO_MS && !procesoVivo(datos.pid);
+    const edad = Date.now() - datos.ts;
+    return edad > ABANDONADO_MS || (edad > OBSOLETO_MS && !procesoVivo(datos.pid));
   }
   try {
     return Date.now() - statSync(rutaLock).mtimeMs > OBSOLETO_MS;

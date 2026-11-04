@@ -43,25 +43,33 @@ function analizar(texto, ruta, avisar = true) {
   return eventos;
 }
 
+// `desde` compares against the time an event was stored, not its GitHub time: a merge made before the
+// last visit but first seen after it is still news. Events stored before `registrado` existed fall back to ts.
+const vistoEn = (e) => e.registrado ?? e.ts;
 export function leerEventos(p, { desde } = {}) {
   const ruta = rutaEventos(p.salida);
   if (!existsSync(ruta)) return [];
   const eventos = analizar(readFileSync(ruta, 'utf8'), ruta);
-  return eventos.filter((e) => !desde || e.ts > desde).sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : a.id < b.id ? -1 : 1));
+  if (!desde) return eventos.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : a.id < b.id ? -1 : 1));
+  return eventos
+    .filter((e) => vistoEn(e) > desde)
+    .sort((a, b) => (vistoEn(a) < vistoEn(b) ? -1 : vistoEn(a) > vistoEn(b) ? 1 : a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : a.id < b.id ? -1 : 1));
 }
 
-// Reads the ids already stored and appends only the new ones, all under one lock.
-export async function registrarEventos(p, eventos) {
+// Reads the ids already stored and appends only the new ones, all under one lock. Each stored event gets
+// `registrado` (append time); the id does not include it, so registering the same data twice stays a no-op.
+export async function registrarEventos(p, eventos, { ahora } = {}) {
   const ruta = rutaEventos(p.salida);
   return conBloqueo(ruta, () => {
     const existe = existsSync(ruta);
     const previos = existe ? analizar(readFileSync(ruta, 'utf8'), ruta, false) : [];
     const conocidos = new Set(previos.map((e) => e.id));
     const nuevos = [];
+    const registrado = (ahora ?? new Date()).toISOString();
     for (const e of eventos) {
       if (conocidos.has(e.id)) continue;
       conocidos.add(e.id);
-      nuevos.push(e);
+      nuevos.push({ ...e, registrado });
     }
     const ordenar = (l) => l.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : a.id < b.id ? -1 : 1));
     if (!nuevos.length) return { nuevos: 0, todos: ordenar(previos) };

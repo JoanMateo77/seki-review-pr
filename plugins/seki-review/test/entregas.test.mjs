@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { agrupar, claveRama, idsDe, relacionadasDe } from '../mcp/lib/entregas.mjs';
+import { agrupar, claveRama, idsDe, relacionadasDe, tituloLimpio } from '../mcp/lib/entregas.mjs';
 
 const pr = (repo, numero, extra = {}) => ({ id: `${repo}#${numero}`, repo, numero, titulo: `t${numero}`, rama: `x${numero}`, portal: 'p', ambiente: 'prod', descripcion: '', ...extra });
 const cfg = { sufijosRama: ['-pruebas', '-admin'], patronId: null, bases: [] };
@@ -172,4 +172,47 @@ test('a capped branch key still yields unique delivery keys', () => {
   assert.equal(r.length, 13);
   assert.equal(new Set(r.map((e) => e.clave)).size, 13);
   assert.ok(r.some((e) => e.clave === 'comun'));
+});
+
+test('a catastrophic patronId is disabled for the run with one warning', () => {
+  const ps = [pr('a', 1, { rama: 'feat/uno', descripcion: 'a'.repeat(4096) }), pr('b', 2, { rama: 'feat/uno', descripcion: 'a'.repeat(4096) }), pr('c', 3)];
+  const avisos = [];
+  const orig = console.error;
+  console.error = (m) => avisos.push(m);
+  let r;
+  try {
+    const t0 = performance.now();
+    r = agrupar(ps, { ...cfg, patronId: '(a|aa)+b' }, sin);
+    assert.ok(performance.now() - t0 < 200);
+  } finally {
+    console.error = orig;
+  }
+  assert.equal(avisos.length, 1);
+  assert.match(avisos[0], /^\[seki-review\/entregas\] entregas\.patronId disabled/);
+  assert.equal(r.length, 2);
+  assert.ok(r.every((e) => e.ids.length === 0));
+});
+
+test('tituloLimpio strips a conventional prefix and environment markers from the configured suffixes', () => {
+  const suf = ['-pruebas', '-testing'];
+  assert.equal(tituloLimpio('feat(api)!: Add export (pruebas)', suf), 'Add export');
+  assert.equal(tituloLimpio('fix: Login [Testing]', suf), 'Login');
+  assert.equal(tituloLimpio('Report totals - pruebas', suf), 'Report totals');
+  assert.equal(tituloLimpio('Report totals \u2013 Testing', suf), 'Report totals');
+  assert.equal(tituloLimpio('Staging area cleanup (staging)', suf), 'Staging area cleanup (staging)');
+  assert.equal(tituloLimpio('Pruebas unitarias del lote', suf), 'Pruebas unitarias del lote');
+  assert.equal(tituloLimpio('chore: (pruebas)', suf), 'chore: (pruebas)');
+  assert.equal(tituloLimpio('a.b (x.y)', ['-x.y']), 'a.b');
+});
+
+test('the delivery title prefers the testing PR, cleaned; without one, the lowest-numbered PR', () => {
+  const c = { ...cfg, sufijosRama: ['-pruebas'] };
+  const r = agrupar([
+    pr('a', 2, { rama: 'feat/caja', titulo: 'feat: Cash box', ambiente: 'prod' }),
+    pr('a', 7, { rama: 'feat/caja-pruebas', titulo: 'feat: Cash box closing (pruebas)', ambiente: 'pruebas' }),
+    pr('b', 9, { rama: 'feat/caja-pruebas', titulo: 'Cash box API - pruebas', ambiente: 'pruebas' }),
+  ], c, sin);
+  assert.equal(r[0].titulo, 'Cash box closing');
+  const s = agrupar([pr('a', 5, { rama: 'feat/otra', titulo: 'fix(ui): Other' }), pr('b', 3, { rama: 'feat/otra', titulo: 'Late' })], c, sin);
+  assert.equal(s[0].titulo, 'Late');
 });

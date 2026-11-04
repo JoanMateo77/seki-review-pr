@@ -129,6 +129,17 @@ test('old lock of a live pid is not taken over', () => conTemp(async (dir) => {
   assert.equal(existsSync(`${ruta}.lock`), true);
 }));
 
+test('a lock older than 10 min is taken over even when its pid is alive (pid reuse)', () => conTemp(async (dir) => {
+  const ruta = join(dir, 'g.json');
+  writeFileSync(`${ruta}.lock`, JSON.stringify({ pid: process.pid, ts: Date.now() - 11 * 60_000 }));
+  assert.equal(await conBloqueo(ruta, () => 'a'), 'a');
+  writeFileSync(`${ruta}.lock`, JSON.stringify({ pid: process.pid, ts: Date.now() - 9 * 60_000 }));
+  assert.throws(() => conBloqueoSync(ruta, () => 1, { esperaMs: 100 }), /Lock busy: g\.json/);
+  writeFileSync(`${ruta}.lock`, JSON.stringify({ pid: process.pid, ts: Date.now() - 11 * 60_000 }));
+  assert.equal(conBloqueoSync(ruta, () => 's'), 's');
+  assert.deepEqual(readdirSync(dir), []);
+}));
+
 test('fresh lock of the live test pid is not taken over', () => conTemp(async (dir) => {
   const ruta = join(dir, 'f.json');
   writeFileSync(`${ruta}.lock`, JSON.stringify({ pid: process.pid, ts: Date.now() }));

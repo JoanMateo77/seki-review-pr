@@ -10,6 +10,7 @@ import { leerEventos, registrarEventos } from '../mcp/lib/eventos.mjs';
 import { derivarEntregas } from '../mcp/lib/recolectar.mjs';
 import { iniciarServidor } from '../mcp/lib/servidor-web.mjs';
 import { construirHtml } from '../mcp/lib/tablero.mjs';
+import { compactarAjustes } from '../mcp/lib/tablero-entregas.mjs';
 import herramienta from '../mcp/tools/entregas.mjs';
 import { falsoGhRutas } from './util/gh-rutas.mjs';
 
@@ -82,9 +83,16 @@ test('GET /api/entregas returns the deliveries with next action and no banner be
 test('desdeVisita lists only the events after visita.json, and POST /api/visita moves the mark', async (t) => {
   const e = await entorno();
   t.after(e.cerrar);
-  escribirJson(rutaVisita(e.p.salida), { ts: hace(1.5) });
+  const visita = new Date();
+  escribirJson(rutaVisita(e.p.salida), { ts: visita.toISOString() });
+  assert.deepEqual((await (await e.llamar('/api/entregas')).json()).desdeVisita, []);
+  // Merged on GitHub before the visit, first seen by a refresh after it.
+  const visto = new Date(visita.getTime() + 1);
+  await registrarEventos(e.p, [{ id: 'tarde', ts: hace(2), tipo: 'pr_mergeada', pr: 'back#1', ambiente: 'prod', origen: 'github' }], { ahora: visto });
+  // The next mark must fall after the registration (ISO times have millisecond resolution).
+  while (Date.now() <= visto.getTime());
   const d = await (await e.llamar('/api/entregas')).json();
-  assert.deepEqual(d.desdeVisita.map((x) => x.pr), ['back#1']);
+  assert.deepEqual(d.desdeVisita.map((x) => x.id), ['tarde']);
   const r = await e.llamar('/api/visita', { cuerpo: {} });
   assert.equal(r.status, 200);
   assert.ok(leerJson(rutaVisita(e.p.salida)).ts > hace(0.01));
@@ -164,14 +172,15 @@ test('bodies that are not JSON are 415, oversized ones 413, unknown tipo and mal
 
 test('the entregas tool summarizes by stage with next actions and events since the last visit, without moving the mark', async () => {
   const { p, clave } = await entorno({ servir: false });
-  const marca = hace(1.5);
+  const marca = new Date().toISOString();
   escribirJson(rutaVisita(p.salida), { ts: marca });
+  await registrarEventos(p, [{ id: 'tarde', ts: hace(1), tipo: 'pr_mergeada', pr: 'back#1', ambiente: 'prod', origen: 'github' }], { ahora: new Date(Date.now() + 1000) });
   const texto = await herramienta.handler({ proyecto: clave, desde: 'ultima-visita' });
   assert.match(texto, /## Since the last visit .*: 1 events/);
   assert.match(texto, /Merged: back#1 Change 1 into production/);
   assert.match(texto, /## To merge in testing \(1\)\n- Change 3: front#3, front#4\. Next: Merge testing PR front#3\./);
   assert.match(texto, /## Ready for production \(1\)\n- Change 5: back#5\. Next: Merge production PR back#5\./);
-  assert.match(texto, /## In production \(1\)\n- Change 1: back#1, back#2\. Next: Verify in production and close the delivery\./);
+  assert.match(texto, /## In production \(1\)\n- Change 2: back#1, back#2\. Next: Verify in production and close the delivery\./);
   assert.equal(leerJson(rutaVisita(p.salida)).ts, marca);
   assert.doesNotMatch(await herramienta.handler({ proyecto: clave }), /Since the last visit/);
 });
@@ -232,10 +241,10 @@ test('two concurrent adjustments (unir and titulo) both persist', async (t) => {
 test('desdeVisita keeps the newest 200 events and totalDesdeVisita counts them all', async (t) => {
   const e = await entorno();
   t.after(e.cerrar);
-  const marca = hace(1.5);
-  escribirJson(rutaVisita(e.p.salida), { ts: marca });
+  escribirJson(rutaVisita(e.p.salida), { ts: new Date().toISOString() });
   const base = Date.now() - 3600000;
-  await registrarEventos(e.p, Array.from({ length: 250 }, (_, i) => ({ id: `x${i}`, ts: new Date(base + i * 1000).toISOString(), tipo: 'pr_cerrada', pr: 'back#5', origen: 'prueba' })));
+  await registrarEventos(e.p, [{ id: 'primero', ts: hace(1), tipo: 'pr_cerrada', pr: 'back#5', origen: 'prueba' }], { ahora: new Date(Date.now() + 1000) });
+  await registrarEventos(e.p, Array.from({ length: 250 }, (_, i) => ({ id: `x${i}`, ts: new Date(base + i * 1000).toISOString(), tipo: 'pr_cerrada', pr: 'back#5', origen: 'prueba' })), { ahora: new Date(Date.now() + 2000) });
   const d = await (await e.llamar('/api/entregas')).json();
   assert.equal(d.totalDesdeVisita, 251);
   assert.equal(d.desdeVisita.length, 200);
@@ -285,4 +294,26 @@ test('a refresh that was already running does not undo a join made meanwhile', a
   await terminar();
   const final = leerJson(join(salida, 'datos', 'entregas.json'));
   assert.deepEqual(final.entregas.map((x) => [...x.prs].sort()), [['a#1', 'a#2']]);
+});
+
+test('compactarAjustes merges overlapping joins and drops unknown PRs and titles', () => {
+  const foto = { prs: ['a#1', 'a#2', 'b#3', 'b#4', 'c#5'].map((id) => ({ id })), recientes: [{ id: 'c#6' }] };
+  const r = compactarAjustes({
+    unir: [['a#1', 'a#2'], ['b#3', 'b#4'], ['a#2', 'b#3', 'zz#9'], ['c#5', 'viejo#1'], ['c#6', 'c#5']],
+    separar: ['a#1', 'viejo#2', 'a#1'],
+    titulo: { actual: 'Kept', ida: 'Dropped' },
+  }, foto, [{ clave: 'actual', prs: [] }]);
+  assert.deepEqual(r.unir, [['a#1', 'a#2', 'b#3', 'b#4'], ['c#5', 'c#6']]);
+  assert.deepEqual(r.separar, ['a#1']);
+  assert.deepEqual(r.titulo, { actual: 'Kept' });
+});
+
+test('repeated overlapping joins through the API keep ajustes.json bounded', async (t) => {
+  const e = await entorno();
+  t.after(e.cerrar);
+  escribirJson(rutaAjustes(e.p.salida), { unir: [['back#5', 'gone#1']], separar: ['gone#2'], titulo: { 'no-longer-exists': 'x' } });
+  for (const prs of [['back#5', 'front#3'], ['front#3', 'front#4'], ['back#5', 'front#4']]) {
+    assert.equal((await e.llamar('/api/entregas/ajuste', { cuerpo: { tipo: 'unir', prs } })).status, 200);
+  }
+  assert.deepEqual(leerJson(rutaAjustes(e.p.salida)), { unir: [['back#5', 'front#3', 'front#4']], separar: [], titulo: {} });
 });

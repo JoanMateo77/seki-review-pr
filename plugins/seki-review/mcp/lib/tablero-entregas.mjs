@@ -125,6 +125,27 @@ function aplicarEnAjustes(previos, ajuste) {
   return { ...a, unir, separar, titulo };
 }
 
+// Keeps ajustes.json bounded: overlapping joins become one group, PRs gone from the snapshot and titles of
+// deliveries that no longer exist are dropped.
+export function compactarAjustes(ajustes, foto, entregas) {
+  const conocidos = mapaPrs(foto);
+  const claves = new Set(entregas.map((e) => e.clave));
+  const grupos = [];
+  for (const g of ajustes.unir ?? []) {
+    let actual = new Set((g ?? []).filter((id) => conocidos.has(id)));
+    for (let i = grupos.length - 1; i >= 0; i--) {
+      if ([...grupos[i]].some((id) => actual.has(id))) actual = new Set([...actual, ...grupos.splice(i, 1)[0]]);
+    }
+    grupos.push(actual);
+  }
+  return {
+    ...ajustes,
+    unir: grupos.filter((g) => g.size >= 2).map((g) => [...g].sort()),
+    separar: [...new Set(ajustes.separar ?? [])].filter((id) => conocidos.has(id)),
+    titulo: Object.fromEntries(Object.entries(ajustes.titulo ?? {}).filter(([k]) => claves.has(k))),
+  };
+}
+
 const fotoActual = (p) => {
   const foto = leerJson(rutaInstantanea(p.salida));
   if (!foto) throw fallo(503, 'No PR data yet: refresh the state first.');
@@ -136,7 +157,7 @@ export const aplicarAjuste = (p, cuerpo, ahora = () => new Date()) => enSerieEnt
   const foto = fotoActual(p);
   const entregas = entregasActuales(p);
   const ajuste = validarAjuste(cuerpo, foto, entregas);
-  escribirJson(rutaAjustes(p.salida), aplicarEnAjustes(leerJson(rutaAjustes(p.salida)), ajuste));
+  escribirJson(rutaAjustes(p.salida), compactarAjustes(aplicarEnAjustes(leerJson(rutaAjustes(p.salida)), ajuste), foto, entregas));
   const ts = ahora().toISOString();
   const prs = ajuste.tipo === 'unir' ? ajuste.prs : ajuste.tipo === 'separar' ? [ajuste.pr] : entregas.find((e) => e.clave === ajuste.clave).prs;
   const entrega = ajuste.tipo === 'titulo' ? ajuste.clave : entregas.find((e) => e.prs.includes(prs[0]))?.clave ?? null;

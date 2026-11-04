@@ -1,4 +1,4 @@
-import { compilarPatron, coincidencias } from './patrones.mjs';
+import { AGOTADO, compilarPatron, coincidencias } from './patrones.mjs';
 import { parecido, tokensTitulo } from './gemelas.mjs';
 
 const UMBRAL_TITULO = 0.6;
@@ -26,12 +26,15 @@ export function claveRama(rama, sufijos, { bases = [] } = {}) {
 
 const textoDe = (pr) => pr.descripcion ?? pr.body ?? '';
 
+// AGOTADO when the pattern exceeded its time limit on one of the fields.
 export function idsDe(pr, re) {
   if (!re) return [];
   const todos = new Set();
   for (const campo of [pr.titulo, pr.rama, textoDe(pr)]) {
     if (typeof campo !== 'string') continue;
-    for (const m of coincidencias(re, campo)) todos.add(m.toUpperCase());
+    const ms = coincidencias(re, campo);
+    if (ms === AGOTADO) return AGOTADO;
+    for (const m of ms) todos.add(m.toUpperCase());
   }
   return [...todos].sort();
 }
@@ -65,11 +68,27 @@ function patronDe(patronId) {
   }
 }
 
+const escapar = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// Delivery title from a PR title: no conventional type prefix ("fix(x)!: ") and no environment marker built
+// from the configured branch suffixes ("(testing)", "[Testing]", "- testing").
+export function tituloLimpio(titulo, sufijos = []) {
+  const original = String(titulo ?? '');
+  let t = original.replace(/^\w+(\([^)]*\))?!?:\s*/, '');
+  const palabras = [...new Set((sufijos ?? []).map((x) => String(x).replace(/^[-_.\s]+/, '').trim().toLowerCase()).filter(Boolean))];
+  if (palabras.length) {
+    const alt = palabras.map(escapar).join('|');
+    t = t.replace(new RegExp(`\\s*[([]\\s*(?:${alt})\\s*[)\\]]`, 'gi'), '').replace(new RegExp(`\\s+[-\u2013\u2014]\\s*(?:${alt})\\s*$`, 'i'), '');
+  }
+  t = t.trim();
+  return t || original.trim();
+}
+
 export function agrupar(prs, cfg = {}, ajustes = {}) {
   const unirAj = ajustes?.unir ?? [];
   const separar = new Set(ajustes?.separar ?? []);
   const titulos = ajustes?.titulo ?? {};
-  const re = patronDe(cfg.patronId);
+  let re = patronDe(cfg.patronId);
   const todos = [...prs].sort((a, b) => cmpIds(a.id, b.id));
   const porTodos = new Map(todos.map((p) => [p.id, p]));
   // Separated PRs are taken out before any signal is indexed and come back as singletons at the end.
@@ -110,7 +129,18 @@ export function agrupar(prs, cfg = {}, ajustes = {}) {
   };
 
   const clavesRama = new Map(todos.map((p) => [p.id, claveRama(p.rama, cfg.sufijosRama, { bases: cfg.bases })]));
-  const idsPr = new Map(todos.map((p) => [p.id, idsDe(p, re)]));
+  const idsPr = new Map();
+  for (const p of todos) {
+    const ids = re ? idsDe(p, re) : [];
+    if (ids !== AGOTADO) {
+      idsPr.set(p.id, ids);
+      continue;
+    }
+    console.error('[seki-review/entregas] entregas.patronId disabled for this run: pattern exceeded its time limit');
+    re = null;
+    for (const q of todos) idsPr.set(q.id, []);
+    break;
+  }
   indice('rama', (p) => [clavesRama.get(p.id)]);
   indice('id', (p) => idsPr.get(p.id));
   if (omitidas.length) console.error(`[seki-review/entregas] values shared by more than ${maxPorSenal} PRs not used as join signals: ${omitidas.slice(0, 5).join(', ')}${omitidas.length > 5 ? ', ...' : ''}`);
@@ -207,10 +237,16 @@ export function agrupar(prs, cfg = {}, ajustes = {}) {
     for (const x of xs.slice(1)) x.clave = `${x.clave}~${x.miembros[0]}`;
   }
 
+  // Spec: the testing PR's title (lowest-numbered when several), else the lowest-numbered PR's.
+  const tituloDe = (miembros) => {
+    const orden = [...miembros].sort((a, b) => numeroDe(a) - numeroDe(b) || cmpIds(a, b)).map((id) => porTodos.get(id));
+    const elegido = orden.find((pr) => pr.ambiente === 'pruebas' && typeof pr.titulo === 'string') ?? orden[0];
+    return tituloLimpio(elegido.titulo, cfg.sufijosRama);
+  };
   return entregas
     .map((x) => ({
       clave: x.clave,
-      titulo: titulos[x.clave] ?? porTodos.get([...x.miembros].sort((a, b) => numeroDe(a) - numeroDe(b) || cmpIds(a, b))[0]).titulo,
+      titulo: titulos[x.clave] ?? tituloDe(x.miembros),
       ids: x.ids,
       prs: x.miembros,
       señales: ORDEN_SENALES.filter((s) => senales.get(x.e)?.has(s)),

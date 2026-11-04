@@ -1,3 +1,69 @@
+async function api(ruta, cuerpo, cabeceras = {}) {
+  const r = await fetch(ruta, {
+    method: cuerpo === undefined ? 'GET' : 'POST',
+    headers: { 'X-Seki-Token': API.token, 'Content-Type': 'application/json', ...cabeceras },
+    body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo),
+  });
+  if (r.status === 404 && servidorDesfasado()) throw new Error('The dashboard server is from an older version and doesn’t have this feature: restart Claude Code.');
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`);
+  return r.json();
+}
+
+// One poll at a time and a single timer: a call made during a poll runs once more right after it.
+let sondeo = null;
+let sondeando = false;
+let otraVez = false;
+async function sondear() {
+  if (sondeando) { otraVez = true; return; }
+  sondeando = true;
+  clearTimeout(sondeo);
+  let espera;
+  try {
+    const previo = new Map([...estado.trabajos].map(([k, t]) => [k, t.estado]));
+    const eraRefresco = estado.refrescando;
+    const fechaPrevia = estado.ultimoRefresco?.fecha;
+    const e = await api('/api/estado', undefined, document.visibilityState === 'visible' ? { 'X-Seki-Tablero': '1' } : {});
+    estado.trabajos = new Map(e.trabajos.map((t) => [t.id, t]));
+    estado.refrescando = e.refrescando;
+    estado.ultimoRefresco = e.ultimoRefresco;
+    estado.vigia = e.vigia ?? null;
+    if (e.costoHoy?.trabajos !== estado.costoHoy?.trabajos) api('/api/costos').then((r) => { estado.resumenCostos = r; pintarBarra(); }).catch(() => {});
+    estado.costoHoy = e.costoHoy;
+    const marcas = e.comentarios ?? {};
+    for (const [id, marca] of Object.entries(marcas)) {
+      const pr = FOTO.prs.find((x) => x.id === id);
+      if (pr && estado.marcasComentarios[id] !== marca && estado.comentariosCargados.has(id)) sincronizarComentarios(pr);
+    }
+    estado.marcasComentarios = marcas;
+    estado.avances = e.avances ?? {};
+    estado.versionServidor = e.version ?? 'an older version';
+    const termino = e.trabajos.some((t) => t.estado === 'terminado' && previo.get(t.id) !== 'terminado') || (eraRefresco && !e.refrescando) || (fechaPrevia && e.ultimoRefresco?.ok && e.ultimoRefresco.fecha !== fechaPrevia);
+    if (termino) { FOTO = await api('/api/foto'); recargarEntregas(); }
+    // If the user is typing in the detail, do not repaint: they would lose focus and half-written text.
+    pintarTodo({ detalle: !$('detalle').contains(document.activeElement) });
+    const activo = e.refrescando || e.trabajos.some((t) => t.estado === 'en_cola' || t.estado === 'en_curso');
+    // While idle it keeps asking once a minute: that tells the server the dashboard is open (merge watcher).
+    espera = activo ? 3000 : 60000;
+  } catch (err) {
+    // If the session serving the dashboard closed, another open session takes it over on the same link: it retries on its own.
+    estado.ultimoRefresco = { ok: false, sinConexion: true, mensaje: `No connection to the local server (${err.message}). Retrying every 5 seconds; if no other Claude Code session is open, open it with /seki-review:review-prs.` };
+    pintarBarra();
+    espera = 5000;
+  }
+  sondeando = false;
+  clearTimeout(sondeo);
+  sondeo = setTimeout(sondear, otraVez ? 0 : espera);
+  otraVez = false;
+}
+
+// A hidden tab stops marking the dashboard as open; coming back to it polls at once.
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && API) sondear(); });
+
+async function accionApi(ruta, cuerpo) {
+  try { await api(ruta, cuerpo); } catch (err) { avisar(err.message); }
+  sondear();
+}
+
 function copiar(boton, texto) {
   const original = boton.innerHTML;
   const fin = (t) => { boton.textContent = t; setTimeout(() => { boton.innerHTML = original; }, 1400); };
