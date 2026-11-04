@@ -1,23 +1,22 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { escribirJson, leerJson, rutaAjustes, rutaInstantanea, rutaVisita } from '../mcp/lib/cache.mjs';
+import { conBloqueo } from '../mcp/lib/bloqueo.mjs';
+import { escribirJson, leerJson, rutaAjustes, rutaGuias, rutaInstantanea, rutaVisita } from '../mcp/lib/cache.mjs';
 import { proyecto as cargarProyecto } from '../mcp/lib/config.mjs';
 import { leerEventos, registrarEventos } from '../mcp/lib/eventos.mjs';
 import { derivarEntregas } from '../mcp/lib/recolectar.mjs';
 import { detenerServidores, iniciarServidor } from '../mcp/lib/servidor-web.mjs';
 import { construirHtml } from '../mcp/lib/tablero.mjs';
 import { compactarAjustes } from '../mcp/lib/tablero-entregas.mjs';
-import herramienta from '../mcp/tools/entregas.mjs';
-import { readFileSync, symlinkSync } from 'node:fs';
 import { escribirXlsx } from '../mcp/lib/xlsx.mjs';
-import { conBloqueo } from '../mcp/lib/bloqueo.mjs';
-import { rutaGuias } from '../mcp/lib/cache.mjs';
 import { editarCeldas } from '../mcp/lib/xlsx-editar.mjs';
+import herramienta from '../mcp/tools/entregas.mjs';
 import { chromeFalso, limpiarChrome } from './util/chrome.mjs';
+import { falsoClaude } from './util/claude.mjs';
 import { falsoGhRutas, limpiarGhRutas } from './util/gh-rutas.mjs';
 
 after(limpiarGhRutas);
@@ -352,7 +351,9 @@ const FOTO_QA = () => ({
 });
 const entornoQa = (extra = {}) => entorno({ foto: FOTO_QA(), config: { entregas: { patronId: 'X-\\d+' }, ...extra } });
 const esperarJob = async (e, id) => {
+  const limite = Date.now() + 10_000;
   for (;;) {
+    if (Date.now() > limite) throw new Error(`Guide job ${id} did not finish in 10 s`);
     const r = await (await e.llamar(`/api/qa/guia?trabajo=${encodeURIComponent(id)}`)).json();
     if (['terminado', 'error', 'cancelado'].includes(r.estado)) return r;
     await new Promise((ok) => setTimeout(ok, 20));
@@ -380,7 +381,9 @@ test('QA endpoints: 401 without token, 403 with a wrong one, 415 non-JSON, 413 o
   for (const ruta of ['/api/qa/guia', '/api/qa/rastreador']) {
     assert.equal((await e.llamar(ruta, { metodo: 'POST', crudo: JSON.stringify({ x: 'a'.repeat(17 * 1024) }) })).status, 413, ruta);
   }
-  assert.equal((await e.llamar('/api/qa/importar', { metodo: 'POST', crudo: JSON.stringify({ nombre: 'a.xlsx', contenido: 'A'.repeat(7 * 1024 * 1024 + 8) }) })).status, 413);
+  // The server may close the socket before the 7 MB body is sent: both outcomes are a refusal.
+  const enorme = await e.llamar('/api/qa/importar', { metodo: 'POST', crudo: JSON.stringify({ nombre: 'a.xlsx', contenido: 'A'.repeat(7 * 1024 * 1024 + 8) }) }).then((r) => r.status, (err) => err.cause?.code ?? err.message);
+  assert.ok(enorme === 413 || /ECONNRESET|EPIPE|fetch failed/.test(String(enorme)), String(enorme));
 });
 
 test('/api/qa/archivo accepts only guide names, refuses links and serves a real guide as an attachment', async (t) => {
@@ -403,6 +406,7 @@ test('/api/qa/archivo accepts only guide names, refuses links and serves a real 
     assert.equal(r.headers.get('content-type'), tipos[ext]);
     assert.equal(r.headers.get('content-disposition'), `attachment; filename="${nombre}"`);
     assert.equal(r.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(r.headers.get('content-security-policy'), 'sandbox');
     assert.deepEqual(Buffer.from(await r.arrayBuffer()), readFileSync(join(e.p.salida, 'qa', nombre)));
   }
   assert.ok(id);
@@ -482,6 +486,77 @@ test('rastreador endpoint without configuration reports nothing and refuses to w
   assert.deepEqual(await (await e.llamar('/api/qa/rastreador')).json(), { configurado: false, pendientes: 0, muestra: [] });
   const r = await (await e.llamar('/api/qa/rastreador', { cuerpo: {} })).json();
   assert.equal(r.escrito, false);
+  assert.equal((await e.llamar('/api/qa/rastreador', { cuerpo: { ruta: '/etc/passwd' } })).status, 400);
+});
+
+test('two guide requests while one runs share one job; import and tracker stay available meanwhile', async (t) => {
+  const e = await entornoQa({ qa: { chrome: join(temporal('seki-sin-chrome-'), 'no-existe') } });
+  t.after(e.cerrar);
+  let soltar;
+  const retenido = new Promise((ok) => { soltar = ok; });
+  let tomado;
+  const adquirido = new Promise((ok) => { tomado = ok; });
+  const bloqueo = conBloqueo(`${rutaGuias(e.p.salida)}.gen`, () => { tomado(); return retenido; });
+  await adquirido;
+  const a = await (await e.llamar('/api/qa/guia', { cuerpo: {} })).json();
+  const b = await (await e.llamar('/api/qa/guia', { cuerpo: { desde: 'ultimo-corte' } })).json();
+  assert.equal(a.trabajo, b.trabajo);
+  const estado = await (await e.llamar('/api/estado')).json();
+  assert.equal(estado.trabajos.filter((x) => x.tipo === 'qa_guia').length, 1);
+  assert.equal('resultado' in estado.trabajos.find((x) => x.id === a.trabajo), false);
+  assert.equal((await e.llamar('/api/qa/rastreador')).status, 200);
+  assert.equal((await e.llamar('/api/qa/importar', { cuerpo: { nombre: 'a.xlsx', contenido: Buffer.from('x').toString('base64') } })).status, 400);
+  soltar();
+  await bloqueo;
+  assert.equal((await esperarJob(e, a.trabajo)).estado, 'terminado');
+  // Once finished, a new request starts a new job.
+  const c = await (await e.llamar('/api/qa/guia', { cuerpo: {} })).json();
+  assert.notEqual(c.trabajo, a.trabajo);
+  await esperarJob(e, c.trabajo);
+});
+
+test('explicarFaltantes queues one explain job per PR without steps, visible in /api/estado', async (t) => {
+  const foto = FOTO_QA();
+  foto.recientes[0].descripcion = '';
+  foto.recientes[0].body = '';
+  const claude = falsoClaude({}, 1);
+  const gh = falsoGhRutas([]);
+  const previos = { SEKI_CLAUDE: process.env.SEKI_CLAUDE, SEKI_GH: process.env.SEKI_GH };
+  process.env.SEKI_CLAUDE = claude;
+  process.env.SEKI_GH = gh.ruta;
+  t.after(() => { for (const [k, v] of Object.entries(previos)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } });
+  const e = await entorno({ foto, config: { entregas: { patronId: 'X-\\d+' }, qa: { chrome: join(temporal('seki-sin-chrome-'), 'no-existe') } } });
+  t.after(e.cerrar);
+  const job = await generar(e, { explicarFaltantes: true });
+  assert.deepEqual(job.resultado.pendientes, ['back#1']);
+  assert.equal(job.resultado.encolados, 1);
+  const estado = await (await e.llamar('/api/estado')).json();
+  const explicar = estado.trabajos.filter((x) => x.tipo === 'explicar');
+  assert.deepEqual(explicar.map((x) => x.prId), ['back#1']);
+  // Without the flag nothing is queued.
+  const sin = await generar(e, {});
+  assert.equal(sin.resultado.encolados, undefined);
+});
+
+test('an untagged internal failure on a QA route is 500 with a fixed message and no paths', async (t) => {
+  const e = await entornoQa();
+  t.after(e.cerrar);
+  writeFileSync(rutaInstantanea(e.p.salida), '{ not json');
+  const r = await e.llamar('/api/qa/rastreador', { cuerpo: {} });
+  assert.equal(r.status, 500);
+  const texto = await r.text();
+  assert.deepEqual(JSON.parse(texto), { error: 'Internal error' });
+  assert.ok(!texto.includes(e.p.salida));
+});
+
+test('GET /api/qa/rastreador never shows the path of an unreadable tracker', async (t) => {
+  const dir = temporal('seki-rastreador-dir-');
+  const e = await entornoQa({ qa: { rastreador: { tipo: 'xlsx', ruta: dir, hoja: 'Sheet1', filaEncabezado: 1, columnaId: 'ID', columnas: { estado: 'Status' }, estados: {}, escribir: true } } });
+  t.after(e.cerrar);
+  const r = await (await e.llamar('/api/qa/rastreador')).json();
+  assert.equal(r.configurado, true);
+  assert.equal(r.pendientes, 0);
+  assert.ok(!JSON.stringify(r).includes(dir));
 });
 
 test('rastreador endpoint reports the pending count with a capped sample and writes the cells', async (t) => {

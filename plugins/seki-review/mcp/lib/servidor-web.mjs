@@ -24,8 +24,8 @@ import { ghJson } from './proceso.mjs';
 import { dirQa, leerJson, rutaEntregas, rutaInstantanea } from './cache.mjs';
 import { crearSondeo, crearVigia, VENTANA_TABLERO_MS } from './vigia.mjs';
 import { aplicarAjuste, cerrarEntrega, datosEntregas, mapaPrs, marcarVisita } from './tablero-entregas.mjs';
-import { generarGuia } from './qa-salida.mjs';
 import { importarQa, MAX_ARCHIVO } from './qa-importar.mjs';
+import { generarGuia } from './qa-salida.mjs';
 import { aplicarRastreador, cambiosPendientes } from './rastreador-xlsx.mjs';
 import { enSerieEntregas } from './recolectar.mjs';
 
@@ -237,9 +237,45 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
   });
 
   const cola = crearCola();
-  // Result of each QA guide job, by job id; the newest few only.
-  const resultadosGuia = new Map();
+  // QA guide jobs run outside the AI queue (they wait for a lock and for Chrome, and spend no AI): one at a time,
+  // a second request while one runs gets the same job. The newest few states stay readable by id.
+  const trabajosGuia = new Map();
+  let guiaActiva = null;
   let secuenciaGuia = 0;
+  const guiaEnCurso = () => [...trabajosGuia.values()].some((t) => t.estado === 'en_curso');
+  const listaGuias = () => [...trabajosGuia.values()].map(({ resultado, ...t }) => t);
+  const iniciarGuia = ({ claves, desde, explicarFaltantes }) => {
+    if (guiaActiva) return guiaActiva.id;
+    const id = `qa_guia:${Date.now()}:${++secuenciaGuia}`;
+    const t = { id, tipo: 'qa_guia', estado: 'en_curso', encolado: new Date().toISOString(), inicio: new Date().toISOString() };
+    trabajosGuia.set(id, t);
+    while (trabajosGuia.size > MAX_RESULTADOS_GUIA) trabajosGuia.delete(trabajosGuia.keys().next().value);
+    const promesa = (async () => {
+      try {
+        const r = await generarGuia(p, { claves, desde });
+        const resultado = {
+          id: r.id,
+          archivos: { xlsx: nombreArchivo(r.archivos.xlsx), html: nombreArchivo(r.archivos.html), pdf: nombreArchivo(r.archivos.pdf) },
+          filas: r.filas, pendientes: r.pendientes, avisoPdf: r.avisoPdf, vacia: r.vacia,
+        };
+        if (explicarFaltantes && r.pendientes.length) {
+          // PRs merged into testing live in `recientes`, not in `prs`.
+          const validas = mapaPrs(leerJson(rutaInstantanea(p.salida)));
+          resultado.encolados = cola.encolar(r.pendientes.filter((x) => validas.has(x)).map((x) => ({ id: x, tipo: 'explicar', prId: x, ejecutar: () => explicarConIa(p, validas.get(x)) })));
+        }
+        Object.assign(t, { estado: 'terminado', resultado });
+      } catch (e) {
+        console.error(`[seki-review/qa] Guide job failed: ${typeof e?.codigo === 'string' ? e.codigo : 'error'}`);
+        // Only tagged errors carry a message that is safe to show.
+        Object.assign(t, { estado: 'error', mensaje: typeof e?.codigo === 'string' && String(e.message).startsWith('[seki-review/') ? e.message.slice(0, 400) : 'The guide could not be generated' });
+      } finally {
+        t.fin = new Date().toISOString();
+        guiaActiva = null;
+      }
+    })();
+    guiaActiva = { id, promesa };
+    return id;
+  };
   recuperarInterrumpidos(p);
   // Whatever a job leaves queued or in progress when it fails or is cancelled becomes sendable again.
   const conRescate = (pr, ids, ejecutar) => ({
@@ -265,6 +301,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
     if (!req.headers['x-seki-token']) return responder(res, 401, { error: 'Missing token' });
     if (req.headers['x-seki-token'] !== token) return responder(res, 403, { error: 'Invalid token' });
 
+    const datosRastreador = () => [leerJson(rutaEntregas(p.salida))?.entregas ?? [], mapaPrs(leerJson(rutaInstantanea(p.salida)))];
     const prDeFoto = (id) => {
       const pr = fotoConExplicaciones(p)?.prs.find((x) => x.id === id);
       if (!pr) throw Object.assign(new Error('PR not in the snapshot'), { codigo: 404 });
@@ -374,42 +411,12 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         return responder(res, 200, marcarVisita(p));
       }
       if (req.method === 'POST' && url.pathname === '/api/qa/guia') {
-        const { claves, desde, explicarFaltantes } = opcionesGuia(await leerJsonEstricto(req));
-        const id = `qa_guia:${Date.now()}:${++secuenciaGuia}`;
-        cola.encolar([{
-          id,
-          tipo: 'qa_guia',
-          ejecutar: async () => {
-            try {
-              const r = await generarGuia(p, { claves, desde });
-              const resultado = {
-                id: r.id,
-                archivos: { xlsx: nombreArchivo(r.archivos.xlsx), html: nombreArchivo(r.archivos.html), pdf: nombreArchivo(r.archivos.pdf) },
-                filas: r.filas, pendientes: r.pendientes, avisoPdf: r.avisoPdf, vacia: r.vacia,
-              };
-              if (explicarFaltantes && r.pendientes.length) {
-                const validas = new Map((fotoConExplicaciones(p)?.prs ?? []).map((x) => [x.id, x]));
-                const items = r.pendientes.filter((x) => validas.has(x)).map((x) => ({ id: x, tipo: 'explicar', prId: x, ejecutar: () => explicarConIa(p, validas.get(x)) }));
-                resultado.encolados = cola.encolar(items);
-              }
-              resultadosGuia.set(id, { resultado });
-              return { ok: true };
-            } catch (e) {
-              console.error(`[seki-review/qa] Guide job failed: ${e?.codigo ?? 'error'}`);
-              resultadosGuia.set(id, { error: String(e?.message ?? 'The guide could not be generated').slice(0, 400) });
-              return { ok: false, motivo: e?.message ?? 'The guide could not be generated' };
-            } finally {
-              while (resultadosGuia.size > MAX_RESULTADOS_GUIA) resultadosGuia.delete(resultadosGuia.keys().next().value);
-            }
-          },
-        }]);
-        return responder(res, 202, { trabajo: id });
+        return responder(res, 202, { trabajo: iniciarGuia(opcionesGuia(await leerJsonEstricto(req))) });
       }
       if (req.method === 'GET' && url.pathname === '/api/qa/guia') {
-        const id = url.searchParams.get('trabajo');
-        const t = cola.lista().find((x) => x.id === id && x.tipo === 'qa_guia');
+        const t = trabajosGuia.get(url.searchParams.get('trabajo'));
         if (!t) return responder(res, 404, { error: 'Unknown job' });
-        return responder(res, 200, { trabajo: id, estado: t.estado, mensaje: t.mensaje ?? null, ...(resultadosGuia.get(id) ?? {}) });
+        return responder(res, 200, { trabajo: t.id, estado: t.estado, mensaje: t.mensaje ?? null, resultado: t.resultado ?? null });
       }
       if (req.method === 'GET' && url.pathname === '/api/qa/archivo') {
         const nombre = url.searchParams.get('nombre');
@@ -426,26 +433,22 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         return res.end(datos);
       }
       if (req.method === 'POST' && url.pathname === '/api/qa/importar') {
-        const buf = decodificarImportacion(await leerJsonEstricto(req, MAX_CUERPO_IMPORTAR));
-        try {
-          return responder(res, 200, await importarQa(p, { buf }));
-        } catch (e) {
-          throw falloHttp(Number.isInteger(e?.codigo) ? e.codigo : 400, e?.message ?? 'The import failed');
-        }
+        return responder(res, 200, await importarQa(p, { buf: decodificarImportacion(await leerJsonEstricto(req, MAX_CUERPO_IMPORTAR)) }));
       }
       if (req.method === 'GET' && url.pathname === '/api/qa/rastreador') {
         const cfg = p.qa?.rastreador;
         if (!cfg) return responder(res, 200, { configurado: false, pendientes: 0, muestra: [] });
         try {
-          const cambios = cambiosPendientes(cfg, leerJson(rutaEntregas(p.salida))?.entregas ?? [], mapaPrs(leerJson(rutaInstantanea(p.salida))));
+          const cambios = cambiosPendientes(cfg, ...datosRastreador());
           return responder(res, 200, { configurado: true, pendientes: cambios.length, muestra: cambios.slice(0, 20) });
         } catch (e) {
-          return responder(res, 200, { configurado: true, pendientes: 0, muestra: [], aviso: String(e?.message ?? 'The tracker could not be read').slice(0, 300) });
+          const seguro = typeof e?.codigo === 'string' && String(e.message).startsWith('[seki-review/');
+          return responder(res, 200, { configurado: true, pendientes: 0, muestra: [], aviso: seguro ? e.message.slice(0, 300) : 'The tracker could not be read' });
         }
       }
       if (req.method === 'POST' && url.pathname === '/api/qa/rastreador') {
-        await leerJsonEstricto(req);
-        return responder(res, 200, await enSerieEntregas(() => aplicarRastreador(p, leerJson(rutaEntregas(p.salida))?.entregas ?? [], mapaPrs(leerJson(rutaInstantanea(p.salida))))));
+        if (Object.keys(await leerJsonEstricto(req)).length) throw falloHttp(400, 'The body must be an empty object');
+        return responder(res, 200, await enSerieEntregas(() => aplicarRastreador(p, ...datosRastreador())));
       }
       if (req.method === 'GET' && url.pathname === '/api/foto') return responder(res, 200, fotoConExplicaciones(p));
       if (req.method === 'GET' && url.pathname === '/api/diff') {
@@ -455,7 +458,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
       }
       if (req.method === 'GET' && url.pathname === '/api/estado') {
         if (req.headers['x-seki-tablero'] === '1') ultimoTablero = Date.now();
-        return responder(res, 200, { vigia: vigia.estado(), refrescando: !!refresco, ultimoRefresco, trabajos: cola.lista(), comentarios: marcasComentarios(), avances: avances(), costoHoy: costosDelDia(p), version: VERSION });
+        return responder(res, 200, { vigia: vigia.estado(), refrescando: !!refresco, ultimoRefresco, trabajos: [...cola.lista(), ...listaGuias()], comentarios: marcasComentarios(), avances: avances(), costoHoy: costosDelDia(p), version: VERSION });
       }
       if (req.method === 'POST' && url.pathname === '/api/refrescar') {
         refrescar();
@@ -472,14 +475,22 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
       if (req.method === 'POST' && url.pathname === '/api/cancelar-cola') return responder(res, 200, { cancelados: cola.vaciar() });
       // Another session with another version asks for the port: release it only if no jobs would be cut off.
       if (req.method === 'POST' && url.pathname === '/api/ceder') {
-        if (refresco || vigia.ocupado() || cola.lista().some((t) => t.estado === 'en_cola' || t.estado === 'en_curso')) return responder(res, 409, { error: 'Jobs in progress' });
+        if (refresco || vigia.ocupado() || guiaEnCurso() || cola.lista().some((t) => t.estado === 'en_cola' || t.estado === 'en_curso')) return responder(res, 409, { error: 'Jobs in progress' });
         responder(res, 200, { ok: true });
         cerrar();
         return;
       }
       return responder(res, 404, { error: 'Not found' });
     } catch (e) {
-      return responder(res, Number.isInteger(e.codigo) ? e.codigo : 400, { error: e.message });
+      const c = e.codigo;
+      if (Number.isInteger(c) && c >= 400 && c <= 599) return responder(res, c, { error: e.message });
+      if (typeof c === 'string') return responder(res, 400, { error: e.message });
+      // An untagged failure on a QA route is internal: its message may carry paths or cell contents.
+      if (url.pathname.startsWith('/api/qa/')) {
+        console.error(`[seki-review/qa] Internal failure on ${req.method} ${url.pathname}: ${e?.code ?? 'error'}`);
+        return responder(res, 500, { error: 'Internal error' });
+      }
+      return responder(res, 400, { error: e.message });
     }
   });
 
@@ -490,7 +501,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
     servidores.delete(proyecto);
     const cerrado = new Promise((ok) => servidor.close(() => ok()));
     servidor.closeAllConnections?.();
-    await Promise.all([cerrado, ciclo, cola.detener()]);
+    await Promise.all([cerrado, ciclo, cola.detener(), guiaActiva?.promesa]);
     while (refresco) await refresco;
     await limpieza;
   };
