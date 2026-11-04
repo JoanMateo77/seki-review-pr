@@ -78,6 +78,179 @@
         ],
         "orden": 2
       }
+    },
+    "qa": {
+      "columnas": [
+        "ID",
+        "Portal",
+        "Screen and access",
+        "Preconditions and data",
+        "Steps",
+        "Expected result",
+        "Priority",
+        "Result",
+        "QA notes",
+        "Evidence",
+        "Date",
+        "Tester"
+      ],
+      "resultados": [
+        "OK",
+        "Fail",
+        "Blocked",
+        "Pending",
+        "N/A"
+      ],
+      "mapeo": {
+        "OK": "ok",
+        "Fail": "fallo",
+        "Blocked": "bloqueado",
+        "Pending": null,
+        "N/A": "na"
+      },
+      "chrome": null,
+      "rastreador": null
+    }
+  },
+  "demo-tracker": {
+    "nombre": "Demo with tracker",
+    "owner": "mi-organizacion",
+    "autor": "@me",
+    "salida": "~/seki-review/demo-tracker",
+    "contexto": "Describe the project here (stack, repos) and the text or code rules the AI must follow.",
+    "lineamientos": "~/.claude/skills/mis-lineamientos",
+    "reglas": [
+      {
+        "id": "ejemplo-todo",
+        "titulo": "New TODO",
+        "severidad": "aviso",
+        "archivos": "\\.(ts|js)$",
+        "patron": "\\bTODO\\b",
+        "mensaje": "Open a ticket instead of leaving a TODO.",
+        "origen": "Example of a project-specific rule."
+      }
+    ],
+    "secretos": [
+      "config/local.json"
+    ],
+    "entregas": {
+      "sufijosRama": [
+        "-pruebas",
+        "-testing",
+        "-staging"
+      ],
+      "patronId": "\\b[A-Z]{1,3}-\\d+\\b",
+      "ventanaDias": 30,
+      "alertaDias": 5,
+      "cerrarTrasDias": 7,
+      "maxPorSenal": 12
+    },
+    "vigia": {
+      "intervaloSeg": 300
+    },
+    "repos": {
+      "api": {
+        "etiqueta": "Back",
+        "checkout": "~/codigo/api",
+        "lineas": [
+          {
+            "portal": "Back",
+            "prod": "main",
+            "pruebas": "develop"
+          }
+        ],
+        "inactivas": {
+          "legacy": "Old branch with no deployment"
+        },
+        "comprobar": {
+          "node": "node",
+          "tipos": [
+            "node_modules/.bin/tsc",
+            "--noEmit",
+            "-p",
+            "tsconfig.json"
+          ],
+          "tests": [
+            "node_modules/.bin/jest",
+            "--findRelatedTests",
+            "<archivos>",
+            "--passWithNoTests"
+          ]
+        },
+        "orden": 1
+      },
+      "web": {
+        "etiqueta": "Front",
+        "checkout": "~/codigo/web",
+        "lineas": [
+          {
+            "portal": "Web",
+            "prod": "main",
+            "pruebas": "develop"
+          }
+        ],
+        "orden": 2
+      }
+    },
+    "qa": {
+      "columnas": [
+        "ID",
+        "Portal",
+        "Screen and access",
+        "Preconditions and data",
+        "Steps",
+        "Expected result",
+        "Priority",
+        "Result",
+        "QA notes",
+        "Evidence",
+        "Date",
+        "Tester"
+      ],
+      "resultados": [
+        "OK",
+        "Fail",
+        "Blocked",
+        "Pending",
+        "N/A"
+      ],
+      "mapeo": {
+        "OK": "ok",
+        "Fail": "fallo",
+        "Blocked": "bloqueado",
+        "Pending": null,
+        "N/A": "na"
+      },
+      "chrome": null,
+      "rastreador": {
+        "tipo": "xlsx",
+        "ruta": "~/qa/tracker.xlsx",
+        "hoja": "Sheet1",
+        "filaEncabezado": 1,
+        "columnaId": "ID",
+        "lectura": {
+          "hallazgo": "Finding",
+          "pasos": "Steps to reproduce",
+          "esperado": "Expected behaviour",
+          "pantalla": "Screen",
+          "prioridad": "Priority"
+        },
+        "columnas": {
+          "estado": "Status",
+          "prPruebas": "Testing PR",
+          "prProd": "Production PR",
+          "enPruebas": "In testing",
+          "enProd": "In production"
+        },
+        "estados": {
+          "por_mergear_pruebas": "Pending merge to testing",
+          "esperando_qa": "Waiting for QA",
+          "qa_fallo": "QA failed",
+          "listo_produccion": "Ready for production",
+          "en_produccion": "In production"
+        },
+        "escribir": true
+      }
     }
   }
 }

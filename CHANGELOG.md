@@ -4,6 +4,18 @@ Each version has its `seki-review-vX.Y.Z` tag on the commit that releases it.
 
 ## seki-review
 
+### 0.22.0 (2026-11-04)
+- QA guide: new tool `qa_guia` and "QA guide" action on the Deliveries tab generate an xlsx, html and pdf under `salida/qa/` for the deliveries waiting for QA, with signed rows, steps taken from the PR explanations or descriptions, and `desde: "ultimo-corte"` for incremental cuts. The tool never runs the AI; the dashboard can queue missing explanations.
+- QA import: new tool `qa_importar` and dashboard import read the filled guide, record results per track and move deliveries to "Ready for production" or "QA failed". Paths outside the output QA folder and Downloads need `confirmar: true`.
+- Optional tracker spreadsheet (`qa.rastreador`): reads finding data and writes status, PR links and dates, locating columns by header text and preserving the workbook styles; backups under `salida/respaldos/`.
+- New alert `qa_bloqueada` for tracks with a blocked row.
+- Dependency-free zip, xlsx (writer, strict reader, style-preserving cell editor) and pdf modules; Chrome is used for the pdf only through argument arrays.
+- New endpoints `/api/qa/guia`, `/api/qa/archivo`, `/api/qa/importar` and `/api/qa/rastreador`, behind the token and Host check with capped bodies (16 KB; 7 MB for the import).
+- Skill arguments `qa-guide` and `qa-import <path>` (Spanish `guia-qa`, `importar-qa`); `qa` block in `config/proyectos.ejemplo.json`.
+- Hardening: zip and xlsx readers bound entries, uncompressed size, rows, columns and cell length; signatures cover the key fields and a secret created exclusively; stricter text cleaning in QA cells; safe styles, formulas and tables in the editor; safer Chrome shutdown; independent guide jobs and safer QA endpoints; release of dashboard and watcher handles.
+- Behaviour rulings: row identity is (ID, Portal), and a track without IDs gets one row `E<n>`; results are tied to the track PR ids per portal, so regrouping or renaming a delivery keeps them; corrections are accepted until the production merge, and a testing merge after the guide rejects the rows; tracker updates are derived from the deliveries and written only on import or with the button; guide generation is serialized.
+- Test-suite debt paid: no test file leaves handles that hang the runner, no assertion depends on speed, and the regex guard now measures CPU time (falling back to process CPU time on Node versions without `threadCpuUsage`) with a 500 ms wall-time cap; tests cover that fallback and the filter of unknown PR ids in explain jobs.
+
 ### 0.21.0 (2026-11-04)
 - The command is now `/seki-review:review-prs` (skill `review-prs`, formerly `revisar-prs`).
 - Code, dashboard, AI prompts and docs are in English; the AI answers in English.

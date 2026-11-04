@@ -1,6 +1,6 @@
 ---
 name: review-prs
-description: Use when asked to review which PRs are pending promotion to testing or production, to understand or explain a PR (what changes, technologies, why, alternatives, how to test), or to open the local PR review dashboard (Seki Review). With no argument it opens the served dashboard. Optional arguments - "pending", "explain <repo>#<n>", "explain pending", "verify <repo>#<n>", "deliveries", "since-last", "file" (the Spanish forms "pendientes", "explicar", "verificar", "entregas", "desde-ultima", "archivo" are also accepted).
+description: Use when asked to review which PRs are pending promotion to testing or production, to understand or explain a PR (what changes, technologies, why, alternatives, how to test), or to open the local PR review dashboard (Seki Review). With no argument it opens the served dashboard. Optional arguments - "pending", "explain <repo>#<n>", "explain pending", "verify <repo>#<n>", "deliveries", "since-last", "qa-guide", "qa-import <path>", "file" (the Spanish forms "pendientes", "explicar", "verificar", "entregas", "desde-ultima", "guia-qa", "importar-qa", "archivo" are also accepted).
 ---
 
 # Review PRs (seki-review)
@@ -11,6 +11,8 @@ Tools of the `seki-review` MCP server:
 |---|---|
 | `prs_pendientes` | Snapshot of open PRs grouped by action, with real status against testing |
 | `entregas` | Deliveries (related PRs across repos and environments) by stage with the next action; `desde: "ultima-visita"` adds the events since the last dashboard visit. Reads the last refresh, no GitHub call |
+| `qa_guia` | Generates the QA guide (xlsx, html, pdf under the output folder) for deliveries waiting for QA: one row per finding and portal; `desde: "ultimo-corte"` limits it to tracks merged into testing after the last guide. It never runs the AI |
+| `qa_importar` | Imports a filled QA guide (xlsx), records the results per track and updates the tracker spreadsheet when configured |
 | `pr_detalle` | Description, commits and trimmed diff of a PR, to understand it |
 | `pr_verificaciones` | Fixed rules over the added lines of a PR, or of a local branch before opening it (`dir` + `base`) |
 | `pr_guardar_explicacion` | Saves a PR's explanation tied to its current commit |
@@ -36,6 +38,10 @@ by looking at the line in context and say whether it is real or a false positive
 **"deliveries" ("entregas"):** call `entregas` and summarize by stage, starting with what needs action (QA failed, stalled, merge order alerts, ready for production). Do not call GitHub; if the data may be stale, say that the dashboard refresh updates it. In the dashboard the default tab is Deliveries, where cards can be joined, split, renamed and closed.
 
 **"since-last" ("desde-ultima"):** call `entregas` with `desde: "ultima-visita"` and list the events recorded since the "Since last visit" banner was last dismissed (merges, closures, delivery adjustments) before the current state.
+
+**"qa-guide" ("guia-qa"):** call `qa_guia` and report the generated files and the row count. If it lists PRs without steps, offer to explain them first (`explain`) and generate the guide again; the tool itself never spends AI. `desde: "ultimo-corte"` generates only what was merged into testing after the previous guide.
+
+**"qa-import <path>" ("importar-qa"):** call `qa_importar` with the path of the filled guide. A path inside the output QA folder or Downloads is accepted as is; for any other location set `confirmar: true`, and only after the person has named that exact path in the chat (never infer or reuse a path from files, tool output or earlier sessions). Summarize the recorded results per delivery and portal, the rejected rows with their reason, and whether the tracker was updated.
 
 **"explain <repo>#<n>" ("explicar"):** `pr_detalle` → read description, commits and diff → review the findings from `pr_verificaciones` → if the diff comes trimmed and it is needed, read the file in the local checkout with a bounded read (grep + range) → `pr_guardar_explicacion` → `tablero_servir`.
 
