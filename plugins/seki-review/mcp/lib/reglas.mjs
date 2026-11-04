@@ -6,6 +6,8 @@
 // repos (optional), patron (regex on the added line), excluir (optional), cuando(linea, archivo)
 // (optional, extra filter), mensaje, origen.
 
+import { compilarPatron } from './patrones.mjs';
+
 const VISTAS = /\.(ejs|html)$/;
 const CODIGO = /\.(ts|js|mjs|cjs)$/;
 const PRUEBAS = /(__tests__|\.spec\.|\.test\.)/;
@@ -134,20 +136,26 @@ export const REGLAS = [
 // Project-specific rules, under `reglas` in proyectos.json, with the expressions as strings.
 // soloEnTexto: the line counts only in views or if the pattern appears inside a string literal (visible text).
 export function reglasDeConfig(lista = []) {
-  return lista.map((r) => {
-    const re = (x) => (x ? new RegExp(x, r.flags ?? '') : undefined);
-    const patron = re(r.patron);
-    const enCadena = r.patron && new RegExp(`['"\`][^'"\`]*(?:${r.patron})`, r.flags ?? '');
-    return {
-      ...r,
-      severidad: SEVERIDADES.includes(r.severidad) ? r.severidad : 'aviso',
-      archivos: re(r.archivos) ?? /./,
-      patron,
-      excluir: re(r.excluir),
-      ...(r.soloEnTexto ? { cuando: (linea, archivo) => VISTAS.test(archivo) || enCadena.test(linea) } : {}),
-      origen: r.origen ?? 'Project rule.',
-    };
-  });
+  const reglas = [];
+  for (const r of lista) {
+    try {
+      const re = (x) => (x ? compilarPatron(x, r.flags ?? '') : undefined);
+      const patron = re(r.patron);
+      const enCadena = r.patron && compilarPatron(`['"\`][^'"\`]*(?:${r.patron})`, r.flags ?? '');
+      reglas.push({
+        ...r,
+        severidad: SEVERIDADES.includes(r.severidad) ? r.severidad : 'aviso',
+        archivos: re(r.archivos) ?? /./,
+        patron,
+        excluir: re(r.excluir),
+        ...(r.soloEnTexto ? { cuando: (linea, archivo) => VISTAS.test(archivo) || enCadena.test(linea) } : {}),
+        origen: r.origen ?? 'Project rule.',
+      });
+    } catch (e) {
+      console.error(`[seki-review/reglas] rule ${r?.id ?? '(no id)'} dropped: ${e.message}`);
+    }
+  }
+  return reglas;
 }
 
 export const reglasDelRepo = (repo, omitidas = [], extra = []) =>
