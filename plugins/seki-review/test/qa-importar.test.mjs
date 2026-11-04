@@ -13,6 +13,7 @@ import { generarGuia } from '../mcp/lib/qa-salida.mjs';
 import { escribirXlsx, leerXlsx } from '../mcp/lib/xlsx.mjs';
 import { editarCeldas } from '../mcp/lib/xlsx-editar.mjs';
 import { crearZip } from '../mcp/lib/zip.mjs';
+import { trackerFixture } from './util/xlsx-fixture.mjs';
 
 const temporales = [];
 after(() => { for (const d of temporales.splice(0)) rmSync(d, { recursive: true, force: true }); });
@@ -363,4 +364,50 @@ test('rows of an older guide are rejected once a newer guide covers the track', 
   assert.equal(nueva.vacia, false);
   const r = await importarQa(p, { buf: rellenar(buf, { 3: 'OK' }), ahora: T2 });
   assert.deepEqual(conMotivos(r), ['A newer guide covers this delivery: use the newest guide']);
+});
+
+function conRastreador(p, extra = {}) {
+  const ruta = join(p.salida, '..', 'tracker.xlsx');
+  writeFileSync(ruta, trackerFixture());
+  p.qa.rastreador = {
+    tipo: 'xlsx', ruta, hoja: 'Sheet1', filaEncabezado: 1, columnaId: 'ID',
+    lectura: { hallazgo: 'Finding', pasos: 'How to reproduce', esperado: 'Expected', pantalla: null, prioridad: null },
+    columnas: { estado: 'State', prPruebas: 'Testing PR', prProd: null, enPruebas: 'In testing', enProd: null },
+    estados: { listo_produccion: 'Closed' }, escribir: true, ...extra,
+  };
+  return ruta;
+}
+
+test('import with a tracker configured writes it and reports the cells', async () => {
+  const { p, buf } = await escenario();
+  const ruta = conRastreador(p);
+  const r = await importarQa(p, { buf: rellenar(buf, { 2: 'OK', 3: 'OK', 4: 'OK', 5: 'OK' }), ahora: T1 });
+  assert.equal(r.rastreador.escrito, true);
+  assert.ok(r.rastreador.celdas > 0);
+  const filas = leerXlsx(readFileSync(ruta)).hojas[0].filas;
+  assert.equal(filas[1][4], 'Closed');
+  assert.equal(filas[1][7], '2026-11-01');
+});
+
+test('a refused tracker write does not undo the recorded events', async () => {
+  const { p, buf } = await escenario();
+  const ruta = conRastreador(p);
+  writeFileSync(join(p.salida, '..', '~$tracker.xlsx'), '');
+  const r = await importarQa(p, { buf: rellenar(buf, { 2: 'OK', 3: 'OK', 4: 'OK', 5: 'OK' }), ahora: T1 });
+  assert.equal(r.rastreador.escrito, false);
+  assert.ok(r.nuevos > 0);
+  assert.ok(leerEventos(p).some((e) => e.tipo === 'qa_resultado'));
+  assert.ok(readFileSync(ruta).equals(trackerFixture()));
+});
+
+test('the guide reads tracker content and survives an unreadable tracker', async () => {
+  const { p, foto } = await escenario();
+  const ruta = conRastreador(p);
+  const g = await generarGuia(p, { ahora: new Date('2026-11-04T13:00:00'), chrome: null });
+  const hoja = leerXlsx(readFileSync(g.archivos.xlsx)).hojas[0].filas;
+  assert.ok(hoja.some((f) => f.includes('Open the page\nClick the button')));
+  writeFileSync(ruta, 'not a workbook');
+  const g2 = await generarGuia(p, { ahora: new Date('2026-11-04T14:00:00'), chrome: null });
+  assert.ok(g2.id);
+  assert.ok(foto);
 });

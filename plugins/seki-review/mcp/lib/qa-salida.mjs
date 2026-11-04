@@ -7,6 +7,7 @@ import { dirQa, leerJson, rutaEntregas, rutaExplicacion, rutaGuias, rutaInstanta
 import { QA_DEFECTO } from './config.mjs';
 import { htmlAPdf, rutaChrome } from './pdf.mjs';
 import { entregasDesdeCorte, filasDeGuia, firmaFila, fusionesDe, leerGuias, registrarGuia } from './qa-guia.mjs';
+import { contenidoRastreador } from './rastreador-xlsx.mjs';
 import { mapaPrs } from './tablero-entregas.mjs';
 import { columnaLetra, escribirXlsx, limpiar } from './xlsx.mjs';
 
@@ -94,7 +95,15 @@ async function generar(p, { claves, desde, ahora = new Date(), rastreador = null
     const e = leerJson(rutaExplicacion(p.salida, pr.repo, pr.numero));
     if (e) explicaciones.set(pr.id, e);
   }
-  const filas = filasDeGuia({ entregas, prsPorId, explicaciones, rastreador, columnas }).map(limpiarClaves);
+  let contenido = rastreador;
+  if (contenido === null && p.qa?.rastreador) {
+    try {
+      contenido = contenidoRastreador(p.qa.rastreador);
+    } catch (e) {
+      console.error(`[seki-review/qa] Tracker content was not read; the guide is generated without it: ${e?.codigo ?? 'error'}`);
+    }
+  }
+  const filas = filasDeGuia({ entregas, prsPorId, explicaciones, rastreador: contenido, columnas }).map(limpiarClaves);
   if (filas.length === 0) return { id: null, archivos: { xlsx: null, html: null, pdf: null }, filas: 0, pendientes: [], avisoPdf: null, vacia: true };
 
   const dir = dirQa(p.salida);

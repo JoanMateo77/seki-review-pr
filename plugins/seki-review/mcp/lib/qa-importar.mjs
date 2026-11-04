@@ -8,6 +8,7 @@ import { secretoQa } from './acceso.mjs';
 import { dirQa, leerJson, rutaEntregas, rutaInstantanea } from './cache.mjs';
 import { expandir } from './config.mjs';
 import { leerEventos, registrarEventos } from './eventos.mjs';
+import { aplicarRastreador } from './rastreador-xlsx.mjs';
 import { claveFusion, firmaFila, fusionDePista, leerGuias, qaDeEventos } from './qa-guia.mjs';
 import { COLUMNAS_SEKI, FORMATO_SEKI } from './qa-salida.mjs';
 import { derivarEnSerie, enSerieEntregas } from './recolectar.mjs';
@@ -221,6 +222,15 @@ export async function importarQa(p, { buf, ruta, confirmar, ahora = new Date() }
     const r = analizarImportacion(p, contenido, { entregas: base.entregas ?? [], guias: leerGuias(p).guias, ahora, prsPorId: mapaPrs(foto), previos });
     const { nuevos } = await registrarEventos(p, r.eventos, { ahora });
     if (nuevos) await derivarEnSerie(p, foto);
-    return { guia: r.guia, resumen: r.resumen, rechazadas: r.rechazadas, nuevos, rastreador: { escrito: false, motivo: 'No tracker configured' } };
+    // A refused or failed tracker write never undoes the recorded events.
+    let rastreador = { escrito: false, motivo: 'No tracker configured' };
+    if (p.qa?.rastreador) {
+      try {
+        rastreador = await aplicarRastreador(p, leerJson(rutaEntregas(p.salida))?.entregas ?? [], mapaPrs(foto), { ahora });
+      } catch {
+        rastreador = { escrito: false, celdas: 0, motivo: 'The tracker could not be updated' };
+      }
+    }
+    return { guia: r.guia, resumen: r.resumen, rechazadas: r.rechazadas, nuevos, rastreador };
   });
 }
