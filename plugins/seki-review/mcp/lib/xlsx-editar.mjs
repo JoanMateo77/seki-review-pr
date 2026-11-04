@@ -316,12 +316,17 @@ export function editarCeldas(buf, { hoja, celdas, filaEncabezado = 1 } = {}) {
     if (textoRango(nuevo) !== textoRango(gd)) cortarRef(dim, textoRango(nuevo));
   }
 
-  // Rows appended directly below an autoFilter range stay inside the filter.
+  // The contiguous run of rows right below the autoFilter range stays inside it when the run holds an edit.
   const filtro = buscar(/<autoFilter(?=[\s/>])[^>]*>/);
   const gf = filtro && rango(/\sref\s*=\s*["']([^"']*)["']/.exec(filtro.texto)?.[1]);
   if (gf) {
     let ultima = gf.r2;
-    for (const numFila of porFila.keys()) if (!filaPorNumero.has(numFila) && numFila === ultima + 1) ultima = numFila;
+    let editada = false;
+    while (filaPorNumero.has(ultima + 1) || porFila.has(ultima + 1)) {
+      ultima += 1;
+      editada ||= porFila.has(ultima);
+    }
+    if (!editada) ultima = gf.r2;
     if (ultima !== gf.r2) {
       cortarRef(filtro, textoRango({ ...gf, r2: ultima }));
       libroNuevo = sincronizarFiltro(partes.get('xl/workbook.xml'), declaradas.indexOf(decl), ultima);

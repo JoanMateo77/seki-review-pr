@@ -141,6 +141,17 @@ test('rows appended below an autoFilter range extend it', () => {
   assert.match(xmlHoja(editarCeldas(trackerFixture(), { hoja: 'Sheet1', celdas: [{ ref: 'A2', valor: 'a' }] })), /<autoFilter ref="A1:I4"\/>/);
 });
 
+test('the autoFilter extends over a contiguous run holding an edit, never across a gap', () => {
+  const conVacia = conHoja(trackerFixture(), (x) => x.replace('</sheetData>', '<row r="5"/></sheetData>'));
+  const ref = (b, celdas) => /<autoFilter ref="([^"]*)"/.exec(xmlHoja(editarCeldas(b, { hoja: 'Sheet1', celdas })))[1];
+  assert.equal(ref(conVacia, [{ ref: 'A5', valor: 'a' }]), 'A1:I5');
+  assert.equal(ref(conVacia, [{ ref: 'A6', valor: 'a' }]), 'A1:I6');
+  assert.equal(ref(conVacia, [{ ref: 'A5', valor: 'a' }, { ref: 'A6', valor: 'b' }]), 'A1:I6');
+  assert.equal(ref(conVacia, [{ ref: 'A7', valor: 'a' }]), 'A1:I4');
+  assert.equal(ref(conVacia, [{ ref: 'A2', valor: 'a' }]), 'A1:I4');
+  assert.equal(ref(trackerFixture(), [{ ref: 'A5', valor: 'a' }, { ref: 'A7', valor: 'c' }]), 'A1:I5');
+});
+
 function conTabla(ref, extra = '') {
   const base = conHoja(trackerFixture(), (x) => x.replace('</worksheet>', '<tableParts count="1"><tablePart r:id="rId1"/></tableParts></worksheet>'));
   return reemplazarEntradas(base, new Map([
