@@ -3,9 +3,10 @@
 import { createHash } from 'node:crypto';
 import { escribirJson, leerJson, rutaAjustes, rutaEntregas, rutaInstantanea, rutaVisita } from './cache.mjs';
 import { leerEventos, registrarEventos } from './eventos.mjs';
-import { derivarEntregas } from './recolectar.mjs';
+import { derivarEnSerie, enSerieEntregas } from './recolectar.mjs';
 
 export const MAX_TITULO = 200;
+export const MAX_DESDE_VISITA = 200;
 const MAX_UNIR = 50;
 const CAMPOS_PR = ['repo', 'repoEtiqueta', 'numero', 'titulo', 'url', 'base', 'portal', 'ambiente', 'estadoPr', 'mergeada'];
 
@@ -58,6 +59,7 @@ export function datosEntregas(p) {
   if (!base) return null;
   const prsPorId = mapaPrs(leerJson(rutaInstantanea(p.salida)));
   const visita = leerVisita(p);
+  const desde = visita ? leerEventos(p, { desde: visita }) : [];
   const prs = {};
   for (const id of new Set(base.entregas.flatMap((e) => e.prs))) {
     const pr = prsPorId.get(id);
@@ -66,7 +68,9 @@ export function datosEntregas(p) {
   return {
     generado: base.generado,
     visita,
-    desdeVisita: visita ? leerEventos(p, { desde: visita }) : [],
+    // The newest events only: a long absence must not make the page or the tool output unbounded.
+    desdeVisita: desde.slice(-MAX_DESDE_VISITA),
+    totalDesdeVisita: desde.length,
     entregas: base.entregas.map((e) => ({ ...e, siguiente: siguienteAccion(e, prsPorId) })),
     prs,
   };
@@ -121,14 +125,6 @@ function aplicarEnAjustes(previos, ajuste) {
   return { ...a, unir, separar, titulo };
 }
 
-// One adjustment at a time per process: ajustes.json is read, changed and written as a whole.
-let cadena = Promise.resolve();
-const enSerie = (fn) => {
-  const r = cadena.then(fn);
-  cadena = r.catch(() => {});
-  return r;
-};
-
 const fotoActual = (p) => {
   const foto = leerJson(rutaInstantanea(p.salida));
   if (!foto) throw fallo(503, 'No PR data yet: refresh the state first.');
@@ -136,7 +132,7 @@ const fotoActual = (p) => {
 };
 const entregasActuales = (p) => leerJson(rutaEntregas(p.salida))?.entregas ?? [];
 
-export const aplicarAjuste = (p, cuerpo, ahora = () => new Date()) => enSerie(async () => {
+export const aplicarAjuste = (p, cuerpo, ahora = () => new Date()) => enSerieEntregas(async () => {
   const foto = fotoActual(p);
   const entregas = entregasActuales(p);
   const ajuste = validarAjuste(cuerpo, foto, entregas);
@@ -145,12 +141,12 @@ export const aplicarAjuste = (p, cuerpo, ahora = () => new Date()) => enSerie(as
   const prs = ajuste.tipo === 'unir' ? ajuste.prs : ajuste.tipo === 'separar' ? [ajuste.pr] : entregas.find((e) => e.clave === ajuste.clave).prs;
   const entrega = ajuste.tipo === 'titulo' ? ajuste.clave : entregas.find((e) => e.prs.includes(prs[0]))?.clave ?? null;
   await registrarEventos(p, [{ id: huella('entrega_ajustada', JSON.stringify(ajuste), ts), ts, tipo: 'entrega_ajustada', entrega, prs: [...prs].sort(), ajuste, origen: 'tablero' }]);
-  await derivarEntregas(p, foto);
+  await derivarEnSerie(p, foto);
   return datosEntregas(p);
 });
 
 // Only a delivery in production can be closed: before that, closing would hide pending work.
-export const cerrarEntrega = (p, clave, ahora = () => new Date()) => enSerie(async () => {
+export const cerrarEntrega = (p, clave, ahora = () => new Date()) => enSerieEntregas(async () => {
   const foto = fotoActual(p);
   const entrega = typeof clave === 'string' ? entregasActuales(p).find((e) => e.clave === clave) : null;
   if (!entrega) throw fallo(404, 'Unknown delivery');
@@ -158,6 +154,6 @@ export const cerrarEntrega = (p, clave, ahora = () => new Date()) => enSerie(asy
   const ts = ahora().toISOString();
   const prs = [...entrega.prs].sort();
   await registrarEventos(p, [{ id: huella('entrega_cerrada', prs.join(','), ts), ts, tipo: 'entrega_cerrada', entrega: clave, prs, origen: 'tablero' }]);
-  await derivarEntregas(p, foto);
+  await derivarEnSerie(p, foto);
   return datosEntregas(p);
 });

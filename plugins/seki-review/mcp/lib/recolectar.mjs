@@ -104,9 +104,18 @@ function accionSugerida(pr) {
   return pr.gemela?.estado === 'OPEN' ? 'pruebas_abierta' : 'sin_pruebas';
 }
 
-// Groups the snapshot into deliveries, records merge/close events and writes entregas.json. Does not call GitHub:
-// the dashboard reuses it to regroup after a manual adjustment.
-export async function derivarEntregas(p, foto) {
+// Every regrouping in this process (refresh, join, split, rename, close) runs one at a time: otherwise a refresh
+// that read the previous ajustes.json could write its entregas.json after an adjustment and undo it.
+let colaEntregas = Promise.resolve();
+export function enSerieEntregas(fn) {
+  const r = colaEntregas.then(fn);
+  colaEntregas = r.catch(() => {});
+  return r;
+}
+
+// Groups the snapshot into deliveries, records merge/close events and writes entregas.json. Does not call GitHub.
+// Call it only from inside enSerieEntregas; everyone else uses derivarEntregas.
+export async function derivarEnSerie(p, foto) {
   const ajustes = { unir: [], separar: [], titulo: {}, ...(leerJson(rutaAjustes(p.salida), null) ?? {}) };
   const bases = Object.values(p.repos).flatMap((r) => r.lineas.flatMap((l) => [l.prod, l.pruebas])).filter((b) => typeof b === 'string');
   const cfg = { sufijosRama: p.entregas.sufijosRama, patronId: p.entregas.patronId, maxPorSenal: p.entregas.maxPorSenal, bases, owner: p.owner };
@@ -119,6 +128,8 @@ export async function derivarEntregas(p, foto) {
   escribirJson(rutaEntregas(p.salida), salida);
   return salida;
 }
+
+export const derivarEntregas = (p, foto) => enSerieEntregas(() => derivarEnSerie(p, foto));
 
 export async function recolectar({ proyecto: clave, repos, incluirInactivas = true } = {}) {
   const p = cargarProyecto(clave);

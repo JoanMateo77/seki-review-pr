@@ -29,7 +29,9 @@ export function resumenEntregas(datos, { desdeVisita = false } = {}) {
   if (desdeVisita) {
     if (!datos.visita) lineas.push('', 'No previous visit recorded: no events to list.');
     else {
-      lineas.push('', `## Since the last visit (${datos.visita.slice(0, 16).replace('T', ' ')}): ${datos.desdeVisita.length} events`);
+      const total = datos.totalDesdeVisita ?? datos.desdeVisita.length;
+      lineas.push('', `## Since the last visit (${datos.visita.slice(0, 16).replace('T', ' ')}): ${total} events`);
+      if (total > datos.desdeVisita.length) lineas.push(`(${total - datos.desdeVisita.length} earlier events not listed)`);
       for (const e of datos.desdeVisita) lineas.push(`- ${lineaEvento(e, datos)}`);
     }
   }

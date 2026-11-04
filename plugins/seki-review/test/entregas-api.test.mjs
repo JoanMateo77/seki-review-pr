@@ -1,15 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { escribirJson, leerJson, rutaAjustes, rutaInstantanea, rutaVisita } from '../mcp/lib/cache.mjs';
 import { proyecto as cargarProyecto } from '../mcp/lib/config.mjs';
-import { leerEventos } from '../mcp/lib/eventos.mjs';
+import { leerEventos, registrarEventos } from '../mcp/lib/eventos.mjs';
 import { derivarEntregas } from '../mcp/lib/recolectar.mjs';
 import { iniciarServidor } from '../mcp/lib/servidor-web.mjs';
 import { construirHtml } from '../mcp/lib/tablero.mjs';
 import herramienta from '../mcp/tools/entregas.mjs';
+import { falsoGhRutas } from './util/gh-rutas.mjs';
 
 const hace = (dias) => new Date(Date.now() - dias * 86400000).toISOString();
 const pr = (repo, numero, ambiente, estadoPr, rama, extra = {}) => ({
@@ -194,4 +196,93 @@ test('construirHtml embeds the deliveries inertly: a title with </script><script
   assert.ok(html.includes('\\u003c/script>\\u003cscript>alert(1)\\u003c/script>\\u2028'));
   const cuenta = (s) => s.split('</script>').length;
   assert.equal(cuenta(html), cuenta(construirHtml({ salida: '/nonexistent' }, foto, null)));
+});
+
+test('a chunked body over the cap without content-length is 413', async (t) => {
+  const e = await entorno();
+  t.after(e.cerrar);
+  const u = new URL(e.origen);
+  const estado = await new Promise((ok, falla) => {
+    const req = request({ host: u.hostname, port: u.port, path: '/api/entregas/ajuste', method: 'POST', headers: { 'x-seki-token': e.token, 'content-type': 'application/json', 'transfer-encoding': 'chunked' } }, (res) => { res.resume(); ok(res.statusCode); });
+    req.on('error', falla);
+    req.write('{"tipo":"titulo","clave":"x","titulo":"');
+    for (let i = 0; i < 20; i++) req.write('y'.repeat(1024));
+    req.end('"}');
+  });
+  assert.equal(estado, 413);
+});
+
+test('two concurrent adjustments (unir and titulo) both persist', async (t) => {
+  const e = await entorno();
+  t.after(e.cerrar);
+  const clave = deClave(await (await e.llamar('/api/entregas')).json(), 'back#1').clave;
+  const [a, b] = await Promise.all([
+    e.llamar('/api/entregas/ajuste', { cuerpo: { tipo: 'unir', prs: ['back#5', 'front#3'] } }),
+    e.llamar('/api/entregas/ajuste', { cuerpo: { tipo: 'titulo', clave, titulo: 'Alpha release' } }),
+  ]);
+  assert.deepEqual([a.status, b.status], [200, 200]);
+  const ajustes = leerJson(rutaAjustes(e.p.salida));
+  assert.deepEqual(ajustes.unir, [['back#5', 'front#3']]);
+  assert.equal(ajustes.titulo[clave], 'Alpha release');
+  const d = await (await e.llamar('/api/entregas')).json();
+  assert.equal(deClave(d, 'back#1').titulo, 'Alpha release');
+  assert.ok(deClave(d, 'back#5').prs.includes('front#3'));
+});
+
+test('desdeVisita keeps the newest 200 events and totalDesdeVisita counts them all', async (t) => {
+  const e = await entorno();
+  t.after(e.cerrar);
+  const marca = hace(1.5);
+  escribirJson(rutaVisita(e.p.salida), { ts: marca });
+  const base = Date.now() - 3600000;
+  await registrarEventos(e.p, Array.from({ length: 250 }, (_, i) => ({ id: `x${i}`, ts: new Date(base + i * 1000).toISOString(), tipo: 'pr_cerrada', pr: 'back#5', origen: 'prueba' })));
+  const d = await (await e.llamar('/api/entregas')).json();
+  assert.equal(d.totalDesdeVisita, 251);
+  assert.equal(d.desdeVisita.length, 200);
+  assert.equal(d.desdeVisita.at(-1).id, 'x249');
+  const html = construirHtml(e.p, leerJson(rutaInstantanea(e.p.salida)), null);
+  assert.match(html, /"totalDesdeVisita":251/);
+  assert.match(await herramienta.handler({ proyecto: e.clave, desde: 'ultima-visita' }), /: 251 events\n\(51 earlier events not listed\)/);
+});
+
+test('a refresh that was already running does not undo a join made meanwhile', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'seki-entregas-carrera-'));
+  const salida = join(dir, 'salida');
+  mkdirSync(join(salida, 'datos'), { recursive: true });
+  const clave = `carrera${++n}`;
+  const linea = { portal: 'P', prod: 'main', pruebas: 'testing' };
+  writeFileSync(join(dir, 'p.json'), JSON.stringify({ [clave]: { owner: 'o', autor: 'yo', salida, repos: { a: { lineas: [linea] } } } }));
+  process.env.SEKI_REVIEW_CONFIG = join(dir, 'p.json');
+  const rest = (num, titulo, rama) => ({ number: num, title: titulo, state: 'closed', user: { login: 'yo' }, html_url: `u/${num}`, created_at: hace(5), merged_at: hace(1), closed_at: hace(1), base: { sha: 'b' }, head: { sha: 'h', ref: rama }, body: null });
+  const pulls = (base, lista) => ({ patron: `^api repos/o/a/pulls\\?base=${base}&state=(all&sort=created|closed&sort=updated)&direction=desc&per_page=100&page=1$`, json: lista });
+  const gh = falsoGhRutas([
+    { patron: '^api user$', json: { login: 'yo' } },
+    { patron: '^pr list ', json: [] },
+    pulls('main', [rest(1, 'Payment limits', 'feat/alpha'), rest(2, 'Report export', 'feat/zeta')]),
+    pulls('testing', []),
+  ]);
+  // Every gh call waits, so the second refresh is still querying when the join arrives.
+  const lento = join(dir, 'gh-lento');
+  writeFileSync(lento, `#!/bin/sh\nif [ -f "${join(dir, 'lento')}" ]; then sleep 0.3; fi\nexec "${gh.ruta}" "$@"\n`);
+  chmodSync(lento, 0o755);
+  const previoGh = process.env.SEKI_GH;
+  process.env.SEKI_GH = lento;
+  t.after(() => { if (previoGh === undefined) delete process.env.SEKI_GH; else process.env.SEKI_GH = previoGh; });
+  writeFileSync(join(salida, 'datos', 'prs.json'), JSON.stringify({ prs: [], recientes: [], generado: new Date().toISOString(), owner: 'o' }));
+  const { url } = await iniciarServidor({ proyecto: clave, puerto: 0, abrir: false });
+  const u = new URL(url);
+  const llamar = (ruta, cuerpo) => fetch(`${u.origin}${ruta}`, { method: cuerpo === undefined ? 'GET' : 'POST', headers: { 'x-seki-token': u.searchParams.get('t'), 'content-type': 'application/json' }, body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo) });
+  t.after(() => llamar('/api/ceder', {}));
+  const terminar = async () => { for (let i = 0; i < 200; i++) { if (!(await (await llamar('/api/estado')).json()).refrescando) return; await new Promise((ok) => setTimeout(ok, 50)); } throw new Error('refresh did not finish'); };
+  await llamar('/api/refrescar', {});
+  await terminar();
+  assert.equal((await (await llamar('/api/entregas')).json()).entregas.length, 2);
+  writeFileSync(join(dir, 'lento'), '');
+  await llamar('/api/refrescar', {});
+  const r = await llamar('/api/entregas/ajuste', { tipo: 'unir', prs: ['a#1', 'a#2'] });
+  assert.equal(r.status, 200);
+  assert.equal((await (await llamar('/api/estado')).json()).refrescando, true);
+  await terminar();
+  const final = leerJson(join(salida, 'datos', 'entregas.json'));
+  assert.deepEqual(final.entregas.map((x) => [...x.prs].sort()), [['a#1', 'a#2']]);
 });

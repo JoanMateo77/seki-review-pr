@@ -57,13 +57,14 @@ async function accionEntrega(ruta, cuerpo) {
 
 function recargarEntregas() {
   if (!API) return;
-  api('/api/entregas').then((d) => { ENTREGAS = d; pintarEntregas(); }, () => {});
+  api('/api/entregas').then((d) => { ENTREGAS = d; pintarEntregas(); }, (err) => avisar(`Deliveries not updated: ${err.message}`));
 }
 
 function descartarAviso() {
   api('/api/visita', {}).then((r) => {
     ENTREGAS.visita = r.ts;
     ENTREGAS.desdeVisita = [];
+    ENTREGAS.totalDesdeVisita = 0;
     pintarEntregas();
   }, (err) => avisar(err.message));
 }
@@ -72,13 +73,14 @@ function avisoVisita() {
   const eventos = ENTREGAS.desdeVisita ?? [];
   if (!API || !ENTREGAS.visita || !eventos.length) return null;
   const MAX = 8;
+  const total = ENTREGAS.totalDesdeVisita ?? eventos.length;
   const tocadas = ENTREGAS.entregas.filter((e) => eventos.some((ev) => (ev.pr && e.prs.includes(ev.pr)) || (ev.prs ?? []).some((id) => e.prs.includes(id))));
   return nodo('section', { class: 'aviso-visita', 'aria-label': 'Since the last visit' },
     nodo('header', {},
-      nodo('h2', { text: `Since the last visit (${fechaCorta(ENTREGAS.visita)}): ${plural(eventos.length, 'event', 'events')}` }),
+      nodo('h2', { text: `Since the last visit (${fechaCorta(ENTREGAS.visita)}): ${plural(total, 'event', 'events')}` }),
       nodo('button', { type: 'button', class: 'btn chico', text: 'Dismiss', al: { click: descartarAviso } })),
     nodo('ul', {}, eventos.slice(-MAX).reverse().map((e) => nodo('li', {}, nodo('span', { class: 'mono', text: fechaCorta(e.ts) }), ` ${textoEvento(e)}`)),
-      eventos.length > MAX ? nodo('li', { text: `${eventos.length - MAX} earlier events not shown` }) : null),
+      total > MAX ? nodo('li', { text: `${total - MAX} earlier events not shown` }) : null),
     tocadas.length ? [nodo('h3', { text: 'Next action' }), nodo('ul', {}, tocadas.map((e) => nodo('li', { text: `${e.titulo}: ${e.siguiente}` })))] : null);
 }
 
@@ -185,11 +187,11 @@ function aplicarPestana(pestana) {
   tablero.pestana = pestana;
   document.body.dataset.pestana = pestana;
   $('entregas').hidden = pestana !== 'entregas';
-  document.querySelectorAll('[data-pestana]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.pestana === pestana)));
+  document.querySelectorAll('.pestanas [data-pestana]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.pestana === pestana)));
   if (pestana === 'entregas') pintarEntregas();
 }
 
-document.querySelectorAll('[data-pestana]').forEach((b) => b.addEventListener('click', () => aplicarPestana(b.dataset.pestana)));
+document.querySelectorAll('.pestanas [data-pestana]').forEach((b) => b.addEventListener('click', () => aplicarPestana(b.dataset.pestana)));
 // The PR view's shortcuts act on rows that are hidden while the board is shown.
 document.addEventListener('keydown', (ev) => {
   if (tablero.pestana !== 'entregas' || ev.target.matches('input, textarea, select') || ev.metaKey || ev.ctrlKey || ev.altKey) return;
