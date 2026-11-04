@@ -161,3 +161,35 @@ export async function registrarGuia(p, guia) {
     return nueva;
   });
 }
+
+const llaveFila = (etiqueta, portal) => JSON.stringify([etiqueta, portal]);
+const cruzan = (a, b) => a.some((id) => b.has(id));
+
+// QA state of a track from the imported results: only the rows of the newest guide covering the track count,
+// the newest import of each row wins, any failure fails the track, and the track passes only when every row
+// of the guide for it has an ok/na result. Rows whose newest result is `bloqueado` set `bloqueado`.
+export function qaDeEventos(eventos, guias) {
+  const resultados = (eventos ?? []).filter((e) => e?.tipo === 'qa_resultado' && Array.isArray(e.prs));
+  return (_entrega, pista) => {
+    const propios = new Set(pista.prs);
+    const cubren = (guias ?? []).filter((g) => (g.filas ?? []).some((f) => cruzan(f.prs ?? [], propios)));
+    if (!cubren.length) return null;
+    const guia = cubren.reduce((a, b) => (cmp(b.fecha ?? '', a.fecha ?? '') > 0 || (cmp(b.fecha ?? '', a.fecha ?? '') === 0 && cmp(b.id, a.id) > 0) ? b : a));
+    const filas = guia.filas.filter((f) => cruzan(f.prs ?? [], propios));
+    const ultimo = new Map();
+    for (const e of resultados) {
+      if (e.guia !== guia.id || !cruzan(e.prs, propios)) continue;
+      const k = llaveFila(e.fila, e.portal);
+      const previo = ultimo.get(k);
+      const orden = previo ? cmp(e.ts, previo.ts) || cmp(e.registrado ?? '', previo.registrado ?? '') || cmp(e.id, previo.id) : 1;
+      if (orden > 0) ultimo.set(k, e);
+    }
+    const vigentes = filas.map((f) => ultimo.get(llaveFila(f.etiqueta, f.portal))).filter(Boolean);
+    if (!vigentes.length) return null;
+    const ts = vigentes.map((e) => e.ts).sort().at(-1);
+    const bloqueado = vigentes.some((e) => e.resultado === 'bloqueado');
+    if (vigentes.some((e) => e.resultado === 'fallo')) return { resultado: 'fallo', ts, bloqueado };
+    const completo = vigentes.length === filas.length && vigentes.every((e) => e.resultado === 'ok' || e.resultado === 'na');
+    return { resultado: completo ? 'ok' : null, ts, bloqueado };
+  };
+}

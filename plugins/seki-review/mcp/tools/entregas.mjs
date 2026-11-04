@@ -15,6 +15,7 @@ const TIPOS = {
   pr_cerrada: 'Closed without merging',
   entrega_cerrada: 'Delivery closed',
   entrega_ajustada: 'Delivery adjusted',
+  qa_resultado: 'QA result',
 };
 
 export function lineaEvento(e, datos) {

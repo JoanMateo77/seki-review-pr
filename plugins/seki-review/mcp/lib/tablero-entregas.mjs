@@ -43,7 +43,7 @@ export function siguienteAccion(entrega, prsPorId) {
       return a.length ? `Merge testing ${listaPrs(a)}` : 'Merge the testing PRs';
     }
     case 'qa_fallo': return 'Fix the QA failure and merge a new testing PR';
-    case 'esperando_qa': return 'QA pending';
+    case 'esperando_qa': return (entrega.pistas ?? []).some((x) => x.alertas?.some((a) => a.tipo === 'qa_bloqueada')) ? 'Resolve the blocked QA case and import the results again' : 'QA pending';
     case 'listo_produccion': {
       const a = abiertas('prod');
       return a.length ? `Merge production ${listaPrs(a)}` : 'Open the production PRs';

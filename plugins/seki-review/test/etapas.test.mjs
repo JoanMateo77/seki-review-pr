@@ -155,3 +155,12 @@ test('a closure covers the production PRs it saw: it survives a key change and a
   assert.equal(construirEntregas({ ...base, eventos: [{ ...cierre, prs: undefined, entrega: 'x' }], entregas: [{ clave: 'x', prs: [prod.id, prueba.id] }] })[0].etapa, 'en_produccion');
   assert.equal(construirEntregas({ ...base, entregas: [{ clave: 'x', prs: [prod.id, prueba.id] }] })[0].ultimoEvento.id, 'c');
 });
+
+test('qa_bloqueada: a blocked result newer than the testing merge keeps esperando_qa and raises the alert; an older one does not', () => {
+  const prs = [pr('back', 'Back', 'pruebas', 'MERGED', '2026-11-01T00:00:00Z'), pr('back', 'Back', 'prod')];
+  const tipos = (qa) => alertasDePista(pista(...prs), mapa(prs), { etapa: 'esperando_qa', qa, ahora: AHORA, cfg, cfgRepos }).map((x) => x.tipo);
+  assert.equal(etapaDePista(pista(...prs), mapa(prs), { qa: { resultado: null, bloqueado: true, ts: '2026-11-02T00:00:00Z' }, ahora: AHORA, cfg }), 'esperando_qa');
+  assert.ok(tipos({ resultado: null, bloqueado: true, ts: '2026-11-02T00:00:00Z' }).includes('qa_bloqueada'));
+  assert.ok(!tipos({ resultado: null, bloqueado: true, ts: '2026-10-30T00:00:00Z' }).includes('qa_bloqueada'));
+  assert.ok(!tipos({ resultado: null, bloqueado: false, ts: '2026-11-02T00:00:00Z' }).includes('qa_bloqueada'));
+});

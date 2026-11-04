@@ -99,6 +99,9 @@ export function alertasDePista(pista, prsPorId, { etapa, qa = null, ahora, cfg =
     alertas.push({ tipo: 'sin_pruebas', prs: lista.map((pr) => pr.id), detalle: 'No testing step' });
   }
   if (etapa === 'qa_fallo') alertas.push({ tipo: 'qa_fallo', prs: pruebas.map((pr) => pr.id), detalle: 'The last QA result failed' });
+  if (etapa === 'esperando_qa' && qa?.bloqueado && qa.ts && !(masReciente(pruebas) && new Date(qa.ts) < new Date(masReciente(pruebas)))) {
+    alertas.push({ tipo: 'qa_bloqueada', prs: pruebas.map((pr) => pr.id), detalle: 'QA reported a blocked case' });
+  }
   if (etapa === 'esperando_qa' || etapa === 'listo_produccion') {
     const base = masReciente(pruebas) ?? lista.map((pr) => pr.creada).filter(Boolean).sort().at(-1);
     const desde = etapa === 'listo_produccion' && qa?.ts && (!base || qa.ts > base) ? qa.ts : base;

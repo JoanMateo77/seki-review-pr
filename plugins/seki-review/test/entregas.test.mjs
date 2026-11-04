@@ -220,3 +220,12 @@ test('the delivery title prefers the testing PR, cleaned; without one, the lowes
   const s = agrupar([pr('a', 5, { rama: 'feat/otra', titulo: 'fix(ui): Other' }), pr('b', 3, { rama: 'feat/otra', titulo: 'Late' })], c, sin);
   assert.equal(s[0].titulo, 'Late');
 });
+
+test('lineaEvento names qa_resultado events and the blocked case has its own next action', async () => {
+  const { lineaEvento } = await import('../mcp/tools/entregas.mjs');
+  assert.match(lineaEvento({ ts: '2026-11-05T10:00:00Z', tipo: 'qa_resultado', entrega: 'k' }, { prs: {} }), /QA result: k$/);
+  const { siguienteAccion } = await import('../mcp/lib/tablero-entregas.mjs');
+  const e = { etapa: 'esperando_qa', prs: [], pistas: [{ alertas: [{ tipo: 'qa_bloqueada' }] }] };
+  assert.equal(siguienteAccion(e, new Map()), 'Resolve the blocked QA case and import the results again');
+  assert.equal(siguienteAccion({ etapa: 'esperando_qa', prs: [], pistas: [] }, new Map()), 'QA pending');
+});
