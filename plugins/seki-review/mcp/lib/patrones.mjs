@@ -37,18 +37,20 @@ const cpuDelHilo = () => {
   const u = (process.threadCpuUsage ?? process.cpuUsage)();
   return (u.user + u.system) / 1000;
 };
-const MAX_INTENTOS = 20;
+const VECES_LIMITE_PARED = 10;
 
 // The vm limit is wall time, so on a loaded machine a cheap pattern can be descheduled for the whole window. A timed-out
-// run counts only for the CPU it used: it is repeated until the runs together used half the limit (an unstarved
-// catastrophic run uses about all of it, so it still stops after one run) or after MAX_INTENTOS runs.
-function enContexto(guion, re, texto, { maxLargo, timeoutMs, max = 0, cpu = cpuDelHilo }) {
+// run counts only for the CPU it used and is repeated until the runs together used half the limit (an unstarved
+// catastrophic run uses about all of it, so it still stops after one run), or until another run would pass 10 times the
+// limit of wall time. Per input that bounds the CPU to 1.5 x timeoutMs (75 ms) and the wall time to 10 x timeoutMs (500 ms).
+function enContexto(guion, re, texto, { maxLargo, timeoutMs, max = 0, cpu = cpuDelHilo, ahora = performance.now.bind(performance) }) {
   contexto.re = re;
   contexto.s = String(texto).slice(0, maxLargo);
   contexto.max = max;
   try {
+    const inicio = ahora();
     let usado = 0;
-    for (let intento = 1; ; intento++) {
+    for (;;) {
       re.lastIndex = 0;
       const antes = cpu();
       try {
@@ -57,7 +59,7 @@ function enContexto(guion, re, texto, { maxLargo, timeoutMs, max = 0, cpu = cpuD
         if (e?.code !== 'ERR_SCRIPT_EXECUTION_TIMEOUT') throw e;
       }
       usado += cpu() - antes;
-      if (usado >= timeoutMs / 2 || intento >= MAX_INTENTOS) return AGOTADO;
+      if (usado >= timeoutMs / 2 || ahora() - inicio + timeoutMs > VECES_LIMITE_PARED * timeoutMs) return AGOTADO;
     }
   } finally {
     contexto.re = null;
@@ -65,13 +67,13 @@ function enContexto(guion, re, texto, { maxLargo, timeoutMs, max = 0, cpu = cpuD
   }
 }
 
-// `cpu` exists for tests only.
-export const probarSeguro = (re, texto, { maxLargo = 4096, timeoutMs = 50, cpu } = {}) =>
-  enContexto(guionProbar, re, texto, { maxLargo, timeoutMs, cpu });
+// `cpu` and `ahora` (CPU and wall clocks in ms) exist for tests only.
+export const probarSeguro = (re, texto, { maxLargo = 4096, timeoutMs = 50, cpu, ahora } = {}) =>
+  enContexto(guionProbar, re, texto, { maxLargo, timeoutMs, cpu, ahora });
 
 // Distinct matches (at most maxCoincidencias); the caller regex is not modified.
-export function coincidencias(re, texto, { maxLargo = 4096, maxCoincidencias = 50, timeoutMs = 50, cpu } = {}) {
+export function coincidencias(re, texto, { maxLargo = 4096, maxCoincidencias = 50, timeoutMs = 50, cpu, ahora } = {}) {
   const copia = new RegExp(re.source, re.flags.includes('g') ? re.flags : `${re.flags}g`);
-  const r = enContexto(guionTodas, copia, texto, { maxLargo, timeoutMs, max: maxCoincidencias, cpu });
+  const r = enContexto(guionTodas, copia, texto, { maxLargo, timeoutMs, max: maxCoincidencias, cpu, ahora });
   return r === AGOTADO ? r : Array.from(r);
 }

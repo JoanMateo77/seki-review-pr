@@ -147,14 +147,16 @@ test('probarSeguro repeats a timed-out run that used little CPU instead of repor
   assert.equal(re.ejecuciones, 2);
 });
 
-test('a timed-out run counts for the CPU it used: AGOTADO once the runs used half the limit, or after 20 runs', () => {
+test('a timed-out run counts for the CPU it used: AGOTADO once the runs used half the limit, or before 10 x the limit of wall time', () => {
   const lecturas = [0, 0, 0, 0, 0, 10];
   const [r, entradas] = ejecuciones('(a|aa)+b', () => coincidencias(/(a|aa)+b/, 'a'.repeat(4096), { timeoutMs: 20, cpu: () => lecturas.shift() }));
   assert.equal(r, AGOTADO);
   assert.equal(entradas.length, 3);
-  const [r2, entradas2] = ejecuciones('(a|aa)+b', () => probarSeguro(/(a|aa)+b/, 'a'.repeat(4096), { timeoutMs: 5, cpu: () => 0 }));
+  // Each run takes 50 ms of fake wall time and no CPU: an eleventh run would end past 500 ms.
+  let lectura = 0;
+  const [r2, entradas2] = ejecuciones('(a|aa)+b', () => probarSeguro(/(a|aa)+b/, 'a'.repeat(4096), { timeoutMs: 50, cpu: () => 0, ahora: () => 50 * lectura++ }));
   assert.equal(r2, AGOTADO);
-  assert.equal(entradas2.length, 20);
+  assert.equal(entradas2.length, 10);
 });
 
 test('verificar: a config archivos and excluir still select files', () => {
