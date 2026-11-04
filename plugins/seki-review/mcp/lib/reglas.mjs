@@ -133,8 +133,6 @@ export const REGLAS = [
   },
 ];
 
-// Project-specific rules, under `reglas` in proyectos.json, with the expressions as strings.
-// soloEnTexto: the line counts only in views or if the pattern appears inside a string literal (visible text).
 // Tests a config pattern with a time limit; on timeout the rule is disabled and warned about once.
 export function probarRegla(regla, re, texto) {
   if (regla.agotada) return false;
@@ -145,6 +143,8 @@ export function probarRegla(regla, re, texto) {
   return false;
 }
 
+// Project-specific rules, under `reglas` in proyectos.json, with the expressions as strings.
+// soloEnTexto: the line counts only in views or if the pattern appears inside a string literal (visible text).
 export function reglasDeConfig(lista = []) {
   const reglas = [];
   for (const r of lista) {
