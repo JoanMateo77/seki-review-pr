@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { leerJson, rutaExplicacion, rutaInstantanea } from './cache.mjs';
 import { diffsDeFoto } from './diffs.mjs';
 
-const PLANTILLA = join(dirname(fileURLToPath(import.meta.url)), '../tablero/plantilla.html');
+const PARTES = join(dirname(fileURLToPath(import.meta.url)), '../tablero/partes');
 const ANCLAJE = join(dirname(fileURLToPath(import.meta.url)), '../tablero/anclaje.js');
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), '../../.claude-plugin/plugin.json');
 
@@ -23,12 +23,18 @@ export function fotoConExplicaciones(p) {
   return foto;
 }
 
+// The template lives in ordered parts (partes/orden.json); read from disk on every call, like the former single file.
+export const leerPlantilla = () =>
+  JSON.parse(readFileSync(join(PARTES, 'orden.json'), 'utf8'))
+    .map((nombre) => readFileSync(join(PARTES, nombre), 'utf8'))
+    .join('');
+
 const incrustar = (v) => JSON.stringify(v).replace(/</g, '\\u003c');
 
 // api: null for the static file; { token } when served by the local server with actions.
 // p: project, to embed the saved diffs.
 export const construirHtml = (p, foto, api = null) =>
-  readFileSync(PLANTILLA, 'utf8')
+  leerPlantilla()
     .replace('/*ANCLAJE*/', () => readFileSync(ANCLAJE, 'utf8'))
     .replace('/*DATOS*/null', () => incrustar(foto))
     .replace('/*API*/null', () => incrustar(api))
