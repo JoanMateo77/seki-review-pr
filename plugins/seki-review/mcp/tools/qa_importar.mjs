@@ -5,7 +5,7 @@ const NOMBRE = { ok: 'passed', fallo: 'failed', pendiente: 'pending', bloqueado:
 
 export function resumenImportacion(r) {
   const lineas = [`Guide ${r.guia}: ${r.nuevos} new result${r.nuevos === 1 ? '' : 's'} recorded.`];
-  for (const x of r.resumen) lineas.push(`- ${x.entrega} / ${x.portal}: ${NOMBRE[x.resultado] ?? x.resultado} (${x.filas} ${x.filas === 1 ? 'row' : 'rows'})`);
+  for (const x of r.resumen) lineas.push(`- ${x.entrega} / ${x.portal}: ${NOMBRE[x.resultado] ?? x.resultado} (${x.filas} ${x.filas === 1 ? 'row' : 'rows'}${x.ya_registradas ? `, ${x.ya_registradas} already recorded` : ''})`);
   if (r.rechazadas.length) {
     lineas.push('', `Rejected rows (${r.rechazadas.length}):`);
     for (const x of r.rechazadas) lineas.push(`- ${x.etiqueta || '(no ID)'} / ${x.portal || '(no portal)'}: ${x.motivo}`);

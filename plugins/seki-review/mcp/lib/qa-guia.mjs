@@ -172,13 +172,13 @@ export function qaDeEventos(eventos, guias) {
   const resultados = (eventos ?? []).filter((e) => e?.tipo === 'qa_resultado' && Array.isArray(e.prs));
   return (_entrega, pista) => {
     const propios = new Set(pista.prs);
-    const cubren = (guias ?? []).filter((g) => (g.filas ?? []).some((f) => cruzan(f.prs ?? [], propios)));
+    const cubren = (guias ?? []).filter((g) => (g.filas ?? []).some((f) => f.portal === pista.portal && cruzan(f.prs ?? [], propios)));
     if (!cubren.length) return null;
     const guia = cubren.reduce((a, b) => (cmp(b.fecha ?? '', a.fecha ?? '') > 0 || (cmp(b.fecha ?? '', a.fecha ?? '') === 0 && cmp(b.id, a.id) > 0) ? b : a));
-    const filas = guia.filas.filter((f) => cruzan(f.prs ?? [], propios));
+    const filas = guia.filas.filter((f) => f.portal === pista.portal && cruzan(f.prs ?? [], propios));
     const ultimo = new Map();
     for (const e of resultados) {
-      if (e.guia !== guia.id || !cruzan(e.prs, propios)) continue;
+      if (e.guia !== guia.id || e.portal !== pista.portal || !cruzan(e.prs, propios)) continue;
       const k = llaveFila(e.fila, e.portal);
       const previo = ultimo.get(k);
       const orden = previo ? cmp(e.ts, previo.ts) || cmp(e.registrado ?? '', previo.registrado ?? '') || cmp(e.id, previo.id) : 1;

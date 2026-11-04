@@ -174,7 +174,7 @@ test('a corrected file (Fail then OK) turns the track from failed to ready', asy
   assert.equal(etapas(p).p1, 'qa_fallo');
   await importarQa(p, { buf: rellenar(buf, { 2: 'OK', 3: 'OK', 4: 'OK', 5: 'OK' }), ahora: T2 });
   assert.deepEqual(etapas(p), { p1: 'listo_produccion', p2: 'listo_produccion' });
-  const pista = { prs: ['r#1'] };
+  const pista = { portal: 'p1', prs: ['r#1'] };
   const qa = qaDeEventos(leerEventos(p), leerGuias(p).guias)({}, pista);
   assert.equal(qa.resultado, 'ok');
   assert.equal(qa.ts, T2.toISOString());
@@ -205,7 +205,7 @@ test('qaDeEventos: only the newest guide counts and the newest import of a row w
     { id: 'g2', fecha: '2026-11-03T00:00:00Z', filas: [{ etiqueta: 'A', portal: 'p', prs: ['r#1'] }, { etiqueta: 'B', portal: 'p', prs: ['r#1'] }] },
   ];
   const ev = (id, guia, fila, resultado, ts) => ({ id, tipo: 'qa_resultado', prs: ['r#1'], portal: 'p', guia, fila, resultado, ts });
-  const qa = (eventos) => qaDeEventos(eventos, guias)({}, { prs: ['r#1'] });
+  const qa = (eventos) => qaDeEventos(eventos, guias)({}, { portal: 'p', prs: ['r#1'] });
   assert.equal(qa([]), null);
   assert.equal(qa([ev('a', 'g1', 'A', 'ok', '2026-11-02T00:00:00Z')]), null);
   assert.deepEqual(qa([ev('a', 'g2', 'A', 'ok', '2026-11-04T00:00:00Z')]), { resultado: null, ts: '2026-11-04T00:00:00Z', bloqueado: false });
@@ -213,7 +213,7 @@ test('qaDeEventos: only the newest guide counts and the newest import of a row w
   assert.equal(qa([ev('a', 'g2', 'A', 'fallo', '2026-11-04T00:00:00Z'), ev('b', 'g2', 'B', 'ok', '2026-11-04T00:00:00Z')]).resultado, 'fallo');
   assert.equal(qa([ev('a', 'g2', 'A', 'fallo', '2026-11-04T00:00:00Z'), ev('c', 'g2', 'A', 'ok', '2026-11-05T00:00:00Z'), ev('b', 'g2', 'B', 'ok', '2026-11-04T00:00:00Z')]).resultado, 'ok');
   assert.equal(qa([ev('a', 'g2', 'A', 'ok', '2026-11-04T00:00:00Z'), ev('b', 'g2', 'B', 'bloqueado', '2026-11-04T00:00:00Z')]).bloqueado, true);
-  assert.equal(qaDeEventos([ev('a', 'g2', 'A', 'ok', '2026-11-04T00:00:00Z')], guias)({}, { prs: ['r#9'] }), null);
+  assert.equal(qaDeEventos([ev('a', 'g2', 'A', 'ok', '2026-11-04T00:00:00Z')], guias)({}, { portal: 'p', prs: ['r#9'] }), null);
 });
 
 test('analizarImportacion is pure over its inputs and returns the events it would register', async () => {
@@ -255,4 +255,112 @@ test('path checks: allowed folder, outside folder, symlink escape, size and exte
   assert.equal(await codigo({ ruta: xls }), 'QA_RUTA');
   assert.equal(await codigo({ ruta: join(p.salida, 'qa', 'no-existe.xlsx') }), 'QA_RUTA');
   assert.equal(await codigo({ buf: Buffer.alloc(6 * 1024 * 1024) }), 'QA_TAMANO');
+});
+
+test('xlsx reader errors reach the caller with their code', async () => {
+  const { p } = await escenario();
+  await assert.rejects(importarQa(p, { buf: Buffer.from('not a zip file at all'), ahora: T1 }), (e) => typeof e.codigo === 'string' && e.codigo.length > 0 && /\[seki-review\/xlsx\]/.test(e.message));
+});
+
+test('distinct codes for missing content and missing deliveries', async () => {
+  const { p } = await escenario();
+  await assert.rejects(importarQa(p, {}), { codigo: 'QA_VACIA' });
+  const vacio = { ...p, salida: mkdtempSync(join(tmpdir(), 'seki-qa-vacio-')) };
+  temporales.push(vacio.salida);
+  await assert.rejects(importarQa(vacio, { buf: Buffer.from('x') }), { codigo: 'QA_SIN_ENTREGAS' });
+});
+
+test('a single-line repo shared by two portals: p1 OK and p2 Fail do not contaminate each other', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'seki-qa-imp-'));
+  temporales.push(dir);
+  const salida = join(dir, 'salida');
+  mkdirSync(join(salida, 'datos'), { recursive: true });
+  const p = {
+    clave: 't', owner: 'o', salida, qa: structuredClone(QA_DEFECTO), entregas: { ...ENTREGAS_DEFECTO, patronId: 'X-\\d+' },
+    repos: {
+      f: { lineas: [{ portal: 'p1', prod: 'mp1', pruebas: 'tp1' }, { portal: 'p2', prod: 'mp2', pruebas: 'tp2' }] },
+      b: { lineas: [{ portal: 'Back', prod: 'main', pruebas: 'dev' }] },
+    },
+  };
+  const mk = (repo, n, portal) => ({ ...pr(n, portal), id: `${repo}#${n}`, repo });
+  const foto = { prs: [mk('f', 1, 'p1'), mk('f', 2, 'p2'), mk('b', 9, 'Back')], recientes: [] };
+  escribirJson(rutaInstantanea(salida), foto);
+  await derivarEntregas(p, foto);
+  const g = await generarGuia(p, { ahora: GUIA, chrome: null });
+  const qa = leerXlsx(readFileSync(g.archivos.xlsx)).hojas.find((h) => h.nombre === 'QA').filas;
+  const fila = (portal) => qa.findIndex((f, i) => i > 0 && f[1] === portal && f[0] === 'X-001') + 1;
+  const buf = readFileSync(g.archivos.xlsx);
+  const llena = (a, b) => editarCeldas(buf, { hoja: 'QA', celdas: [{ ref: `H${fila('p1')}`, valor: a }, { ref: `H${fila('p2')}`, valor: b }, ...qa.slice(1).map((f, i) => ({ ref: `H${i + 2}`, valor: 'OK' })).filter((c) => ![fila('p1'), fila('p2')].some((n) => c.ref === `H${n}`))] });
+  const r = await importarQa(p, { buf: llena('OK', 'Fail'), ahora: T1 });
+  assert.deepEqual(r.rechazadas, []);
+  assert.deepEqual(etapas(p), { p1: 'listo_produccion', p2: 'qa_fallo' });
+  // p2 rows are still accepted although p1 already reached listo_produccion (target track is looked up by portal).
+  const r2 = await importarQa(p, { buf: llena('OK', 'OK'), ahora: T2 });
+  assert.deepEqual(r2.rechazadas, []);
+  assert.deepEqual(etapas(p), { p1: 'listo_produccion', p2: 'listo_produccion' });
+});
+
+test('corrections before production: OK then Fail moves listo_produccion back to qa_fallo; incremental imports keep p1 rows quiet', async () => {
+  const { p, buf } = await escenario();
+  const todo = { 2: 'OK', 3: 'OK', 4: 'OK', 5: 'OK' };
+  await importarQa(p, { buf: rellenar(buf, todo), ahora: T1 });
+  assert.equal(etapas(p).p1, 'listo_produccion');
+  const r = await importarQa(p, { buf: rellenar(buf, { ...todo, 2: 'Fail' }), ahora: T2 });
+  assert.deepEqual(r.rechazadas, []);
+  assert.equal(r.nuevos, 4);
+  assert.equal(etapas(p).p1, 'qa_fallo');
+  assert.equal(etapas(p).p2, 'listo_produccion');
+  const igual = await importarQa(p, { buf: rellenar(buf, { ...todo, 2: 'Fail' }), ahora: new Date('2026-11-05T12:00:00Z') });
+  assert.equal(igual.nuevos, 0);
+  assert.ok(igual.resumen.every((x) => x.ya_registradas === 2));
+});
+
+test('once in production an equal stored result is skipped silently and a different one is rejected', async () => {
+  const { p, foto, buf } = await escenario();
+  await importarQa(p, { buf: rellenar(buf, { 2: 'OK', 3: 'OK', 4: 'OK', 5: 'OK' }), ahora: T1 });
+  foto.prs.push({ id: 'r#20', repo: 'r', numero: 20, portal: 'p1', ambiente: 'prod', estadoPr: 'MERGED', mergeada: '2026-11-06T10:00:00Z', titulo: 'Fix login X-001 X-002', ramaOrigen: 'fix/login', base: 'mp1', descripcion: '' });
+  escribirJson(rutaInstantanea(p.salida), foto);
+  await derivarEntregas(p, foto);
+  assert.equal(etapas(p).p1, 'en_produccion');
+  const r = await importarQa(p, { buf: rellenar(buf, { 2: 'OK', 3: 'Fail', 4: 'OK', 5: 'OK' }, 'Bo'), ahora: T2 });
+  assert.deepEqual(r.rechazadas.map((x) => [x.etiqueta, x.motivo]), [['X-002', 'The delivery is already in production']]);
+  assert.equal(r.nuevos, 2);
+});
+
+test('a guide without a recorded merge for a track that now has a testing merge counts as stale', async () => {
+  const { p, buf, guia } = await escenario();
+  const ruta = join(p.salida, 'datos', 'guias.json');
+  const g = JSON.parse(readFileSync(ruta, 'utf8'));
+  g.guias[0].fusiones = {};
+  writeFileSync(ruta, JSON.stringify(g));
+  const r = await importarQa(p, { buf: rellenar(buf, { 2: 'OK' }), ahora: T1 });
+  assert.deepEqual(conMotivos(r), ['New testing merge after the guide: generate a new guide']);
+  assert.ok(guia.id);
+});
+
+test('a title row above the header and a dropped hidden flag still import', async () => {
+  const { p, buf } = await escenario();
+  const libro = leerXlsx(rellenar(buf, { 2: 'OK' }));
+  const qa = libro.hojas.find((h) => h.nombre === 'QA');
+  const seki = libro.hojas.find((h) => h.nombre === '_seki');
+  const r = await importarQa(p, { buf: escribirXlsx({ hojas: [{ nombre: 'Report', filas: [['Title'], ...qa.filas], encabezado: false }, { nombre: '_seki', filas: seki.filas, encabezado: false }] }), ahora: T1 });
+  assert.equal(r.nuevos, 1);
+});
+
+test('since-last-cut and key-selected guides skip tracks already passed', async () => {
+  const { p, buf } = await escenario();
+  await importarQa(p, { buf: rellenar(buf, { 2: 'OK', 3: 'OK', 4: 'OK', 5: 'OK' }), ahora: T1 });
+  const corte = await generarGuia(p, { ahora: GUIA, chrome: null, desde: 'ultimo-corte' });
+  assert.equal(corte.vacia, true);
+  const nueva = await generarGuia(p, { ahora: new Date('2026-11-04T13:00:00'), chrome: null, claves: leerJson(rutaEntregas(p.salida)).entregas.map((e) => e.clave) });
+  assert.equal(nueva.vacia, true);
+});
+
+test('rows of an older guide are rejected once a newer guide covers the track', async () => {
+  const { p, buf } = await escenario();
+  await importarQa(p, { buf: rellenar(buf, { 2: 'Fail' }), ahora: T1 });
+  const nueva = await generarGuia(p, { ahora: new Date('2026-11-04T13:00:00'), chrome: null });
+  assert.equal(nueva.vacia, false);
+  const r = await importarQa(p, { buf: rellenar(buf, { 3: 'OK' }), ahora: T2 });
+  assert.deepEqual(conMotivos(r), ['A newer guide covers this delivery: use the newest guide']);
 });
