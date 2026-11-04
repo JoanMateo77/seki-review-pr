@@ -200,7 +200,7 @@ test('a Blocked row keeps the delivery waiting and raises qa_bloqueada', async (
   assert.ok(pista.alertas.some((a) => a.tipo === 'qa_bloqueada'));
 });
 
-test('qaDeEventos: only the newest guide counts and the newest import of a row wins', () => {
+test('qaDeEventos: only the governing guide counts and the newest import of a row wins', () => {
   const guias = [
     { id: 'g1', fecha: '2026-11-01T00:00:00Z', filas: [{ etiqueta: 'A', portal: 'p', prs: ['r#1'] }] },
     { id: 'g2', fecha: '2026-11-03T00:00:00Z', filas: [{ etiqueta: 'A', portal: 'p', prs: ['r#1'] }, { etiqueta: 'B', portal: 'p', prs: ['r#1'] }] },
@@ -208,7 +208,8 @@ test('qaDeEventos: only the newest guide counts and the newest import of a row w
   const ev = (id, guia, fila, resultado, ts) => ({ id, tipo: 'qa_resultado', prs: ['r#1'], portal: 'p', guia, fila, resultado, ts });
   const qa = (eventos) => qaDeEventos(eventos, guias)({}, { portal: 'p', prs: ['r#1'] });
   assert.equal(qa([]), null);
-  assert.equal(qa([ev('a', 'g1', 'A', 'ok', '2026-11-02T00:00:00Z')]), null);
+  assert.equal(qa([ev('a', 'g1', 'A', 'ok', '2026-11-02T00:00:00Z')]).resultado, 'ok');
+  assert.equal(qa([ev('a', 'g1', 'A', 'ok', '2026-11-02T00:00:00Z'), ev('b', 'g2', 'A', 'ok', '2026-11-04T00:00:00Z')]).resultado, null);
   assert.deepEqual(qa([ev('a', 'g2', 'A', 'ok', '2026-11-04T00:00:00Z')]), { resultado: null, ts: '2026-11-04T00:00:00Z', bloqueado: false });
   assert.equal(qa([ev('a', 'g2', 'A', 'ok', '2026-11-04T00:00:00Z'), ev('b', 'g2', 'B', 'na', '2026-11-04T00:00:00Z')]).resultado, 'ok');
   assert.equal(qa([ev('a', 'g2', 'A', 'fallo', '2026-11-04T00:00:00Z'), ev('b', 'g2', 'B', 'ok', '2026-11-04T00:00:00Z')]).resultado, 'fallo');
@@ -357,12 +358,25 @@ test('since-last-cut and key-selected guides skip tracks already passed', async 
   assert.equal(nueva.vacia, true);
 });
 
-test('rows of an older guide are rejected once a newer guide covers the track', async () => {
+test('an empty newer guide does not supersede imported results and the guide being filled still imports', async () => {
+  const { p, buf } = await escenario();
+  await importarQa(p, { buf: rellenar(buf, { 2: 'Fail' }), ahora: T1 });
+  assert.equal(etapas(p).p1, 'qa_fallo');
+  const nueva = await generarGuia(p, { ahora: new Date('2026-11-04T13:00:00'), chrome: null });
+  assert.equal(nueva.vacia, false);
+  assert.equal(etapas(p).p1, 'qa_fallo');
+  const r = await importarQa(p, { buf: rellenar(buf, { 3: 'OK' }), ahora: T2 });
+  assert.deepEqual(conMotivos(r), []);
+  assert.equal(etapas(p).p1, 'qa_fallo');
+});
+
+test('rows of an older guide are rejected once a newer guide has results for the track', async () => {
   const { p, buf } = await escenario();
   await importarQa(p, { buf: rellenar(buf, { 2: 'Fail' }), ahora: T1 });
   const nueva = await generarGuia(p, { ahora: new Date('2026-11-04T13:00:00'), chrome: null });
-  assert.equal(nueva.vacia, false);
-  const r = await importarQa(p, { buf: rellenar(buf, { 3: 'OK' }), ahora: T2 });
+  const buf2 = readFileSync(nueva.archivos.xlsx);
+  await importarQa(p, { buf: rellenar(buf2, { 2: 'OK' }), ahora: T2 });
+  const r = await importarQa(p, { buf: rellenar(buf, { 3: 'OK' }), ahora: new Date('2026-11-04T14:00:00') });
   assert.deepEqual(conMotivos(r), ['A newer guide covers this delivery: use the newest guide']);
 });
 

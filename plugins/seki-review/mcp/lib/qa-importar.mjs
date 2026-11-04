@@ -9,13 +9,12 @@ import { dirQa, leerJson, rutaEntregas, rutaInstantanea } from './cache.mjs';
 import { expandir } from './config.mjs';
 import { leerEventos, registrarEventos } from './eventos.mjs';
 import { aplicarRastreador } from './rastreador-xlsx.mjs';
-import { claveFusion, firmaFila, fusionDePista, leerGuias, qaDeEventos } from './qa-guia.mjs';
+import { claveFusion, esMasNueva, firmaFila, fusionDePista, guiaVigente, leerGuias, tieneResultados } from './qa-guia.mjs';
 import { COLUMNAS_SEKI, FORMATO_SEKI } from './qa-salida.mjs';
 import { derivarEnSerie, enSerieEntregas } from './recolectar.mjs';
 import { mapaPrs } from './tablero-entregas.mjs';
 import { leerXlsx } from './xlsx.mjs';
 
-export { qaDeEventos };
 export const MAX_ARCHIVO = 5 * 1024 * 1024;
 const ETAPAS_QA = new Set(['esperando_qa', 'qa_fallo', 'listo_produccion']);
 const ETAPAS_PROD = new Set(['en_produccion', 'cerrada']);
@@ -133,9 +132,8 @@ export function analizarImportacion(p, buf, { entregas = [], guias = [], ahora =
       rechazar('The delivery is no longer waiting for QA');
       continue;
     }
-    const cubren = guias.filter((g) => g.filas.some((f) => f.portal === registrada.portal && f.prs.some((x) => propios.has(x))));
-    const masNueva = cubren.reduce((a, b) => (b.fecha > a.fecha || (b.fecha === a.fecha && b.id > a.id) ? b : a), guia);
-    if (masNueva.id !== guia.id) {
+    const vigente = guiaVigente(guias, { portal: registrada.portal, prs: registrada.prs }, previos);
+    if (vigente && vigente.id !== guia.id && esMasNueva(vigente, guia) && tieneResultados(vigente, { portal: registrada.portal, prs: registrada.prs }, previos)) {
       rechazar('A newer guide covers this delivery: use the newest guide');
       continue;
     }

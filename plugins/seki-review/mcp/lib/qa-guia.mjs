@@ -164,17 +164,35 @@ export async function registrarGuia(p, guia) {
 
 const llaveFila = (etiqueta, portal) => JSON.stringify([etiqueta, portal]);
 const cruzan = (a, b) => a.some((id) => b.has(id));
+const masNueva = (a, b) => (cmp(b.fecha ?? '', a.fecha ?? '') > 0 || (cmp(b.fecha ?? '', a.fecha ?? '') === 0 && cmp(b.id, a.id) > 0) ? b : a);
 
-// QA state of a track from the imported results: only the rows of the newest guide covering the track count,
+// True when `b` was generated after `a`.
+export const esMasNueva = (b, a) => masNueva(a, b) === b && b.id !== a.id;
+
+export function tieneResultados(guia, pista, eventos) {
+  const propios = new Set(pista.prs);
+  return (eventos ?? []).some((e) => e?.tipo === 'qa_resultado' && e.guia === guia.id && e.portal === pista.portal && Array.isArray(e.prs) && cruzan(e.prs, propios));
+}
+
+// The guide that governs a track: the newest covering guide that has results for it, else the newest covering guide.
+// Generating a newer, still empty guide therefore never discards results already imported.
+export function guiaVigente(guias, pista, eventos) {
+  const propios = new Set(pista.prs);
+  const cubren = (guias ?? []).filter((g) => (g.filas ?? []).some((f) => f.portal === pista.portal && cruzan(f.prs ?? [], propios)));
+  if (!cubren.length) return null;
+  const conResultados = cubren.filter((g) => tieneResultados(g, pista, eventos));
+  return (conResultados.length ? conResultados : cubren).reduce(masNueva);
+}
+
+// QA state of a track from the imported results: only the rows of the governing guide (guiaVigente) count,
 // the newest import of each row wins, any failure fails the track, and the track passes only when every row
 // of the guide for it has an ok/na result. Rows whose newest result is `bloqueado` set `bloqueado`.
 export function qaDeEventos(eventos, guias) {
   const resultados = (eventos ?? []).filter((e) => e?.tipo === 'qa_resultado' && Array.isArray(e.prs));
   return (_entrega, pista) => {
     const propios = new Set(pista.prs);
-    const cubren = (guias ?? []).filter((g) => (g.filas ?? []).some((f) => f.portal === pista.portal && cruzan(f.prs ?? [], propios)));
-    if (!cubren.length) return null;
-    const guia = cubren.reduce((a, b) => (cmp(b.fecha ?? '', a.fecha ?? '') > 0 || (cmp(b.fecha ?? '', a.fecha ?? '') === 0 && cmp(b.id, a.id) > 0) ? b : a));
+    const guia = guiaVigente(guias, pista, resultados);
+    if (!guia) return null;
     const filas = guia.filas.filter((f) => f.portal === pista.portal && cruzan(f.prs ?? [], propios));
     const ultimo = new Map();
     for (const e of resultados) {
