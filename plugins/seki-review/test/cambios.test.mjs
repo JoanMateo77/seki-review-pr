@@ -6,7 +6,7 @@ import { falsoGhRutas } from './util/gh-rutas.mjs';
 const pr = (numero, accion, extra = {}) => ({ id: `r#${numero}`, repo: 'r', numero, titulo: `PR ${numero}`, base: 'main', portal: 'p', accion, estadoPr: 'OPEN', ...extra });
 
 test('compararFotos reports merged, new and moved PRs', async () => {
-  const gh = falsoGhRutas([{ patron: 'api repos/o/r/pulls/1', json: { merged_at: '2026-11-01T10:00:00Z', state: 'closed' } }]);
+  const gh = falsoGhRutas([{ patron: '^api repos/o/r/pulls/1$', json: { merged_at: '2026-11-01T10:00:00Z', state: 'closed' } }]);
   process.env.SEKI_GH = gh.ruta;
   const anterior = { generado: 'a', prs: [pr(1, 'revisar'), pr(2, 'revisar')] };
   const actual = { generado: 'b', prs: [pr(2, 'esperar'), pr(3, 'revisar')] };

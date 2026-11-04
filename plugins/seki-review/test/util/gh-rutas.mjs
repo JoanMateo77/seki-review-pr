@@ -1,5 +1,8 @@
-// Routing fake `gh`: a Node script that joins argv with spaces and answers with the JSON of the first
-// route whose `patron` (regex source) matches. Unmatched calls exit 1 with `no route`. Every call is
+// Routing fake `gh`: a Node script that joins argv with spaces and answers with the first route whose
+// `patron` matches. `patron` is a regex source over the space-joined args and is NOT anchored: anchor
+// it (`^...$`) and escape metacharacters (`\\.`, `\\?`), or `pulls/1` also matches `pulls/10`.
+// A route answers with `json` (serialized), or `texto` (raw stdout); `stderr` is written to stderr and
+// `salida` is the exit code (default 0). Unmatched calls exit 1 with `no route: <args>`. Every call is
 // appended to a calls file as one JSON line (the argv array). Routes can be replaced during a test.
 import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -12,11 +15,13 @@ fs.appendFileSync(${JSON.stringify(llamadas)}, JSON.stringify(args) + '\\n');
 const linea = args.join(' ');
 for (const r of JSON.parse(fs.readFileSync(${JSON.stringify(rutas)}, 'utf8'))) {
   if (new RegExp(r.patron).test(linea)) {
-    process.stdout.write(JSON.stringify(r.json));
-    process.exit(0);
+    if (r.stderr !== undefined) process.stderr.write(r.stderr);
+    if (r.texto !== undefined) process.stdout.write(r.texto);
+    else if (r.json !== undefined) process.stdout.write(JSON.stringify(r.json));
+    process.exit(r.salida ?? 0);
   }
 }
-process.stderr.write('no route');
+process.stderr.write('no route: ' + linea);
 process.exit(1);
 `;
 
