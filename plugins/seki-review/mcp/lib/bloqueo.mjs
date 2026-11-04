@@ -1,6 +1,12 @@
-import { appendFileSync, closeSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomBytes } from 'node:crypto';
 import { basename, dirname } from 'node:path';
+
+// Paths held by this process (sync acquires cannot wait for them) and, per async context, by the running holder.
+const retenidas = new Set();
+const contexto = new AsyncLocalStorage();
+const reentrada = (ruta) => new Error(`Lock already held by this process: ${basename(ruta)}`);
 
 const OBSOLETO_MS = 30_000;
 const REINTENTO_MS = 50;
@@ -39,23 +45,28 @@ function leerLock(rutaLock) {
   }
 }
 
-// Moves a verified-stale lock aside so only one contender can remove it. If the file moved is not the one
-// verified (it was replaced in between), it is put back with a hard link, which fails if the name is taken.
+// Take-overs are serialised by a guard file so that only one contender judges and removes a stale lock.
+// A guard older than 30 s is stale; that window is safe because a guard is held for microseconds.
 function retirarObsoleto(rutaLock, contenido) {
-  const apartado = `${rutaLock}.${process.pid}.${randomBytes(4).toString('hex')}.stale`;
+  const guarda = `${rutaLock}.takeover`;
+  let fd;
   try {
-    renameSync(rutaLock, apartado);
-  } catch {
+    fd = openSync(guarda, 'wx');
+  } catch (e) {
+    if (e.code !== 'EEXIST') throw e;
+    try {
+      if (Date.now() - statSync(guarda).mtimeMs > OBSOLETO_MS) unlinkSync(guarda);
+    } catch { /* released meanwhile */ }
     return;
   }
-  if (leerLock(apartado) !== contenido) {
-    try {
-      linkSync(apartado, rutaLock);
-    } catch { /* another holder already took the name */ }
-  }
   try {
-    unlinkSync(apartado);
-  } catch { /* already gone */ }
+    if (leerLock(rutaLock) === contenido) unlinkSync(rutaLock);
+  } catch { /* already gone */ } finally {
+    closeSync(fd);
+    try {
+      unlinkSync(guarda);
+    } catch { /* already gone */ }
+  }
 }
 
 // One attempt: returns the token that proves ownership, or null if the lock is held.
@@ -95,6 +106,7 @@ const preparar = (ruta) => {
 const ocupado = (ruta) => new Error(`Lock busy: ${basename(ruta)}`);
 
 export function conBloqueoSync(ruta, fn, { esperaMs = 5000 } = {}) {
+  if (retenidas.has(ruta)) throw reentrada(ruta);
   const rutaLock = preparar(ruta);
   const limite = Date.now() + esperaMs;
   const pausa = new Int32Array(new SharedArrayBuffer(4));
@@ -103,14 +115,18 @@ export function conBloqueoSync(ruta, fn, { esperaMs = 5000 } = {}) {
     if (Date.now() >= limite) throw ocupado(ruta);
     Atomics.wait(pausa, 0, 0, REINTENTO_MS);
   }
+  retenidas.add(ruta);
   try {
     return fn();
   } finally {
+    retenidas.delete(ruta);
     liberar(rutaLock, token);
   }
 }
 
 export async function conBloqueo(ruta, fn, { esperaMs = 5000 } = {}) {
+  const propias = contexto.getStore() ?? new Set();
+  if (propias.has(ruta)) throw reentrada(ruta);
   const rutaLock = preparar(ruta);
   const limite = Date.now() + esperaMs;
   let token;
@@ -118,9 +134,11 @@ export async function conBloqueo(ruta, fn, { esperaMs = 5000 } = {}) {
     if (Date.now() >= limite) throw ocupado(ruta);
     await new Promise((r) => setTimeout(r, REINTENTO_MS));
   }
+  retenidas.add(ruta);
   try {
-    return await fn();
+    return await contexto.run(new Set([...propias, ruta]), fn);
   } finally {
+    retenidas.delete(ruta);
     liberar(rutaLock, token);
   }
 }

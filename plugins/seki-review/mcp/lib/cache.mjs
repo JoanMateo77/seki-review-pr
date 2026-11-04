@@ -1,11 +1,10 @@
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { conBloqueoSync, escribirAtomico } from './bloqueo.mjs';
 
 export const leerJson = (ruta, porDefecto = null) => (existsSync(ruta) ? JSON.parse(readFileSync(ruta, 'utf8')) : porDefecto);
 
 export function escribirJson(ruta, datos) {
-  mkdirSync(join(ruta, '..'), { recursive: true });
   conBloqueoSync(ruta, () => escribirAtomico(ruta, JSON.stringify(datos, null, 2) + '\n'));
 }
 
