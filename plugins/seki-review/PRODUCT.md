@@ -30,6 +30,11 @@ Unlike GitHub's PR list, it checks with git whether the code is already in testi
 - Self-contained HTML, no build or dependencies; only Mermaid is loaded from the CDN, and without network the text is shown.
 - What the reviewer marks lives in their browser; to hand it back to the author it is exported and imported as a file.
 - With the dashboard served, approving a change proposal commits and pushes to the PR's branch: it is the only write to GitHub. It never merges or posts comments.
+- Deliveries board (default tab): PRs of one change across repos and environments are grouped by shared branch key, finding ID or cross-reference, with stage, next action and alerts. Join, split, rename and close are local adjustments.
+- Append-only event history of merges and closures, a "since last visit" banner and the `entregas` MCP tool; none of them calls GitHub when read.
+- While the dashboard tab is visible a watcher polls GitHub for merges (default 300 s, minimum 120 s); it is read-only.
+- Shared data files are written atomically under a lock; regular expressions from the configuration are guarded by a time limit.
+- Requires Node 22 or newer.
 - UI text in formal, impersonal English, no emojis; each project's own text rules go in its `contexto`.
 
 ## Product Principles

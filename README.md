@@ -24,7 +24,7 @@ fill it in with your repos and branches. In Claude Code, `/seki-review:review-pr
 
 After editing the plugin: `claude plugin marketplace update seki` and restart the session.
 
-Requirements: authenticated `gh` and Node >= 18 (the launcher looks in `~/.proto` first; `SEKI_NODE`
+Requirements: authenticated `gh` and Node >= 22 (the launcher looks in `~/.proto` first; `SEKI_NODE`
 sets it explicitly). No npm dependencies.
 
 ## seki-review
