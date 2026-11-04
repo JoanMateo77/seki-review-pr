@@ -12,10 +12,15 @@ const ETAPAS_TABLERO = [
   ['descartada', 'Discarded', ''],
 ];
 const ETAPA = Object.fromEntries(ETAPAS_TABLERO.map(([k, nombre, color]) => [k, { nombre, color }]));
-const ALERTA_TABLERO = { gemela_faltante: 'Missing twin', orden: 'Merge order', sin_pruebas: 'No testing step', qa_fallo: 'QA failed', estancada: 'Stalled' };
+const ALERTA_TABLERO = { gemela_faltante: 'Missing twin', orden: 'Merge order', sin_pruebas: 'No testing step', qa_fallo: 'QA failed', qa_bloqueada: 'QA blocked', estancada: 'Stalled' };
 const ESTADO_PR_TABLERO = { OPEN: ['Open', 'ambar'], MERGED: ['Merged', 'violeta'], CLOSED: ['Closed', ''] };
 const EVENTO_TABLERO = { pr_mergeada: 'Merged', pr_cerrada: 'Closed without merging', entrega_cerrada: 'Delivery closed', entrega_ajustada: 'Delivery adjusted' };
 const tablero = { pestana: 'entregas', descartadas: false, accion: null, ocupado: false };
+// QA controls: cards selected for a guide, the guide job in flight, the last result panel and the tracker state.
+const qa = { sel: new Set(), trabajo: null, guia: null, importacion: null, rastreador: null, mensaje: null, ocupado: false };
+const ETAPAS_QA = new Set(['esperando_qa', 'qa_fallo']);
+const RESULTADO_QA = { ok: 'OK', fallo: 'Fail', bloqueado: 'Blocked', pendiente: 'Pending' };
+const MAX_QA_BYTES = 5 * 1024 * 1024;
 
 function nodo(etiqueta, atributos = {}, ...hijos) {
   const n = document.createElement(etiqueta);
@@ -57,7 +62,147 @@ async function accionEntrega(ruta, cuerpo) {
 
 function recargarEntregas() {
   if (!API) return;
-  api('/api/entregas').then((d) => { ENTREGAS = d; pintarEntregas(); }, (err) => avisar(`Deliveries not updated: ${err.message}`));
+  api('/api/entregas').then((d) => { ENTREGAS = d; for (const k of [...qa.sel]) if (!d.entregas.some((e) => e.clave === k && ETAPAS_QA.has(e.etapa))) qa.sel.delete(k); pintarEntregas(); }, (err) => avisar(`Deliveries not updated: ${err.message}`));
+  refrescarRastreador();
+}
+
+function refrescarRastreador() {
+  if (!API) return;
+  api('/api/qa/rastreador').then((r) => { qa.rastreador = r; pintarEntregas(); }, () => {});
+}
+
+const pausa = (ms) => new Promise((ok) => setTimeout(ok, ms));
+
+// The token travels in a header, never in a URL: the file is fetched and offered through a temporary Blob URL.
+async function descargarQa(nombre) {
+  try {
+    const r = await fetch(`/api/qa/archivo?nombre=${encodeURIComponent(nombre)}`, { headers: { 'X-Seki-Token': API.token } });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`);
+    const url = URL.createObjectURL(await r.blob());
+    const a = nodo('a', { href: url, download: nombre });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  } catch (err) {
+    avisar(`Download failed: ${err.message}`);
+  }
+}
+
+async function generarGuiaQa(cuerpo) {
+  if (qa.ocupado) return;
+  qa.ocupado = true;
+  qa.guia = null;
+  qa.mensaje = null;
+  pintarEntregas();
+  try {
+    const { trabajo } = await api('/api/qa/guia', { ...cuerpo, explicarFaltantes: $('qa-explicar')?.checked === true });
+    qa.trabajo = trabajo;
+    sondear();
+    pintarEntregas();
+    for (;;) {
+      await pausa(1500);
+      const r = await api(`/api/qa/guia?trabajo=${encodeURIComponent(trabajo)}`);
+      if (r.estado === 'terminado') { qa.guia = r.resultado ?? null; break; }
+      if (r.estado === 'error') { qa.mensaje = r.mensaje ?? r.error ?? 'The guide could not be generated'; break; }
+      if (r.estado === 'cancelado') { qa.mensaje = 'The guide job was cancelled'; break; }
+    }
+  } catch (err) {
+    qa.mensaje = err.message;
+  } finally {
+    qa.trabajo = null;
+    qa.ocupado = false;
+    pintarEntregas();
+    sondear();
+  }
+}
+
+function base64De(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let texto = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) texto += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(texto);
+}
+
+async function importarQa(archivo) {
+  if (!archivo || qa.ocupado) return;
+  if (!/\.xlsx$/i.test(archivo.name)) return avisar('Choose an .xlsx file');
+  if (archivo.size > MAX_QA_BYTES) return avisar('The file exceeds 5 MB');
+  qa.ocupado = true;
+  qa.importacion = null;
+  qa.mensaje = null;
+  pintarEntregas();
+  try {
+    qa.importacion = await api('/api/qa/importar', { nombre: archivo.name, contenido: base64De(await archivo.arrayBuffer()) });
+  } catch (err) {
+    qa.mensaje = `Import failed: ${err.message}`;
+  } finally {
+    qa.ocupado = false;
+    pintarEntregas();
+    recargarEntregas();
+  }
+}
+
+async function actualizarRastreador() {
+  if (qa.ocupado) return;
+  qa.ocupado = true;
+  qa.mensaje = null;
+  pintarEntregas();
+  try {
+    const r = await api('/api/qa/rastreador', {});
+    qa.mensaje = r.escrito ? `Spreadsheet updated: ${plural(r.celdas, 'cell', 'cells')}` : `Spreadsheet not updated: ${r.motivo}`;
+  } catch (err) {
+    qa.mensaje = `Spreadsheet not updated: ${err.message}`;
+  } finally {
+    qa.ocupado = false;
+    pintarEntregas();
+    recargarEntregas();
+  }
+}
+
+const entradaArchivoQa = nodo('input', { type: 'file', accept: '.xlsx', class: 'sr', 'aria-label': 'QA result file', tabindex: '-1', al: { change: (ev) => { const f = ev.target.files[0]; ev.target.value = ''; importarQa(f); } } });
+
+function panelQa() {
+  const g = qa.guia;
+  const i = qa.importacion;
+  const r = qa.rastreador;
+  if (!qa.trabajo && !g && !i && !qa.mensaje && !r?.aviso) return null;
+  const archivo = (ext, etiqueta) => (g.archivos[ext] ? nodo('button', { type: 'button', class: 'btn-texto mono', text: `${etiqueta} (${g.archivos[ext]})`, al: { click: () => descargarQa(g.archivos[ext]) } }) : null);
+  return nodo('section', { class: 'panel-qa', 'aria-label': 'QA result', 'aria-live': 'polite' },
+    qa.trabajo ? nodo('p', { text: 'Generating the QA guide. It can take up to a minute while the PDF is produced.' }) : null,
+    qa.mensaje ? nodo('p', { class: 'aviso-qa', text: qa.mensaje }) : null,
+    g ? (g.vacia
+      ? nodo('p', { text: 'No deliveries are waiting for QA for this selection: no guide was generated.' })
+      : nodo('div', {},
+        nodo('h3', { text: `Guide ${g.id}: ${plural(g.filas, 'row', 'rows')}` }),
+        nodo('div', { class: 'archivos-qa' }, archivo('xlsx', 'Spreadsheet'), archivo('pdf', 'PDF'), archivo('html', 'HTML')),
+        g.avisoPdf ? nodo('p', { class: 'aviso-qa', text: g.avisoPdf }) : null,
+        g.pendientes?.length ? nodo('div', {}, nodo('p', { text: `Rows with steps pending, ${plural(g.pendientes.length, 'PR', 'PRs')}:` }), nodo('ul', {}, g.pendientes.map((id) => nodo('li', { class: 'mono', text: id })))) : null,
+        g.encolados ? nodo('p', { text: `${plural(g.encolados, 'explanation', 'explanations')} queued for the PRs without steps. Generate the guide again when they finish.` }) : null)) : null,
+    i ? nodo('div', {},
+      nodo('h3', { text: `Import of guide ${i.guia}: ${plural(i.nuevos ?? 0, 'new result', 'new results')}` }),
+      i.resumen?.length ? nodo('table', { class: 'matriz' },
+        nodo('thead', {}, nodo('tr', {}, ['Delivery', 'Portal', 'Result', 'Rows'].map((c) => nodo('th', { text: c })))),
+        nodo('tbody', {}, i.resumen.map((x) => nodo('tr', {}, nodo('td', { text: x.entrega }), nodo('td', { text: x.portal }), nodo('td', { text: RESULTADO_QA[x.resultado] ?? x.resultado }), nodo('td', { text: String(x.filas) }))))) : null,
+      i.rechazadas?.length ? nodo('div', {}, nodo('p', { text: `Rejected rows (${i.rechazadas.length}):` }), nodo('ul', {}, i.rechazadas.map((x) => nodo('li', { text: `${x.etiqueta}${x.portal ? ` · ${x.portal}` : ''}: ${x.motivo}` })))) : null,
+      i.rastreador?.motivo && !i.rastreador.escrito ? nodo('p', { text: `Spreadsheet: ${i.rastreador.motivo}` }) : null,
+      i.rastreador?.escrito ? nodo('p', { text: `Spreadsheet updated: ${plural(i.rastreador.celdas, 'cell', 'cells')}` }) : null) : null,
+    r?.aviso ? nodo('p', { class: 'aviso-qa', text: `Tracker: ${r.aviso}` }) : null,
+    qa.trabajo ? null : nodo('button', { type: 'button', class: 'btn chico', text: 'Dismiss', al: { click: () => { qa.guia = null; qa.importacion = null; qa.mensaje = null; if (qa.rastreador) delete qa.rastreador.aviso; pintarEntregas(); } } }));
+}
+
+function barraQa() {
+  if (!API) return null;
+  const r = qa.rastreador;
+  const ocupado = qa.ocupado || tablero.ocupado || null;
+  const seleccion = qa.sel.size;
+  return nodo('div', { class: 'barra-qa' },
+    nodo('button', { type: 'button', class: 'btn chico', disabled: ocupado, text: 'QA guide since last cut', al: { click: () => generarGuiaQa({ desde: 'ultimo-corte' }) } }),
+    nodo('button', { type: 'button', class: 'btn chico', disabled: ocupado || !seleccion || null, text: `QA guide for selected (${seleccion})`, al: { click: () => generarGuiaQa({ claves: [...qa.sel] }) } }),
+    nodo('button', { type: 'button', class: 'btn chico', disabled: ocupado, text: 'Import QA result', al: { click: () => entradaArchivoQa.click() } }),
+    r?.configurado ? nodo('button', { type: 'button', class: 'btn chico', disabled: ocupado || !r.pendientes || null, text: `Update spreadsheet (${r.pendientes})`, al: { click: actualizarRastreador } }) : null,
+    nodo('label', {}, nodo('input', { type: 'checkbox', id: 'qa-explicar', checked: $('qa-explicar')?.checked || null }), 'Explain PRs without steps'),
+    entradaArchivoQa);
 }
 
 function descartarAviso() {
@@ -148,8 +293,9 @@ function tarjetaEntrega(entrega) {
   const multiples = (entrega.pistas ?? []).length > 1 || (entrega.pistas ?? []).some((x) => x.portal !== 'main');
   const ultimo = entrega.ultimoEvento;
   const abiertaEnPrs = entrega.prs.find((id) => FOTO.prs.some((p) => p.id === id));
+  const elegible = API && ETAPAS_QA.has(entrega.etapa);
   return nodo('article', { class: 'tarjeta', 'data-clave': entrega.clave },
-    nodo('h3', { text: entrega.titulo }),
+    nodo('h3', {}, elegible ? nodo('input', { type: 'checkbox', class: 'elegir-qa', 'aria-label': `Select ${entrega.titulo} for a QA guide`, checked: qa.sel.has(entrega.clave) || null, al: { change: (ev) => { if (ev.target.checked) qa.sel.add(entrega.clave); else qa.sel.delete(entrega.clave); pintarEntregas(); } } }) : null, elegible ? ' ' : null, entrega.titulo),
     entrega.ids?.length ? nodo('div', { class: 'ids mono', text: entrega.ids.join(' · ') }) : null,
     multiples ? nodo('div', { class: 'pistas' }, entrega.pistas.map((x) => insignia(`${x.portal} · ${ETAPA[x.etapa]?.nombre ?? x.etapa}`, ETAPA[x.etapa]?.color ?? ''))) : null,
     matrizPrs(entrega),
@@ -172,6 +318,8 @@ function pintarEntregas() {
   const casilla = nodo('input', { type: 'checkbox', checked: tablero.descartadas || null, al: { change: (ev) => { tablero.descartadas = ev.target.checked; pintarEntregas(); } } });
   raiz.replaceChildren(
     avisoVisita() ?? '',
+    barraQa() ?? '',
+    panelQa() ?? '',
     nodo('div', { class: 'entregas-cabecera' },
       nodo('span', { text: `${plural(ENTREGAS.entregas.length - descartadas, 'delivery', 'deliveries')} · computed ${fechaCorta(ENTREGAS.generado)}` }),
       descartadas ? nodo('label', {}, casilla, `Show discarded (${descartadas})`) : null),
@@ -200,4 +348,5 @@ document.addEventListener('keydown', (ev) => {
 
 aplicarPestana(FOTO.prs.some((p) => p.id === inicial) ? 'prs' : 'entregas');
 // The first served visit only sets the mark, so the next one has something to compare with.
+refrescarRastreador();
 if (API && ENTREGAS && !ENTREGAS.visita) api('/api/visita', {}).then((r) => { ENTREGAS.visita = r.ts; }, () => {});
