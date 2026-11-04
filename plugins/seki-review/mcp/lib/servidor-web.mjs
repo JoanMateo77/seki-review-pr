@@ -2,6 +2,8 @@
 // analyze PRs with AI. It only serves this machine and requires the URL token on every call.
 import { execFile } from 'node:child_process';
 import { createServer } from 'node:http';
+import { lstatSync, readFileSync, realpathSync } from 'node:fs';
+import { join } from 'node:path';
 import { proyecto as cargarProyecto } from './config.mjs';
 import { recolectar } from './recolectar.mjs';
 import { construirHtml, fotoConExplicaciones, versionEnDisco } from './tablero.mjs';
@@ -19,13 +21,68 @@ import { costosDelDia, registrarCosto, resumenCostos } from './ia.mjs';
 import { estadoServidor, pedirCeder, tokenDe } from './acceso.mjs';
 import { limpiarCopias } from './copias.mjs';
 import { ghJson } from './proceso.mjs';
-import { leerJson, rutaInstantanea } from './cache.mjs';
+import { dirQa, leerJson, rutaEntregas, rutaInstantanea } from './cache.mjs';
 import { crearSondeo, crearVigia, VENTANA_TABLERO_MS } from './vigia.mjs';
-import { aplicarAjuste, cerrarEntrega, datosEntregas, marcarVisita } from './tablero-entregas.mjs';
+import { aplicarAjuste, cerrarEntrega, datosEntregas, mapaPrs, marcarVisita } from './tablero-entregas.mjs';
+import { MAX_ARCHIVO } from './archivos.mjs';
+import { importarQa } from './qa-importar.mjs';
+import { generarGuia } from './qa-salida.mjs';
+import { aplicarRastreador, cambiosPendientes } from './rastreador-xlsx.mjs';
+import { enSerieEntregas } from './recolectar.mjs';
 
 const PUERTO = 4317;
 const MAX_CUERPO = 64 * 1024;
 const MAX_CUERPO_ENTREGAS = 16 * 1024;
+const MAX_CUERPO_IMPORTAR = 7 * 1024 * 1024;
+const NOMBRE_GUIA = /^guia-\d{4}-\d{2}-\d{2}-\d+\.(xlsx|pdf|html)$/;
+const TIPOS_GUIA = {
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  pdf: 'application/pdf',
+  html: 'text/html; charset=utf-8',
+};
+const MAX_RESULTADOS_GUIA = 20;
+const falloHttp = (codigo, mensaje) => Object.assign(new Error(mensaje), { codigo });
+
+// The guide is a regular file inside salida/qa: a link, a subfolder or a name outside the pattern is never served.
+function leerArchivoGuia(p, nombre) {
+  if (typeof nombre !== 'string' || !NOMBRE_GUIA.test(nombre)) throw falloHttp(400, 'Invalid file name');
+  let raiz;
+  let ruta;
+  try {
+    raiz = realpathSync(dirQa(p.salida));
+    ruta = join(raiz, nombre);
+    const st = lstatSync(ruta);
+    if (st.isSymbolicLink() || !st.isFile()) throw new Error('not a regular file');
+    if (realpathSync(ruta) !== ruta) throw new Error('outside the folder');
+    return readFileSync(ruta);
+  } catch {
+    throw falloHttp(404, 'File not found');
+  }
+}
+
+// Strict base64 of an .xlsx upload: the decoded size is known before decoding.
+function decodificarImportacion({ nombre, contenido }) {
+  if (typeof nombre !== 'string' || !/\.xlsx$/i.test(nombre) || nombre.length > 255) throw falloHttp(400, 'The file name must end in .xlsx');
+  if (typeof contenido !== 'string' || contenido.length === 0 || contenido.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(contenido)) throw falloHttp(400, 'The content must be base64');
+  const bytes = contenido.length / 4 * 3 - (contenido.endsWith('==') ? 2 : contenido.endsWith('=') ? 1 : 0);
+  if (bytes > MAX_ARCHIVO) throw falloHttp(413, 'The file exceeds 5 MB');
+  return Buffer.from(contenido, 'base64');
+}
+
+// Explain jobs only for PR ids present in the snapshot; unknown ids are dropped.
+export const soloPrsConocidos = (ids, validas) => ids.filter((x) => validas.has(x));
+
+function opcionesGuia({ claves, desde, explicarFaltantes }) {
+  if (claves !== undefined && (!Array.isArray(claves) || claves.length > 500 || claves.some((c) => typeof c !== 'string' || !c || c.length > 300))) throw falloHttp(400, 'claves must be a list of delivery keys');
+  if (desde !== undefined && desde !== null && desde !== 'ultimo-corte') throw falloHttp(400, 'desde must be ultimo-corte');
+  if (explicarFaltantes !== undefined && typeof explicarFaltantes !== 'boolean') throw falloHttp(400, 'explicarFaltantes must be a boolean');
+  return { claves: claves?.length ? claves : undefined, desde: desde ?? undefined, explicarFaltantes: explicarFaltantes === true };
+}
+
+const nombreArchivo = (ruta) => (ruta ? ruta.split(/[\\/]/).pop() : null);
+// The browser gets file names only, never absolute paths.
+const rastreadorPublico = (r) => (r?.respaldo ? { ...r, respaldo: nombreArchivo(r.respaldo) } : r);
+const opcionesIguales = (a, b) => JSON.stringify([[...(a.claves ?? [])].sort(), a.desde ?? null, a.explicarFaltantes]) === JSON.stringify([[...(b.claves ?? [])].sort(), b.desde ?? null, b.explicarFaltantes]);
 
 const servidores = new Map();
 
@@ -84,16 +141,29 @@ export function esMasNueva(a, b) {
 const vigilantes = new Map();
 function vigilar(proyecto, puerto) {
   if (vigilantes.has(proyecto)) return;
-  let revisando = false;
-  const reloj = setInterval(async () => {
-    if (servidores.has(proyecto)) { clearInterval(reloj); vigilantes.delete(proyecto); return; }
-    if (revisando) return;
-    revisando = true;
-    try { await iniciarServidor({ proyecto, puerto, abrir: false, soloPuerto: true }); } catch { /* another session won the port; keep watching */ }
-    revisando = false;
+  const v = { reloj: null, revision: null };
+  v.reloj = setInterval(() => {
+    if (servidores.has(proyecto)) { clearInterval(v.reloj); vigilantes.delete(proyecto); return; }
+    if (v.revision) return;
+    v.revision = iniciarServidor({ proyecto, puerto, abrir: false, soloPuerto: true })
+      .catch(() => { /* another session won the port; keep watching */ })
+      .finally(() => { v.revision = null; });
   }, Number(process.env.SEKI_VIGILANCIA_MS) || 5000);
-  reloj.unref();
-  vigilantes.set(proyecto, reloj);
+  v.reloj.unref();
+  vigilantes.set(proyecto, v);
+}
+
+// Closes every dashboard this process serves and stops the standby watchers, even with jobs in progress: queued jobs
+// are cancelled and it resolves once the running work has finished (see cerrar). A check already in flight may still
+// take the port or start a new watcher, so it is awaited and the loop repeats.
+export async function detenerServidores() {
+  while (vigilantes.size) {
+    const pendientes = [...vigilantes.values()];
+    vigilantes.clear();
+    for (const v of pendientes) clearInterval(v.reloj);
+    await Promise.all(pendientes.map((v) => v.revision));
+  }
+  await Promise.all([...servidores.values()].map((s) => s.cerrar()));
 }
 
 // intervaloVigiaMs and relojVigia exist for tests only.
@@ -124,12 +194,13 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
   }
   let refresco = null;
   let ultimoRefresco = null;
+  let limpieza = null;
 
   const lanzar = (repos) => recolectar({ proyecto, repos }).then(
     (f) => {
       ultimoRefresco = { ok: true, fecha: f.generado };
       // Copies of closed PRs or unused for a week are deleted; traceability stays in the comments.
-      limpiarCopias(p, { abiertas: new Set(f.prs.filter((x) => x.estadoPr === 'OPEN').map((x) => x.id)) }).catch(() => {});
+      limpieza = limpiarCopias(p, { abiertas: new Set(f.prs.filter((x) => x.estadoPr === 'OPEN').map((x) => x.id)) }).catch(() => {});
     },
     (e) => { ultimoRefresco = { ok: false, fecha: new Date().toISOString(), mensaje: e.message.slice(0, 300) }; },
   );
@@ -173,6 +244,48 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
   });
 
   const cola = crearCola();
+  // QA guide jobs run outside the AI queue (they wait for a lock and for Chrome, and spend no AI): one at a time,
+  // a second request with the same options while one runs gets the same job, with other options it gets 409. The newest few states stay readable by id.
+  const trabajosGuia = new Map();
+  let guiaActiva = null;
+  let secuenciaGuia = 0;
+  const guiaEnCurso = () => [...trabajosGuia.values()].some((t) => t.estado === 'en_curso');
+  const listaGuias = () => [...trabajosGuia.values()].map(({ resultado, ...t }) => t);
+  const iniciarGuia = ({ claves, desde, explicarFaltantes }) => {
+    if (guiaActiva) {
+      if (opcionesIguales(guiaActiva.opciones, { claves, desde, explicarFaltantes })) return guiaActiva.id;
+      throw falloHttp(409, 'A QA guide is being generated; try again when it finishes');
+    }
+    const id = `qa_guia:${Date.now()}:${++secuenciaGuia}`;
+    const t = { id, tipo: 'qa_guia', estado: 'en_curso', encolado: new Date().toISOString(), inicio: new Date().toISOString() };
+    trabajosGuia.set(id, t);
+    while (trabajosGuia.size > MAX_RESULTADOS_GUIA) trabajosGuia.delete(trabajosGuia.keys().next().value);
+    const promesa = (async () => {
+      try {
+        const r = await generarGuia(p, { claves, desde });
+        const resultado = {
+          id: r.id,
+          archivos: { xlsx: nombreArchivo(r.archivos.xlsx), html: nombreArchivo(r.archivos.html), pdf: nombreArchivo(r.archivos.pdf) },
+          filas: r.filas, pendientes: r.pendientes, avisoPdf: r.avisoPdf, vacia: r.vacia,
+        };
+        if (explicarFaltantes && r.pendientes.length) {
+          // PRs merged into testing live in `recientes`, not in `prs`.
+          const validas = mapaPrs(leerJson(rutaInstantanea(p.salida)));
+          resultado.encolados = cola.encolar(soloPrsConocidos(r.pendientes, validas).map((x) => ({ id: x, tipo: 'explicar', prId: x, ejecutar: () => explicarConIa(p, validas.get(x)) })));
+        }
+        Object.assign(t, { estado: 'terminado', resultado });
+      } catch (e) {
+        console.error(`[seki-review/qa] Guide job failed: ${typeof e?.codigo === 'string' ? e.codigo : 'error'}`);
+        // Only tagged errors carry a message that is safe to show.
+        Object.assign(t, { estado: 'error', mensaje: typeof e?.codigo === 'string' && String(e.message).startsWith('[seki-review/') ? e.message.slice(0, 400) : 'The guide could not be generated' });
+      } finally {
+        t.fin = new Date().toISOString();
+        guiaActiva = null;
+      }
+    })();
+    guiaActiva = { id, promesa, opciones: { claves, desde, explicarFaltantes } };
+    return id;
+  };
   recuperarInterrumpidos(p);
   // Whatever a job leaves queued or in progress when it fails or is cancelled becomes sendable again.
   const conRescate = (pr, ids, ejecutar) => ({
@@ -198,6 +311,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
     if (!req.headers['x-seki-token']) return responder(res, 401, { error: 'Missing token' });
     if (req.headers['x-seki-token'] !== token) return responder(res, 403, { error: 'Invalid token' });
 
+    const datosRastreador = () => [leerJson(rutaEntregas(p.salida))?.entregas ?? [], mapaPrs(leerJson(rutaInstantanea(p.salida)))];
     const prDeFoto = (id) => {
       const pr = fotoConExplicaciones(p)?.prs.find((x) => x.id === id);
       if (!pr) throw Object.assign(new Error('PR not in the snapshot'), { codigo: 404 });
@@ -306,6 +420,47 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         await leerJsonEstricto(req);
         return responder(res, 200, marcarVisita(p));
       }
+      if (req.method === 'POST' && url.pathname === '/api/qa/guia') {
+        return responder(res, 202, { trabajo: iniciarGuia(opcionesGuia(await leerJsonEstricto(req))) });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/qa/guia') {
+        const t = trabajosGuia.get(url.searchParams.get('trabajo'));
+        if (!t) return responder(res, 404, { error: 'Unknown job' });
+        return responder(res, 200, { trabajo: t.id, estado: t.estado, mensaje: t.mensaje ?? null, resultado: t.resultado ?? null });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/qa/archivo') {
+        const nombre = url.searchParams.get('nombre');
+        const datos = leerArchivoGuia(p, nombre);
+        res.writeHead(200, {
+          'Content-Type': TIPOS_GUIA[nombre.split('.').pop()],
+          'Content-Length': datos.length,
+          'Content-Disposition': `attachment; filename="${nombre}"`,
+          'Cache-Control': 'no-store',
+          'X-Content-Type-Options': 'nosniff',
+          'Content-Security-Policy': 'sandbox',
+          'Referrer-Policy': 'no-referrer',
+        });
+        return res.end(datos);
+      }
+      if (req.method === 'POST' && url.pathname === '/api/qa/importar') {
+        const r = await importarQa(p, { buf: decodificarImportacion(await leerJsonEstricto(req, MAX_CUERPO_IMPORTAR)) });
+        return responder(res, 200, { ...r, rastreador: rastreadorPublico(r.rastreador) });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/qa/rastreador') {
+        const cfg = p.qa?.rastreador;
+        if (!cfg) return responder(res, 200, { configurado: false, pendientes: 0, muestra: [] });
+        try {
+          const cambios = cambiosPendientes(cfg, ...datosRastreador());
+          return responder(res, 200, { configurado: true, pendientes: cambios.length, muestra: cambios.slice(0, 20) });
+        } catch (e) {
+          const seguro = typeof e?.codigo === 'string' && String(e.message).startsWith('[seki-review/');
+          return responder(res, 200, { configurado: true, pendientes: 0, muestra: [], aviso: seguro ? e.message.slice(0, 300) : 'The tracker could not be read' });
+        }
+      }
+      if (req.method === 'POST' && url.pathname === '/api/qa/rastreador') {
+        if (Object.keys(await leerJsonEstricto(req)).length) throw falloHttp(400, 'The body must be an empty object');
+        return responder(res, 200, rastreadorPublico(await enSerieEntregas(() => aplicarRastreador(p, ...datosRastreador()))));
+      }
       if (req.method === 'GET' && url.pathname === '/api/foto') return responder(res, 200, fotoConExplicaciones(p));
       if (req.method === 'GET' && url.pathname === '/api/diff') {
         const pr = fotoConExplicaciones(p).prs.find((x) => x.id === url.searchParams.get('id'));
@@ -314,7 +469,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
       }
       if (req.method === 'GET' && url.pathname === '/api/estado') {
         if (req.headers['x-seki-tablero'] === '1') ultimoTablero = Date.now();
-        return responder(res, 200, { vigia: vigia.estado(), refrescando: !!refresco, ultimoRefresco, trabajos: cola.lista(), comentarios: marcasComentarios(), avances: avances(), costoHoy: costosDelDia(p), version: VERSION });
+        return responder(res, 200, { vigia: vigia.estado(), refrescando: !!refresco, ultimoRefresco, trabajos: [...cola.lista(), ...listaGuias()], comentarios: marcasComentarios(), avances: avances(), costoHoy: costosDelDia(p), version: VERSION });
       }
       if (req.method === 'POST' && url.pathname === '/api/refrescar') {
         refrescar();
@@ -331,20 +486,36 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
       if (req.method === 'POST' && url.pathname === '/api/cancelar-cola') return responder(res, 200, { cancelados: cola.vaciar() });
       // Another session with another version asks for the port: release it only if no jobs would be cut off.
       if (req.method === 'POST' && url.pathname === '/api/ceder') {
-        if (refresco || vigia.ocupado() || cola.lista().some((t) => t.estado === 'en_cola' || t.estado === 'en_curso')) return responder(res, 409, { error: 'Jobs in progress' });
+        if (refresco || vigia.ocupado() || guiaEnCurso() || cola.lista().some((t) => t.estado === 'en_cola' || t.estado === 'en_curso')) return responder(res, 409, { error: 'Jobs in progress' });
         responder(res, 200, { ok: true });
-        vigia.detener();
-        servidores.delete(proyecto);
-        servidor.close();
-        servidor.closeAllConnections?.();
+        cerrar();
         return;
       }
       return responder(res, 404, { error: 'Not found' });
     } catch (e) {
-      return responder(res, e.codigo ?? 400, { error: e.message });
+      const c = e.codigo;
+      if (Number.isInteger(c) && c >= 400 && c <= 599) return responder(res, c, { error: e.message });
+      if (typeof c === 'string') return responder(res, 400, { error: e.message });
+      // An untagged failure on a QA route is internal: its message may carry paths or cell contents.
+      if (url.pathname.startsWith('/api/qa/')) {
+        console.error(`[seki-review/qa] Internal failure on ${req.method} ${url.pathname}: ${e?.code ?? 'error'}`);
+        return responder(res, 500, { error: 'Internal error' });
+      }
+      return responder(res, 400, { error: e.message });
     }
   });
 
+  // Stops serving at once; resolves when the watcher cycle, the refreshes (a cycle may start one), the copy clean-up
+  // and the running jobs have finished. Queued jobs are cancelled.
+  const cerrar = async () => {
+    const ciclo = vigia.detener();
+    servidores.delete(proyecto);
+    const cerrado = new Promise((ok) => servidor.close(() => ok()));
+    servidor.closeAllConnections?.();
+    await Promise.all([cerrado, ciclo, cola.detener(), guiaActiva?.promesa]);
+    while (refresco) await refresco;
+    await limpieza;
+  };
   const escuchar = (n) => new Promise((ok, falla) => {
     servidor.once('error', falla);
     servidor.listen(n, '127.0.0.1', () => { servidor.off('error', falla); ok(servidor.address().port); });
@@ -361,7 +532,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
   const url = `http://127.0.0.1:${real}/?t=${token}`;
   servidor.on('close', () => vigia.detener());
   vigia.iniciar();
-  servidores.set(proyecto, { url, servidor });
+  servidores.set(proyecto, { url, servidor, cerrar });
   if (abrir && process.platform === 'darwin') execFile('open', [url]);
   return { url, yaEstaba: false };
 }

@@ -40,6 +40,7 @@ sets it explicitly). No npm dependencies.
 | Workflow for the agent | `plugins/seki-review/skills/review-prs/SKILL.md` |
 | Dashboard server with actions (127.0.0.1, token in the URL) | `plugins/seki-review/mcp/lib/servidor-web.mjs`, `bin/tablero.sh` |
 | AI analysis queue (`claude -p`, sonnet, read-only) | `plugins/seki-review/mcp/lib/trabajos.mjs` |
+| QA guide and import (xlsx writer/reader, zip, pdf, tracker editor) | `plugins/seki-review/mcp/lib/{zip,xlsx,xlsx-editar,qa-guia,qa-salida,pdf,qa-importar,rastreador-xlsx}.mjs`, tools `qa_guia` and `qa_importar` |
 | Smoke test | `node plugins/seki-review/test/humo.mjs [tool] ['{"arg":1}']` |
 
 Output (per project, `salida` field): `datos/prs.json` (latest snapshot), `datos/*-cache.json`, `verificaciones/`,
@@ -118,6 +119,17 @@ not come from a fork and that the branch only advanced with commits pushed by th
 applies the patch, makes a commit with the machine's git identity (no trailers) and runs `git push` to the PR's
 branch. If GitHub rejects the push, the proposal is kept as a patch to copy. Measured on 2026-10-27: a small change in
 a TypeScript backend cost USD 0.11 with Sonnet and took 72 s, checks included.
+
+### QA guide and import
+
+From the Deliveries tab (or the `qa_guia` and `qa_importar` tools) the plugin generates a QA guide for the deliveries waiting for QA and imports it back once filled in.
+
+- **Guide.** One xlsx, html and pdf per run under `salida/qa/`, with one row per finding ID and portal (a track without IDs gets one row labelled `E<n>`). Rows are signed (HMAC) over their key fields; the Result, notes, evidence, date and tester columns can be edited freely. Steps come from the PR explanations or descriptions; PRs without steps show `Steps pending`. The MCP tool never runs the AI; the dashboard can queue the explanations that are missing. Generation is serialized: only one guide is produced at a time. QA-facing cells never show PR numbers, branch names or file paths.
+- **Import.** Rows are matched by (ID, Portal) against the signed sheet inside the file, so sorting, filtering or deleting rows is fine; edited keys and results from an outdated guide are rejected, as are rows of a track merged into testing again after the guide. Results are stored per track PR ids, so regrouping or renaming a delivery does not lose them. A track is `ok` when every row is OK or N/A, `fail` when any row failed, and still waiting otherwise; a blocked row raises a `qa_bloqueada` alert. Corrections are accepted until the track is merged into production. Import limits: 5 MB file, 200 zip entries, 20 MB uncompressed, 5,000 rows, 100 columns.
+- **Tracker spreadsheet (optional).** With `qa.rastreador` configured, the plugin reads finding data from an existing xlsx and writes status, PR links and dates back, locating columns by header text. Updates are derived from the deliveries and written only on import or with the "Update spreadsheet" button, never by the watcher. A backup is saved under `salida/respaldos/` before each write.
+- **Tool and file safety.** `qa_importar` accepts files inside the output QA folder or Downloads; any other path requires `confirmar: true`. Generated files are written only under `salida/qa/`.
+
+The `qa` block of a project (columns, result texts, mapping to internal results, Chrome path for the PDF, tracker) is shown in `config/proyectos.ejemplo.json`: the `demo` project uses the defaults, and `demo-tracker` adds a tracker with generic header names. `columnas` must keep `ID`, `Portal` and `Result`, otherwise the defaults are used with a warning. A `null` entry under `lectura` or `columnas` skips that field. The guide shows the finding text from the tracker (`lectura.hallazgo`) only when `Finding` is listed in `qa.columnas`, as `demo-tracker` does; `qa.resultados` must have an entry in `qa.mapeo` for each text and contain no commas or quotes, otherwise both defaults are used with a warning; `qa.rastreador.ruta` must be an absolute path (or start with `~/`).
 
 ## License
 

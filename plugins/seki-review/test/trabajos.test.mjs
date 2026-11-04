@@ -44,3 +44,20 @@ test('queue: emptying notifies each cancelled job', async () => {
   assert.deepEqual(cancelados, ['b']);
   soltar({ ok: true });
 });
+
+test('queue: detener cancels the queued jobs and resolves only after the running one finished', async () => {
+  let soltar;
+  const retenido = new Promise((ok) => { soltar = ok; });
+  const orden = [];
+  const cola = crearCola();
+  cola.encolar([
+    { id: 'a', tipo: 'explicar', prId: 'a', ejecutar: async () => { await retenido; orden.push('a terminado'); return { ok: true }; } },
+    { id: 'b', tipo: 'explicar', prId: 'b', ejecutar: async () => { orden.push('b'); return { ok: true }; }, alCancelar: () => orden.push('b cancelado') },
+  ]);
+  const parada = cola.detener().then(() => orden.push('detenida'));
+  assert.deepEqual(cola.lista().map((t) => t.estado), ['en_curso', 'cancelado']);
+  soltar();
+  await parada;
+  assert.deepEqual(orden, ['b cancelado', 'a terminado', 'detenida']);
+  assert.equal(cola.lista()[0].estado, 'terminado');
+});

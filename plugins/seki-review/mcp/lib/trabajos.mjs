@@ -7,12 +7,15 @@ export function crearCola({ alTerminar } = {}) {
   const funciones = new Map();
   const cancelaciones = new Map();
   let activos = 0;
+  const corriendo = new Set();
 
   function siguiente() {
     while (activos < PARALELO) {
       const t = [...trabajos.values()].find((x) => x.estado === 'en_cola');
       if (!t) return;
-      ejecutar(t);
+      const pr = ejecutar(t);
+      corriendo.add(pr);
+      pr.finally(() => corriendo.delete(pr));
     }
   }
 
@@ -60,6 +63,11 @@ export function crearCola({ alTerminar } = {}) {
         n++;
       }
       return n;
+    },
+    // Cancels the queued jobs and resolves once the running ones have finished.
+    async detener() {
+      this.vaciar();
+      while (corriendo.size) await Promise.allSettled([...corriendo]);
     },
     lista: () => [...trabajos.values()],
   };

@@ -12,10 +12,19 @@ const ETAPAS_TABLERO = [
   ['descartada', 'Discarded', ''],
 ];
 const ETAPA = Object.fromEntries(ETAPAS_TABLERO.map(([k, nombre, color]) => [k, { nombre, color }]));
-const ALERTA_TABLERO = { gemela_faltante: 'Missing twin', orden: 'Merge order', sin_pruebas: 'No testing step', qa_fallo: 'QA failed', estancada: 'Stalled' };
+const ALERTA_TABLERO = { gemela_faltante: 'Missing twin', orden: 'Merge order', sin_pruebas: 'No testing step', qa_fallo: 'QA failed', qa_bloqueada: 'QA blocked', estancada: 'Stalled' };
 const ESTADO_PR_TABLERO = { OPEN: ['Open', 'ambar'], MERGED: ['Merged', 'violeta'], CLOSED: ['Closed', ''] };
 const EVENTO_TABLERO = { pr_mergeada: 'Merged', pr_cerrada: 'Closed without merging', entrega_cerrada: 'Delivery closed', entrega_ajustada: 'Delivery adjusted' };
 const tablero = { pestana: 'entregas', descartadas: false, accion: null, ocupado: false };
+// QA controls: cards selected for a guide, the guide job in flight, the last result panel and the tracker state.
+// `generando` covers the guide job only; `ocupado` covers an import or a tracker write, so one never blocks the other.
+const qa = { sel: new Set(), generando: false, guia: null, mensajeGuia: null, espera: null, importacion: null, mensajeOperacion: null, rastreador: null, ocupado: false };
+const MAX_QA_BYTES = 5 * 1024 * 1024;
+// Guide polling: a few failed polls in a row are tolerated; a notice appears after a while and polling stops at the cap.
+const QA_FALLOS_SEGUIDOS = 5;
+const QA_AVISO_MS = 60 * 1000;
+const QA_LIMITE_MS = 5 * 60 * 1000;
+const QA_SONDEO_MS = 1500;
 
 function nodo(etiqueta, atributos = {}, ...hijos) {
   const n = document.createElement(etiqueta);
@@ -57,7 +66,153 @@ async function accionEntrega(ruta, cuerpo) {
 
 function recargarEntregas() {
   if (!API) return;
-  api('/api/entregas').then((d) => { ENTREGAS = d; pintarEntregas(); }, (err) => avisar(`Deliveries not updated: ${err.message}`));
+  api('/api/entregas').then((d) => { ENTREGAS = d; for (const k of [...qa.sel]) if (!d.entregas.some((e) => e.clave === k && entregaElegibleQa(e))) qa.sel.delete(k); pintarEntregas(); }, (err) => avisar(`Deliveries not updated: ${err.message}`));
+  refrescarRastreador();
+}
+
+function refrescarRastreador() {
+  if (!API) return;
+  api('/api/qa/rastreador').then((r) => { qa.rastreador = r; pintarEntregas(); }, () => {});
+}
+
+const pausa = (ms) => new Promise((ok) => setTimeout(ok, ms));
+
+// The token travels in a header, never in a URL: the file is fetched and offered through a temporary Blob URL.
+async function descargarQa(nombre) {
+  try {
+    const r = await fetch(`/api/qa/archivo?nombre=${encodeURIComponent(nombre)}`, { headers: { 'X-Seki-Token': API.token } });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`);
+    const url = URL.createObjectURL(await r.blob());
+    const a = nodo('a', { href: url, download: nombre });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  } catch (err) {
+    avisar(`Download failed: ${err.message}`);
+  }
+}
+
+async function generarGuiaQa(cuerpo) {
+  if (qa.generando) return;
+  qa.generando = true;
+  qa.guia = null;
+  qa.mensajeGuia = null;
+  qa.espera = null;
+  pintarEntregas();
+  const inicio = Date.now();
+  let fallos = 0;
+  try {
+    const { trabajo } = await api('/api/qa/guia', { ...cuerpo, explicarFaltantes: $('qa-explicar')?.checked === true });
+    sondear();
+    for (;;) {
+      await pausa(QA_SONDEO_MS);
+      let r;
+      try {
+        r = await api(`/api/qa/guia?trabajo=${encodeURIComponent(trabajo)}`);
+        fallos = 0;
+      } catch (err) {
+        if (/unknown job/i.test(err.message)) { qa.mensajeGuia = 'The guide job is no longer known to the server. Generate the guide again.'; break; }
+        if (++fallos >= QA_FALLOS_SEGUIDOS) { qa.mensajeGuia = `The guide status could not be read: ${err.message}`; break; }
+        continue;
+      }
+      if (r.estado === 'terminado') {
+        if (r.resultado) qa.guia = r.resultado;
+        else qa.mensajeGuia = 'The result is no longer available. Generate the guide again.';
+        break;
+      }
+      if (r.estado === 'error') { qa.mensajeGuia = r.mensaje ?? 'The guide could not be generated'; break; }
+      if (Date.now() - inicio > QA_LIMITE_MS) { qa.mensajeGuia = 'The guide is taking too long and is no longer being followed. Check the job list in the status bar and generate the guide again if it ends.'; break; }
+      const espera = Date.now() - inicio > QA_AVISO_MS ? 'Still waiting: another guide or the PDF export is taking longer than usual.' : null;
+      if (espera !== qa.espera) { qa.espera = espera; pintarEntregas(); }
+    }
+  } catch (err) {
+    qa.mensajeGuia = err.message;
+  } finally {
+    qa.generando = false;
+    qa.espera = null;
+    pintarEntregas();
+    sondear();
+  }
+}
+
+function base64De(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let texto = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) texto += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(texto);
+}
+
+async function importarQa(archivo) {
+  if (!archivo || qa.ocupado) return;
+  if (!/\.xlsx$/i.test(archivo.name)) return avisar('Choose an .xlsx file');
+  if (archivo.size > MAX_QA_BYTES) return avisar('The file exceeds 5 MB');
+  qa.ocupado = true;
+  qa.importacion = null;
+  qa.mensajeOperacion = null;
+  pintarEntregas();
+  try {
+    qa.importacion = await api('/api/qa/importar', { nombre: archivo.name, contenido: base64De(await archivo.arrayBuffer()) });
+  } catch (err) {
+    qa.mensajeOperacion = `Import failed: ${err.message}`;
+  } finally {
+    qa.ocupado = false;
+    pintarEntregas();
+    recargarEntregas();
+  }
+}
+
+async function actualizarRastreador() {
+  if (qa.ocupado) return;
+  qa.ocupado = true;
+  qa.mensajeOperacion = null;
+  pintarEntregas();
+  try {
+    const r = await api('/api/qa/rastreador', {});
+    qa.mensajeOperacion = r.escrito ? `Spreadsheet updated: ${plural(r.celdas, 'cell', 'cells')}` : `Spreadsheet not updated: ${r.motivo}`;
+  } catch (err) {
+    qa.mensajeOperacion = `Spreadsheet not updated: ${err.message}`;
+  } finally {
+    qa.ocupado = false;
+    pintarEntregas();
+    recargarEntregas();
+  }
+}
+
+const entradaArchivoQa = nodo('input', { type: 'file', accept: '.xlsx', class: 'sr', 'aria-label': 'QA result file', tabindex: '-1', al: { change: (ev) => { const f = ev.target.files[0]; ev.target.value = ''; importarQa(f); } } });
+
+// Builds DOM from the description: strings become text nodes and `text` never reaches innerHTML.
+function construirQa(d) {
+  if (d === null || d === undefined) return null;
+  if (typeof d === 'string') return document.createTextNode(d);
+  const { accion, nombre, ...atributos } = d.a;
+  const al = accion === 'descargar' ? { click: () => descargarQa(nombre) }
+    : accion === 'descartar' ? { click: () => { qa.guia = null; qa.importacion = null; qa.mensajeGuia = null; qa.mensajeOperacion = null; if (qa.rastreador) delete qa.rastreador.aviso; pintarEntregas(); } } : null;
+  return nodo(d.e, { ...atributos, al }, d.h.map(construirQa));
+}
+
+const panelQa = () => construirQa(descripcionPanelQa(qa));
+
+// Selecting a card repaints only the toolbar, so the checkbox keeps keyboard focus.
+function pintarBarraQa() {
+  const actual = document.querySelector('.barra-qa');
+  const nueva = barraQa();
+  if (actual && nueva) actual.replaceWith(nueva);
+}
+
+function barraQa() {
+  if (!API) return null;
+  const r = qa.rastreador;
+  const ocupado = qa.ocupado || tablero.ocupado || null;
+  const generando = qa.generando || null;
+  const seleccion = qa.sel.size;
+  return nodo('div', { class: 'barra-qa' },
+    nodo('button', { type: 'button', class: 'btn chico', disabled: generando, text: 'QA guide since last cut', al: { click: () => generarGuiaQa({ desde: 'ultimo-corte' }) } }),
+    nodo('button', { type: 'button', class: 'btn chico', disabled: generando || !seleccion || null, text: `QA guide for selected (${seleccion})`, al: { click: () => generarGuiaQa({ claves: [...qa.sel] }) } }),
+    nodo('button', { type: 'button', class: 'btn chico', disabled: ocupado, text: 'Import QA result', al: { click: () => entradaArchivoQa.click() } }),
+    r?.configurado ? nodo('button', { type: 'button', class: 'btn chico', disabled: ocupado || !r.pendientes || null, text: `Update spreadsheet (${r.pendientes})`, al: { click: actualizarRastreador } }) : null,
+    nodo('label', {}, nodo('input', { type: 'checkbox', id: 'qa-explicar', checked: $('qa-explicar')?.checked || null }), 'Explain PRs without steps'),
+    entradaArchivoQa);
 }
 
 function descartarAviso() {
@@ -148,8 +303,9 @@ function tarjetaEntrega(entrega) {
   const multiples = (entrega.pistas ?? []).length > 1 || (entrega.pistas ?? []).some((x) => x.portal !== 'main');
   const ultimo = entrega.ultimoEvento;
   const abiertaEnPrs = entrega.prs.find((id) => FOTO.prs.some((p) => p.id === id));
+  const elegible = API && entregaElegibleQa(entrega);
   return nodo('article', { class: 'tarjeta', 'data-clave': entrega.clave },
-    nodo('h3', { text: entrega.titulo }),
+    nodo('h3', {}, elegible ? nodo('input', { type: 'checkbox', class: 'elegir-qa', 'aria-label': `Select ${entrega.titulo} for a QA guide`, checked: qa.sel.has(entrega.clave) || null, al: { change: (ev) => { if (ev.target.checked) qa.sel.add(entrega.clave); else qa.sel.delete(entrega.clave); pintarBarraQa(); } } }) : null, elegible ? ' ' : null, entrega.titulo),
     entrega.ids?.length ? nodo('div', { class: 'ids mono', text: entrega.ids.join(' · ') }) : null,
     multiples ? nodo('div', { class: 'pistas' }, entrega.pistas.map((x) => insignia(`${x.portal} · ${ETAPA[x.etapa]?.nombre ?? x.etapa}`, ETAPA[x.etapa]?.color ?? ''))) : null,
     matrizPrs(entrega),
@@ -172,6 +328,8 @@ function pintarEntregas() {
   const casilla = nodo('input', { type: 'checkbox', checked: tablero.descartadas || null, al: { change: (ev) => { tablero.descartadas = ev.target.checked; pintarEntregas(); } } });
   raiz.replaceChildren(
     avisoVisita() ?? '',
+    barraQa() ?? '',
+    panelQa() ?? '',
     nodo('div', { class: 'entregas-cabecera' },
       nodo('span', { text: `${plural(ENTREGAS.entregas.length - descartadas, 'delivery', 'deliveries')} · computed ${fechaCorta(ENTREGAS.generado)}` }),
       descartadas ? nodo('label', {}, casilla, `Show discarded (${descartadas})`) : null),
@@ -200,4 +358,5 @@ document.addEventListener('keydown', (ev) => {
 
 aplicarPestana(FOTO.prs.some((p) => p.id === inicial) ? 'prs' : 'entregas');
 // The first served visit only sets the mark, so the next one has something to compare with.
+refrescarRastreador();
 if (API && ENTREGAS && !ENTREGAS.visita) api('/api/visita', {}).then((r) => { ENTREGAS.visita = r.ts; }, () => {});

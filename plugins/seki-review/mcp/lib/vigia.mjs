@@ -16,15 +16,23 @@ export function crearVigia({ intervaloMs, sondear, refrescar, tableroAbierto, re
   let ultimo = null;
   let error = null;
   let siguienteMs = intervaloMs;
+  let enVuelo = null;
 
   const retardo = () => Math.min(intervaloMs * 2 ** fallos, BACKOFF_MAX_MS);
 
   const programar = () => {
     if (!activo) return;
     siguienteMs = retardo();
-    temporizador = reloj.programar(ciclo, siguienteMs);
+    temporizador = reloj.programar(lanzar, siguienteMs);
     temporizador?.unref?.();
   };
+
+  function lanzar() {
+    const p = ciclo();
+    enVuelo = p;
+    p.finally(() => { if (enVuelo === p) enVuelo = null; });
+    return p;
+  }
 
   async function ciclo() {
     temporizador = null;
@@ -57,11 +65,12 @@ export function crearVigia({ intervaloMs, sondear, refrescar, tableroAbierto, re
       activo = true;
       programar();
     },
-    // After this, no callback does anything, including the end of a cycle already running.
+    // After this, no callback does anything, including the end of a cycle already running. Resolves when that cycle ends.
     detener() {
       activo = false;
       if (temporizador !== null) reloj.cancelar(temporizador);
       temporizador = null;
+      return enVuelo ?? Promise.resolve();
     },
     ocupado: () => enCurso,
     estado: () => ({ ultimo, error, siguienteMs }),

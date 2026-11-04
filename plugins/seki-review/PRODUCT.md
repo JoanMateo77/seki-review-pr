@@ -34,6 +34,7 @@ Unlike GitHub's PR list, it checks with git whether the code is already in testi
 - Append-only event history of merges and closures, a "since last visit" banner and the `entregas` MCP tool; none of them calls GitHub when read.
 - While the dashboard tab is visible a watcher polls GitHub for merges (default 300 s, minimum 120 s); it is read-only.
 - Shared data files are written atomically under a lock; regular expressions from the configuration are guarded by a time limit.
+- QA guide: generated per delivery cut as xlsx, html and pdf with signed rows, imported back by (ID, Portal), with results stored per track PR ids; an optional tracker spreadsheet is updated only on import or by an explicit button. Everything stays local under the output folder.
 - Requires Node 22 or newer.
 - UI text in formal, impersonal English, no emojis; each project's own text rules go in its `contexto`.
 

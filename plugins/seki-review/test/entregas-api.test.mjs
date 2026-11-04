@@ -1,20 +1,29 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { escribirJson, leerJson, rutaAjustes, rutaInstantanea, rutaVisita } from '../mcp/lib/cache.mjs';
+import { conBloqueo } from '../mcp/lib/bloqueo.mjs';
+import { escribirJson, leerJson, rutaAjustes, rutaGuias, rutaInstantanea, rutaVisita } from '../mcp/lib/cache.mjs';
 import { proyecto as cargarProyecto } from '../mcp/lib/config.mjs';
 import { leerEventos, registrarEventos } from '../mcp/lib/eventos.mjs';
 import { derivarEntregas } from '../mcp/lib/recolectar.mjs';
-import { iniciarServidor } from '../mcp/lib/servidor-web.mjs';
+import { detenerServidores, iniciarServidor } from '../mcp/lib/servidor-web.mjs';
 import { construirHtml } from '../mcp/lib/tablero.mjs';
 import { compactarAjustes } from '../mcp/lib/tablero-entregas.mjs';
+import { escribirXlsx } from '../mcp/lib/xlsx.mjs';
+import { editarCeldas } from '../mcp/lib/xlsx-editar.mjs';
 import herramienta from '../mcp/tools/entregas.mjs';
+import { chromeFalso, limpiarChrome } from './util/chrome.mjs';
+import { falsoClaude } from './util/claude.mjs';
 import { falsoGhRutas, limpiarGhRutas } from './util/gh-rutas.mjs';
+import { trackerFixture } from './util/xlsx-fixture.mjs';
 
 after(limpiarGhRutas);
+after(limpiarChrome);
+// A failed test may leave a server that /api/ceder refuses to close (refresh in progress).
+after(detenerServidores);
 const temporales = [];
 const temporal = (prefijo) => {
   const dir = mkdtempSync(join(tmpdir(), prefijo));
@@ -41,17 +50,18 @@ const FOTO = () => ({
 });
 
 let n = 0;
-async function entorno({ servir = true } = {}) {
+async function entorno({ servir = true, foto: fotoPropia, config = {}, lineas } = {}) {
   const clave = `ent${++n}`;
   const dir = temporal('seki-entregas-api-');
   const salida = join(dir, 'salida');
   mkdirSync(join(salida, 'datos'), { recursive: true });
   const linea = { portal: 'P', prod: 'main', pruebas: 'develop' };
+  const todas = lineas ?? [linea];
   const ruta = join(dir, 'proyectos.json');
-  writeFileSync(ruta, JSON.stringify({ [clave]: { owner: 'o', salida, repos: { back: { lineas: [linea] }, front: { lineas: [linea] } } } }));
+  writeFileSync(ruta, JSON.stringify({ [clave]: { owner: 'o', salida, repos: { back: { lineas: todas }, front: { lineas: todas } }, ...config } }));
   process.env.SEKI_REVIEW_CONFIG = ruta;
   const p = cargarProyecto(clave);
-  const foto = FOTO();
+  const foto = fotoPropia ?? FOTO();
   escribirJson(rutaInstantanea(salida), foto);
   await derivarEntregas(p, foto);
   if (!servir) return { p, clave };
@@ -280,9 +290,10 @@ test('a refresh that was already running does not undo a join made meanwhile', a
     pulls('main', [rest(1, 'Payment limits', 'feat/alpha'), rest(2, 'Report export', 'feat/zeta')]),
     pulls('testing', []),
   ]);
-  // Every gh call waits, so the second refresh is still querying when the join arrives.
+  // While the hold file exists every gh call waits, so the second refresh is still querying when the join arrives.
+  const retener = join(dir, 'retener');
   const lento = join(dir, 'gh-lento');
-  writeFileSync(lento, `#!/bin/sh\nif [ -f "${join(dir, 'lento')}" ]; then sleep 0.3; fi\nexec "${gh.ruta}" "$@"\n`);
+  writeFileSync(lento, `#!/bin/sh\nwhile [ -f "${retener}" ]; do sleep 0.02; done\nexec "${gh.ruta}" "$@"\n`);
   chmodSync(lento, 0o755);
   const previoGh = process.env.SEKI_GH;
   process.env.SEKI_GH = lento;
@@ -291,16 +302,18 @@ test('a refresh that was already running does not undo a join made meanwhile', a
   const { url } = await iniciarServidor({ proyecto: clave, puerto: 0, abrir: false });
   const u = new URL(url);
   const llamar = (ruta, cuerpo) => fetch(`${u.origin}${ruta}`, { method: cuerpo === undefined ? 'GET' : 'POST', headers: { 'x-seki-token': u.searchParams.get('t'), 'content-type': 'application/json' }, body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo) });
-  t.after(() => llamar('/api/ceder', {}));
-  const terminar = async () => { for (let i = 0; i < 200; i++) { if (!(await (await llamar('/api/estado')).json()).refrescando) return; await new Promise((ok) => setTimeout(ok, 50)); } throw new Error('refresh did not finish'); };
+  t.after(() => { rmSync(retener, { force: true }); return llamar('/api/ceder', {}); });
+  // Generous deadline: it only turns a refresh that never ends into a failure instead of a hang.
+  const terminar = async () => { const fin = Date.now() + 30_000; while (Date.now() < fin) { if (!(await (await llamar('/api/estado')).json()).refrescando) return; await new Promise((ok) => setTimeout(ok, 50)); } throw new Error('refresh did not finish'); };
   await llamar('/api/refrescar', {});
   await terminar();
   assert.equal((await (await llamar('/api/entregas')).json()).entregas.length, 2);
-  writeFileSync(join(dir, 'lento'), '');
+  writeFileSync(retener, '');
   await llamar('/api/refrescar', {});
   const r = await llamar('/api/entregas/ajuste', { tipo: 'unir', prs: ['a#1', 'a#2'] });
   assert.equal(r.status, 200);
   assert.equal((await (await llamar('/api/estado')).json()).refrescando, true);
+  rmSync(retener);
   await terminar();
   const final = leerJson(join(salida, 'datos', 'entregas.json'));
   assert.deepEqual(final.entregas.map((x) => [...x.prs].sort()), [['a#1', 'a#2']]);
@@ -326,4 +339,269 @@ test('repeated overlapping joins through the API keep ajustes.json bounded', asy
     assert.equal((await e.llamar('/api/entregas/ajuste', { cuerpo: { tipo: 'unir', prs } })).status, 200);
   }
   assert.deepEqual(leerJson(rutaAjustes(e.p.salida)), { unir: [['back#5', 'front#3', 'front#4']], separar: [], titulo: {} });
+});
+
+// QA guide endpoints. One PR merged into testing carries two finding IDs, so the guide has two rows (visible rows 2 and 3).
+const FOTO_QA = () => ({
+  proyecto: 'demo', generado: new Date().toISOString(), owner: 'o', prs: [],
+  recientes: [{
+    id: 'back#1', repo: 'back', numero: 1, titulo: 'Fix login X-001 X-002', url: 'https://example.test/back/1', base: 'develop', rama: 'fix/login',
+    portal: 'P', ambiente: 'pruebas', estadoPr: 'MERGED', mergeada: hace(1), creada: hace(3), body: '## How to test\n- Open the screen',
+    descripcion: '## How to test\n- Open the screen',
+  }],
+});
+const entornoQa = (extra = {}) => entorno({ foto: FOTO_QA(), config: { entregas: { patronId: 'X-\\d+' }, ...extra } });
+const esperarJob = async (e, id) => {
+  const limite = Date.now() + 10_000;
+  for (;;) {
+    if (Date.now() > limite) throw new Error(`Guide job ${id} did not finish in 10 s`);
+    const r = await (await e.llamar(`/api/qa/guia?trabajo=${encodeURIComponent(id)}`)).json();
+    if (['terminado', 'error', 'cancelado'].includes(r.estado)) return r;
+    await new Promise((ok) => setTimeout(ok, 20));
+  }
+};
+const generar = async (e, cuerpo = {}) => {
+  const r = await e.llamar('/api/qa/guia', { cuerpo });
+  assert.equal(r.status, 202);
+  return esperarJob(e, (await r.json()).trabajo);
+};
+const rellenarQa = (buf, mapa) => editarCeldas(buf, { hoja: 'QA', celdas: Object.entries(mapa).map(([fila, v]) => ({ ref: `H${fila}`, valor: v })) });
+
+test('QA endpoints: 401 without token, 403 with a wrong one, 415 non-JSON, 413 over the cap', async (t) => {
+  const e = await entorno();
+  t.after(e.cerrar);
+  const rutas = [['/api/qa/guia', 'POST'], ['/api/qa/guia?trabajo=x', 'GET'], ['/api/qa/archivo?nombre=guia-2026-01-01-1.xlsx', 'GET'], ['/api/qa/importar', 'POST'], ['/api/qa/rastreador', 'GET'], ['/api/qa/rastreador', 'POST']];
+  for (const [ruta, metodo] of rutas) {
+    const sin = await fetch(`${e.origen}${ruta}`, { method: metodo, headers: { 'content-type': 'application/json' }, body: metodo === 'POST' ? '{}' : undefined });
+    assert.equal(sin.status, 401, ruta);
+    assert.equal((await e.llamar(ruta, { metodo, cuerpo: metodo === 'POST' ? {} : undefined, cabeceras: { 'x-seki-token': 'otro' } })).status, 403, ruta);
+  }
+  for (const ruta of ['/api/qa/guia', '/api/qa/importar', '/api/qa/rastreador']) {
+    assert.equal((await e.llamar(ruta, { metodo: 'POST', crudo: '{}', cabeceras: { 'content-type': 'text/plain' } })).status, 415, ruta);
+  }
+  for (const ruta of ['/api/qa/guia', '/api/qa/rastreador']) {
+    assert.equal((await e.llamar(ruta, { metodo: 'POST', crudo: JSON.stringify({ x: 'a'.repeat(17 * 1024) }) })).status, 413, ruta);
+  }
+  // The server may close the socket before the 7 MB body is sent: both outcomes are a refusal.
+  const enorme = await e.llamar('/api/qa/importar', { metodo: 'POST', crudo: JSON.stringify({ nombre: 'a.xlsx', contenido: 'A'.repeat(7 * 1024 * 1024 + 8) }) }).then((r) => r.status, (err) => err.cause?.code ?? err.message);
+  assert.ok(enorme === 413 || /ECONNRESET|EPIPE|fetch failed/.test(String(enorme)), String(enorme));
+});
+
+test('/api/qa/archivo accepts only guide names, refuses links and serves a real guide as an attachment', async (t) => {
+  const e = await entornoQa({ qa: { chrome: chromeFalso({ modo: 'ok' }) } });
+  t.after(e.cerrar);
+  for (const nombre of ['../x', 'guia-x.xlsx', 'prs.json', '..%2Fguia-2026-01-01-1.xlsx', 'guia-2026-01-01-1.xlsx.json']) {
+    assert.equal((await e.llamar(`/api/qa/archivo?nombre=${nombre}`)).status, 400, nombre);
+  }
+  assert.equal((await e.llamar('/api/qa/archivo')).status, 400);
+  assert.equal((await e.llamar('/api/qa/archivo?nombre=guia-2026-01-01-9.xlsx')).status, 404);
+  const job = await generar(e);
+  assert.equal(job.estado, 'terminado');
+  const { archivos, filas, id } = job.resultado;
+  assert.equal(filas, 2);
+  for (const n of Object.values(archivos)) assert.match(n, /^guia-\d{4}-\d{2}-\d{2}-\d+\.(xlsx|pdf|html)$/);
+  const tipos = { xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', pdf: 'application/pdf', html: 'text/html; charset=utf-8' };
+  for (const [ext, nombre] of Object.entries(archivos)) {
+    const r = await e.llamar(`/api/qa/archivo?nombre=${nombre}`);
+    assert.equal(r.status, 200);
+    assert.equal(r.headers.get('content-type'), tipos[ext]);
+    assert.equal(r.headers.get('content-disposition'), `attachment; filename="${nombre}"`);
+    assert.equal(r.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(r.headers.get('content-security-policy'), 'sandbox');
+    assert.deepEqual(Buffer.from(await r.arrayBuffer()), readFileSync(join(e.p.salida, 'qa', nombre)));
+  }
+  assert.ok(id);
+  // A link with a valid name is refused, whatever it points to.
+  symlinkSync(join(e.p.salida, 'qa', archivos.xlsx), join(e.p.salida, 'qa', 'guia-2026-01-01-77.xlsx'));
+  assert.equal((await e.llamar('/api/qa/archivo?nombre=guia-2026-01-01-77.xlsx')).status, 404);
+});
+
+test('the guide job is listed in /api/estado, blocks /api/ceder while it waits for its lock and shows only file names', async (t) => {
+  const e = await entornoQa({ qa: { chrome: join(temporal('seki-sin-chrome-'), 'no-existe') } });
+  t.after(e.cerrar);
+  let soltar;
+  const retenido = new Promise((ok) => { soltar = ok; });
+  let tomado;
+  const adquirido = new Promise((ok) => { tomado = ok; });
+  const bloqueo = conBloqueo(`${rutaGuias(e.p.salida)}.gen`, () => { tomado(); return retenido; });
+  await adquirido;
+  const r = await e.llamar('/api/qa/guia', { cuerpo: { desde: 'ultimo-corte' } });
+  assert.equal(r.status, 202);
+  const { trabajo } = await r.json();
+  assert.match(trabajo, /^qa_guia:/);
+  let estado = await (await e.llamar('/api/estado')).json();
+  assert.equal(estado.trabajos.find((x) => x.id === trabajo).tipo, 'qa_guia');
+  assert.ok(['en_cola', 'en_curso'].includes(estado.trabajos.find((x) => x.id === trabajo).estado));
+  assert.equal((await e.cerrar()).status, 409);
+  soltar();
+  await bloqueo;
+  const fin = await esperarJob(e, trabajo);
+  assert.equal(fin.estado, 'terminado');
+  assert.equal(fin.resultado.filas, 2);
+  assert.equal(fin.resultado.archivos.pdf, null);
+  assert.ok(fin.resultado.avisoPdf);
+  assert.ok(!JSON.stringify(fin).includes(e.p.salida));
+  estado = await (await e.llamar('/api/estado')).json();
+  assert.equal(estado.trabajos.find((x) => x.id === trabajo).estado, 'terminado');
+  assert.equal((await e.llamar('/api/qa/guia?trabajo=otro')).status, 404);
+});
+
+test('a guide with nothing waiting for QA ends as empty and invalid bodies are 400', async (t) => {
+  const e = await entornoQa();
+  t.after(e.cerrar);
+  const job = await generar(e, { claves: ['no-existe'] });
+  assert.equal(job.estado, 'terminado');
+  assert.equal(job.resultado.vacia, true);
+  for (const cuerpo of [{ claves: 'a' }, { claves: [1] }, { desde: 'siempre' }, { explicarFaltantes: 'si' }]) {
+    assert.equal((await e.llamar('/api/qa/guia', { cuerpo })).status, 400, JSON.stringify(cuerpo));
+  }
+});
+
+test('import round trip moves the delivery to ready for production; bad names, base64 and sizes are refused', async (t) => {
+  const e = await entornoQa();
+  t.after(e.cerrar);
+  const job = await generar(e);
+  const buf = readFileSync(join(e.p.salida, 'qa', job.resultado.archivos.xlsx));
+  const base64 = (b) => b.toString('base64');
+  const lleno = rellenarQa(buf, { 2: 'OK', 3: 'OK' });
+  assert.equal((await e.llamar('/api/qa/importar', { cuerpo: { nombre: 'a.csv', contenido: base64(lleno) } })).status, 400);
+  assert.equal((await e.llamar('/api/qa/importar', { cuerpo: { nombre: 'a.xlsx', contenido: 'no es base64!' } })).status, 400);
+  assert.equal((await e.llamar('/api/qa/importar', { cuerpo: { nombre: 'a.xlsx', contenido: 'abc' } })).status, 400);
+  assert.equal((await e.llamar('/api/qa/importar', { cuerpo: { nombre: 'a.xlsx' } })).status, 400);
+  assert.equal((await e.llamar('/api/qa/importar', { cuerpo: { nombre: 'a.xlsx', contenido: 'A'.repeat(6990508 - (6990508 % 4) + 4) } })).status, 413);
+  assert.equal((await e.llamar('/api/qa/importar', { cuerpo: { nombre: 'a.xlsx', contenido: base64(Buffer.from('plain text')) } })).status, 400);
+  const antes = await (await e.llamar('/api/entregas')).json();
+  assert.equal(antes.entregas[0].etapa, 'esperando_qa');
+  const r = await e.llamar('/api/qa/importar', { cuerpo: { nombre: 'resultado.xlsx', contenido: base64(lleno) } });
+  assert.equal(r.status, 200);
+  const cuerpo = await r.json();
+  assert.equal(cuerpo.nuevos, 2);
+  assert.deepEqual(cuerpo.rechazadas, []);
+  assert.equal(cuerpo.resumen[0].resultado, 'ok');
+  assert.equal((await (await e.llamar('/api/entregas')).json()).entregas[0].etapa, 'listo_produccion');
+});
+
+test('rastreador endpoint without configuration reports nothing and refuses to write', async (t) => {
+  const e = await entornoQa();
+  t.after(e.cerrar);
+  assert.deepEqual(await (await e.llamar('/api/qa/rastreador')).json(), { configurado: false, pendientes: 0, muestra: [] });
+  const r = await (await e.llamar('/api/qa/rastreador', { cuerpo: {} })).json();
+  assert.equal(r.escrito, false);
+  assert.equal((await e.llamar('/api/qa/rastreador', { cuerpo: { ruta: '/etc/passwd' } })).status, 400);
+});
+
+test('two guide requests while one runs share one job; import and tracker stay available meanwhile', async (t) => {
+  const e = await entornoQa({ qa: { chrome: join(temporal('seki-sin-chrome-'), 'no-existe') } });
+  t.after(e.cerrar);
+  let soltar;
+  const retenido = new Promise((ok) => { soltar = ok; });
+  let tomado;
+  const adquirido = new Promise((ok) => { tomado = ok; });
+  const bloqueo = conBloqueo(`${rutaGuias(e.p.salida)}.gen`, () => { tomado(); return retenido; });
+  await adquirido;
+  const a = await (await e.llamar('/api/qa/guia', { cuerpo: {} })).json();
+  const b = await (await e.llamar('/api/qa/guia', { cuerpo: {} })).json();
+  assert.equal(a.trabajo, b.trabajo);
+  // Other options while one guide runs: refused, so no tab shows another selection's guide as its own.
+  const otra = await e.llamar('/api/qa/guia', { cuerpo: { desde: 'ultimo-corte' } });
+  assert.equal(otra.status, 409);
+  assert.match((await otra.json()).error, /being generated/);
+  const estado = await (await e.llamar('/api/estado')).json();
+  assert.equal(estado.trabajos.filter((x) => x.tipo === 'qa_guia').length, 1);
+  assert.equal('resultado' in estado.trabajos.find((x) => x.id === a.trabajo), false);
+  assert.equal((await e.llamar('/api/qa/rastreador')).status, 200);
+  assert.equal((await e.llamar('/api/qa/importar', { cuerpo: { nombre: 'a.xlsx', contenido: Buffer.from('x').toString('base64') } })).status, 400);
+  soltar();
+  await bloqueo;
+  assert.equal((await esperarJob(e, a.trabajo)).estado, 'terminado');
+  // Once finished, a new request starts a new job.
+  const c = await (await e.llamar('/api/qa/guia', { cuerpo: {} })).json();
+  assert.notEqual(c.trabajo, a.trabajo);
+  await esperarJob(e, c.trabajo);
+});
+
+test('import and tracker responses carry the backup file name, never a path', async (t) => {
+  const ruta = join(temporal('seki-rastreador-api-'), 'tracker.xlsx');
+  writeFileSync(ruta, trackerFixture());
+  const e = await entornoQa({ qa: { rastreador: { tipo: 'xlsx', ruta, hoja: 'Sheet1', columnaId: 'ID', columnas: { estado: 'State' }, estados: { listo_produccion: 'Ready', esperando_qa: 'Waiting' } } } });
+  t.after(e.cerrar);
+  const job = await generar(e);
+  const lleno = rellenarQa(readFileSync(join(e.p.salida, 'qa', job.resultado.archivos.xlsx)), { 2: 'OK', 3: 'OK' });
+  const r = await (await e.llamar('/api/qa/importar', { cuerpo: { nombre: 'r.xlsx', contenido: lleno.toString('base64') } })).json();
+  assert.equal(r.rastreador.escrito, true);
+  assert.match(r.rastreador.respaldo, /^tracker-\d{8}-\d{6}\.xlsx$/);
+  assert.ok(!JSON.stringify(r).includes(e.p.salida));
+  writeFileSync(ruta, trackerFixture());
+  const w = await (await e.llamar('/api/qa/rastreador', { cuerpo: {} })).json();
+  assert.equal(w.escrito, true);
+  assert.match(w.respaldo, /^tracker-\d{8}-\d{6}(-\d+)?\.xlsx$/);
+});
+
+test('explicarFaltantes queues one explain job per PR without steps, visible in /api/estado', async (t) => {
+  const foto = FOTO_QA();
+  foto.recientes[0].descripcion = '';
+  foto.recientes[0].body = '';
+  const claude = falsoClaude({}, 1);
+  const gh = falsoGhRutas([]);
+  const previos = { SEKI_CLAUDE: process.env.SEKI_CLAUDE, SEKI_GH: process.env.SEKI_GH };
+  process.env.SEKI_CLAUDE = claude;
+  process.env.SEKI_GH = gh.ruta;
+  t.after(() => { for (const [k, v] of Object.entries(previos)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } });
+  const e = await entorno({ foto, config: { entregas: { patronId: 'X-\\d+' }, qa: { chrome: join(temporal('seki-sin-chrome-'), 'no-existe') } } });
+  t.after(e.cerrar);
+  const job = await generar(e, { explicarFaltantes: true });
+  assert.deepEqual(job.resultado.pendientes, ['back#1']);
+  assert.equal(job.resultado.encolados, 1);
+  const estado = await (await e.llamar('/api/estado')).json();
+  const explicar = estado.trabajos.filter((x) => x.tipo === 'explicar');
+  assert.deepEqual(explicar.map((x) => x.prId), ['back#1']);
+  // Without the flag nothing is queued.
+  const sin = await generar(e, {});
+  assert.equal(sin.resultado.encolados, undefined);
+});
+
+test('an untagged internal failure on a QA route is 500 with a fixed message and no paths', async (t) => {
+  const e = await entornoQa();
+  t.after(e.cerrar);
+  writeFileSync(rutaInstantanea(e.p.salida), '{ not json');
+  const r = await e.llamar('/api/qa/rastreador', { cuerpo: {} });
+  assert.equal(r.status, 500);
+  const texto = await r.text();
+  assert.deepEqual(JSON.parse(texto), { error: 'Internal error' });
+  assert.ok(!texto.includes(e.p.salida));
+});
+
+test('GET /api/qa/rastreador never shows the path of an unreadable tracker', async (t) => {
+  const dir = temporal('seki-rastreador-dir-');
+  const e = await entornoQa({ qa: { rastreador: { tipo: 'xlsx', ruta: dir, hoja: 'Sheet1', filaEncabezado: 1, columnaId: 'ID', columnas: { estado: 'Status' }, estados: {}, escribir: true } } });
+  t.after(e.cerrar);
+  const r = await (await e.llamar('/api/qa/rastreador')).json();
+  assert.equal(r.configurado, true);
+  assert.equal(r.pendientes, 0);
+  assert.ok(!JSON.stringify(r).includes(dir));
+});
+
+test('rastreador endpoint reports the pending count with a capped sample and writes the cells', async (t) => {
+  const dir = temporal('seki-rastreador-api-');
+  const ruta = join(dir, 'rastreador.xlsx');
+  const filas = [['ID', 'Status'], ...Array.from({ length: 25 }, (_, i) => [`X-${String(i + 1).padStart(3, '0')}`, 'Open'])];
+  filas[1][0] = 'X-001';
+  writeFileSync(ruta, escribirXlsx({ hojas: [{ nombre: 'Sheet1', filas }] }));
+  const e = await entornoQa({ qa: { rastreador: { tipo: 'xlsx', ruta, hoja: 'Sheet1', filaEncabezado: 1, columnaId: 'ID', columnas: { estado: 'Status' }, estados: { esperando_qa: 'In QA' }, escribir: true } } });
+  t.after(e.cerrar);
+  const antes = await (await e.llamar('/api/qa/rastreador')).json();
+  assert.equal(antes.configurado, true);
+  assert.equal(antes.pendientes, 2);
+  assert.ok(antes.muestra.length <= 20);
+  const r = await (await e.llamar('/api/qa/rastreador', { cuerpo: {} })).json();
+  assert.equal(r.escrito, true);
+  assert.equal(r.celdas, 2);
+  assert.equal((await (await e.llamar('/api/qa/rastreador')).json()).pendientes, 0);
+});
+
+test('explain jobs skip PR ids that are not in the snapshot', async () => {
+  const { soloPrsConocidos } = await import('../mcp/lib/servidor-web.mjs');
+  const validas = new Map([['r#1', {}], ['r#2', {}]]);
+  assert.deepEqual(soloPrsConocidos(['r#1', 'r#9', 'r#2'], validas), ['r#1', 'r#2']);
+  assert.deepEqual(soloPrsConocidos(['x#1'], validas), []);
 });

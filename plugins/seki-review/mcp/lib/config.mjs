@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const EJEMPLO = join(dirname(fileURLToPath(import.meta.url)), '../../config/proyectos.ejemplo.json');
@@ -19,6 +19,15 @@ export const ENTREGAS_DEFECTO = { sufijosRama: ['-pruebas', '-testing', '-stagin
 export const VIGIA_DEFECTO = { intervaloSeg: 300 };
 export const VIGIA_INTERVALO_MIN = 120;
 
+export const QA_DEFECTO = {
+  columnas: ['ID', 'Portal', 'Screen and access', 'Preconditions and data', 'Steps', 'Expected result', 'Priority', 'Result', 'QA notes', 'Evidence', 'Date', 'Tester'],
+  resultados: ['OK', 'Fail', 'Blocked', 'Pending', 'N/A'],
+  mapeo: { OK: 'ok', Fail: 'fallo', Blocked: 'bloqueado', Pending: null, 'N/A': 'na' },
+  chrome: null,
+  rastreador: null,
+};
+
+const textos = (v) => Array.isArray(v) && v.every((x) => typeof x === 'string');
 const positivo = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
 const VALIDOS = {
   sufijosRama: (v) => Array.isArray(v) && v.every((x) => typeof x === 'string'),
@@ -28,7 +37,71 @@ const VALIDOS = {
   cerrarTrasDias: positivo,
   maxPorSenal: positivo,
   intervaloSeg: positivo,
+  columnas: (v) => textos(v) && ['ID', 'Portal', 'Result'].every((c) => v.includes(c)) && new Set(v).size === v.length,
+  resultados: textos,
+  mapeo: (v) => v !== null && typeof v === 'object' && !Array.isArray(v) && Object.values(v).every((x) => x === null || ['ok', 'fallo', 'bloqueado', 'na'].includes(x)),
+  chrome: (v) => v === null || typeof v === 'string',
 };
+
+const RASTREADOR_LECTURA = ['hallazgo', 'pasos', 'esperado', 'pantalla', 'prioridad'];
+const RASTREADOR_COLUMNAS = ['estado', 'prPruebas', 'prProd', 'enPruebas', 'enProd'];
+const objeto = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const cadena = (v) => typeof v === 'string' && v.length > 0;
+
+// Null when the tracker section is not usable; otherwise the section with its optional parts completed.
+function validarRastreador(r) {
+  if (r === null || r === undefined) return null;
+  if (!objeto(r) || r.tipo !== 'xlsx' || !cadena(r.ruta) || !cadena(r.hoja) || !cadena(r.columnaId)) {
+    avisar('qa.rastreador is invalid (it needs tipo "xlsx" and text values for ruta, hoja and columnaId); it is ignored');
+    return null;
+  }
+  const claves = (valor, nombres, nombre) => {
+    const base = Object.fromEntries(nombres.map((k) => [k, null]));
+    if (valor === undefined) return base;
+    if (!objeto(valor) || !Object.values(valor).every((x) => x === null || typeof x === 'string')) {
+      avisar(`qa.rastreador.${nombre} has an invalid value; no column is used`);
+      return base;
+    }
+    for (const k of nombres) if (typeof valor[k] === 'string') base[k] = valor[k];
+    return base;
+  };
+  let estados = {};
+  if (r.estados !== undefined) {
+    if (objeto(r.estados) && Object.values(r.estados).every((x) => typeof x === 'string')) estados = { ...r.estados };
+    else avisar('qa.rastreador.estados has an invalid value; no state text is used');
+  }
+  const fila = Number.isInteger(r.filaEncabezado) && r.filaEncabezado >= 1 ? r.filaEncabezado : 1;
+  if (r.filaEncabezado !== undefined && fila !== r.filaEncabezado) avisar('qa.rastreador.filaEncabezado has an invalid value; 1 is used');
+  const ruta = expandir(r.ruta);
+  if (!isAbsolute(ruta)) {
+    avisar('qa.rastreador.ruta must be an absolute path (or start with ~/); the tracker is ignored');
+    return null;
+  }
+  return {
+    tipo: 'xlsx',
+    ruta,
+    hoja: r.hoja,
+    filaEncabezado: fila,
+    columnaId: r.columnaId,
+    lectura: claves(r.lectura, RASTREADOR_LECTURA, 'lectura'),
+    columnas: claves(r.columnas, RASTREADOR_COLUMNAS, 'columnas'),
+    estados,
+    escribir: typeof r.escribir === 'boolean' ? r.escribir : true,
+  };
+}
+
+const MAX_LISTA_VALIDACION = 255;
+
+// The Result list feeds the cell validation (comma separated, 255 characters at most) and the import maps each
+// text through `mapeo`: an inconsistent pair would only fail after QA has filled the guide.
+function resultadosCoherentes(qa) {
+  const claves = new Set(Object.keys(qa.mapeo).map((k) => k.trim().toLowerCase()));
+  if (qa.resultados.some((t) => t.trim() === '' || /[,"]/.test(t))) return 'a result text is empty or contains a comma or a quote';
+  if (new Set(qa.resultados.map((t) => t.trim().toLowerCase())).size !== qa.resultados.length) return 'a result text is repeated';
+  if (qa.resultados.some((t) => !claves.has(t.trim().toLowerCase()))) return 'a result text has no entry in qa.mapeo';
+  if (qa.resultados.join(',').length > MAX_LISTA_VALIDACION) return `the result list is longer than ${MAX_LISTA_VALIDACION} characters`;
+  return null;
+}
 
 // proyecto() runs on every tool call: each bad key is reported once per process.
 const avisados = new Set();
@@ -40,11 +113,11 @@ function avisar(mensaje) {
 
 // Defaults under the user's values, merged one level deep; a value of the wrong type falls back to its default.
 function conDefectos(defecto, usuario, seccion) {
-  const salida = { ...defecto, ...(usuario && typeof usuario === 'object' && !Array.isArray(usuario) ? usuario : {}) };
+  const salida = { ...structuredClone(defecto), ...(usuario && typeof usuario === 'object' && !Array.isArray(usuario) ? usuario : {}) };
   for (const k of Object.keys(defecto)) {
     if (VALIDOS[k] && !VALIDOS[k](salida[k])) {
       avisar(`${seccion}.${k} has an invalid value; the default ${JSON.stringify(defecto[k])} is used`);
-      salida[k] = defecto[k];
+      salida[k] = structuredClone(defecto[k]);
     }
   }
   return salida;
@@ -58,7 +131,15 @@ export function proyecto(clave) {
   if (!p) throw new Error(`Project "${elegida}" is not in ${ruta}. Available: ${Object.keys(proyectos).join(', ')}`);
   const vigia = conDefectos(VIGIA_DEFECTO, p.vigia, 'vigia');
   vigia.intervaloSeg = Math.max(VIGIA_INTERVALO_MIN, vigia.intervaloSeg);
-  return { clave: elegida, ...p, entregas: conDefectos(ENTREGAS_DEFECTO, p.entregas, 'entregas'), vigia, salida: expandir(p.salida), copias: expandir(p.copias ?? `~/.cache/seki-review/copias/${elegida}`) };
+  const qa = conDefectos(QA_DEFECTO, p.qa, 'qa');
+  const incoherencia = resultadosCoherentes(qa);
+  if (incoherencia) {
+    avisar(`qa.resultados and qa.mapeo of project "${elegida}" are inconsistent (${incoherencia}); both defaults are used`);
+    qa.resultados = structuredClone(QA_DEFECTO.resultados);
+    qa.mapeo = structuredClone(QA_DEFECTO.mapeo);
+  }
+  qa.rastreador = validarRastreador(p.qa?.rastreador);
+  return { clave: elegida, ...p, qa, entregas: conDefectos(ENTREGAS_DEFECTO, p.entregas, 'entregas'), vigia, salida: expandir(p.salida), copias: expandir(p.copias ?? `~/.cache/seki-review/copias/${elegida}`) };
 }
 
 // Locates a base branch within the repo's deployment lines.

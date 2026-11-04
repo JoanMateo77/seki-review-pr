@@ -12,6 +12,7 @@ import { asegurarDiff } from './diffs.mjs';
 import { agrupar } from './entregas.mjs';
 import { construirEntregas } from './etapas.mjs';
 import { eventosDe, registrarEventos } from './eventos.mjs';
+import { leerGuias, qaDeEventos } from './qa-guia.mjs';
 
 const CAMPOS = 'number,title,url,baseRefName,headRefName,createdAt,updatedAt,additions,deletions,changedFiles,isDraft,headRefOid,author,reviewDecision,body';
 
@@ -123,7 +124,7 @@ export async function derivarEnSerie(p, foto) {
   for (const pr of [...foto.prs, ...(foto.recientes ?? [])]) if (!prsPorId.has(pr.id)) prsPorId.set(pr.id, pr);
   const entregas = agrupar([...prsPorId.values()], cfg, ajustes);
   const { todos } = await registrarEventos(p, eventosDe(foto, entregas));
-  const construidas = construirEntregas({ entregas, prsPorId, cfgRepos: p.repos, cfg: p.entregas, eventos: todos, ahora: new Date() });
+  const construidas = construirEntregas({ entregas, prsPorId, cfgRepos: p.repos, cfg: p.entregas, eventos: todos, ahora: new Date(), qaDe: qaDeEventos(todos, leerGuias(p).guias) });
   const salida = { generado: new Date().toISOString(), entregas: construidas };
   escribirJson(rutaEntregas(p.salida), salida);
   return salida;

@@ -116,3 +116,13 @@ test('registrado does not enter the id: registering the same events again adds n
     assert.ok(leerEventos(p).every((e) => e.registrado === '2026-11-03T00:00:00.000Z'));
   });
 });
+
+test('a qa_resultado event is stored once and read back with its fields', async () => {
+  await conProyecto(async (p) => {
+    const e = { id: 'qa1', ts: '2026-11-05T10:00:00.000Z', tipo: 'qa_resultado', entrega: 'k', prs: ['a#1'], portal: 'p', guia: 'g', fila: 'X-001', resultado: 'ok', tester: 'Ana', archivo: 'ff', origen: 'qa' };
+    assert.equal((await registrarEventos(p, [e], { ahora: new Date('2026-11-05T10:00:01Z') })).nuevos, 1);
+    assert.equal((await registrarEventos(p, [e])).nuevos, 0);
+    const [leido] = leerEventos(p);
+    assert.deepEqual({ ...leido, registrado: undefined }, { ...e, registrado: undefined });
+  });
+});

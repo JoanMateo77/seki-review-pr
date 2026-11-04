@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { agrupar, claveRama, idsDe, relacionadasDe, tituloLimpio } from '../mcp/lib/entregas.mjs';
+import { distintas, ejecuciones } from './util/ejecuciones.mjs';
 
 const pr = (repo, numero, extra = {}) => ({ id: `${repo}#${numero}`, repo, numero, titulo: `t${numero}`, rama: `x${numero}`, portal: 'p', ambiente: 'prod', descripcion: '', ...extra });
 const cfg = { sufijosRama: ['-pruebas', '-admin'], patronId: null, bases: [] };
@@ -115,12 +116,14 @@ test('output is stable for shuffled input', () => {
   }
 });
 
-test('2000 PRs group in under 500 ms', () => {
+test('2000 PRs group without a super-linear blow-up', () => {
   const ps = [];
   for (let i = 1; i <= 2000; i++) ps.push(pr(`r${i % 5}`, i, { titulo: `titulo unico${i} palabra${i}`, rama: `feat/rama-${i % 700}`, ambiente: i % 2 ? 'prod' : 'pruebas' }));
+  // Generous bound: it separates the linear work from the super-linear blow-up this test guards against, not a fast
+  // machine from a loaded one.
   const t = performance.now();
   const r = agrupar(ps, cfg, sin);
-  assert.ok(performance.now() - t < 500);
+  assert.ok(performance.now() - t < 5000);
   assert.ok(r.length > 0);
 });
 
@@ -175,18 +178,19 @@ test('a capped branch key still yields unique delivery keys', () => {
 });
 
 test('a catastrophic patronId is disabled for the run with one warning', () => {
-  const ps = [pr('a', 1, { rama: 'feat/uno', descripcion: 'a'.repeat(4096) }), pr('b', 2, { rama: 'feat/uno', descripcion: 'a'.repeat(4096) }), pr('c', 3)];
+  const ps = [pr('a', 1, { rama: 'feat/uno', descripcion: 'a'.repeat(4096) }), pr('b', 2, { rama: 'feat/uno', descripcion: `b${'a'.repeat(4095)}` }), pr('c', 3)];
   const avisos = [];
   const orig = console.error;
   console.error = (m) => avisos.push(m);
   let r;
+  let entradas;
   try {
-    const t0 = performance.now();
-    r = agrupar(ps, { ...cfg, patronId: '(a|aa)+b' }, sin);
-    assert.ok(performance.now() - t0 < 200);
+    [r, entradas] = ejecuciones('(a|aa)+b', () => agrupar(ps, { ...cfg, patronId: '(a|aa)+b' }, sin));
   } finally {
     console.error = orig;
   }
+  // Only the first long description runs (and is cut off); the second one is never tried.
+  assert.equal(distintas(entradas.filter((e) => e.length === 4096)).length, 1);
   assert.equal(avisos.length, 1);
   assert.match(avisos[0], /^\[seki-review\/entregas\] entregas\.patronId disabled/);
   assert.equal(r.length, 2);
@@ -215,4 +219,13 @@ test('the delivery title prefers the testing PR, cleaned; without one, the lowes
   assert.equal(r[0].titulo, 'Cash box closing');
   const s = agrupar([pr('a', 5, { rama: 'feat/otra', titulo: 'fix(ui): Other' }), pr('b', 3, { rama: 'feat/otra', titulo: 'Late' })], c, sin);
   assert.equal(s[0].titulo, 'Late');
+});
+
+test('lineaEvento names qa_resultado events and the blocked case has its own next action', async () => {
+  const { lineaEvento } = await import('../mcp/tools/entregas.mjs');
+  assert.match(lineaEvento({ ts: '2026-11-05T10:00:00Z', tipo: 'qa_resultado', entrega: 'k' }, { prs: {} }), /QA result: k$/);
+  const { siguienteAccion } = await import('../mcp/lib/tablero-entregas.mjs');
+  const e = { etapa: 'esperando_qa', prs: [], pistas: [{ alertas: [{ tipo: 'qa_bloqueada' }] }] };
+  assert.equal(siguienteAccion(e, new Map()), 'Resolve the blocked QA case and import the results again');
+  assert.equal(siguienteAccion({ etapa: 'esperando_qa', prs: [], pistas: [] }, new Map()), 'QA pending');
 });

@@ -25,3 +25,6 @@ export const rutaEventos = (salida) => join(salida, 'datos', 'eventos.jsonl');
 export const rutaEntregas = (salida) => join(salida, 'datos', 'entregas.json');
 export const rutaAjustes = (salida) => join(salida, 'datos', 'ajustes.json');
 export const rutaVisita = (salida) => join(salida, 'datos', 'visita.json');
+export const rutaGuias = (salida) => join(salida, 'datos', 'guias.json');
+export const dirQa = (salida) => join(salida, 'qa');
+export const dirRespaldos = (salida) => join(salida, 'respaldos');
