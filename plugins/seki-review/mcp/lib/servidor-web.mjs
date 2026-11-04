@@ -84,16 +84,28 @@ export function esMasNueva(a, b) {
 const vigilantes = new Map();
 function vigilar(proyecto, puerto) {
   if (vigilantes.has(proyecto)) return;
-  let revisando = false;
-  const reloj = setInterval(async () => {
-    if (servidores.has(proyecto)) { clearInterval(reloj); vigilantes.delete(proyecto); return; }
-    if (revisando) return;
-    revisando = true;
-    try { await iniciarServidor({ proyecto, puerto, abrir: false, soloPuerto: true }); } catch { /* another session won the port; keep watching */ }
-    revisando = false;
+  const v = { reloj: null, revision: null };
+  v.reloj = setInterval(() => {
+    if (servidores.has(proyecto)) { clearInterval(v.reloj); vigilantes.delete(proyecto); return; }
+    if (v.revision) return;
+    v.revision = iniciarServidor({ proyecto, puerto, abrir: false, soloPuerto: true })
+      .catch(() => { /* another session won the port; keep watching */ })
+      .finally(() => { v.revision = null; });
   }, Number(process.env.SEKI_VIGILANCIA_MS) || 5000);
-  reloj.unref();
-  vigilantes.set(proyecto, reloj);
+  v.reloj.unref();
+  vigilantes.set(proyecto, v);
+}
+
+// Closes every dashboard this process serves and stops the standby watchers, even with jobs in progress.
+// A check already in flight may still take the port or start a new watcher, so it is awaited and the loop repeats.
+export async function detenerServidores() {
+  while (vigilantes.size) {
+    const pendientes = [...vigilantes.values()];
+    vigilantes.clear();
+    for (const v of pendientes) clearInterval(v.reloj);
+    await Promise.all(pendientes.map((v) => v.revision));
+  }
+  await Promise.all([...servidores.values()].map((s) => s.cerrar()));
 }
 
 // intervaloVigiaMs and relojVigia exist for tests only.
@@ -333,10 +345,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
       if (req.method === 'POST' && url.pathname === '/api/ceder') {
         if (refresco || vigia.ocupado() || cola.lista().some((t) => t.estado === 'en_cola' || t.estado === 'en_curso')) return responder(res, 409, { error: 'Jobs in progress' });
         responder(res, 200, { ok: true });
-        vigia.detener();
-        servidores.delete(proyecto);
-        servidor.close();
-        servidor.closeAllConnections?.();
+        cerrar();
         return;
       }
       return responder(res, 404, { error: 'Not found' });
@@ -345,6 +354,12 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
     }
   });
 
+  const cerrar = () => new Promise((ok) => {
+    vigia.detener();
+    servidores.delete(proyecto);
+    servidor.close(() => ok());
+    servidor.closeAllConnections?.();
+  });
   const escuchar = (n) => new Promise((ok, falla) => {
     servidor.once('error', falla);
     servidor.listen(n, '127.0.0.1', () => { servidor.off('error', falla); ok(servidor.address().port); });
@@ -361,7 +376,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
   const url = `http://127.0.0.1:${real}/?t=${token}`;
   servidor.on('close', () => vigia.detener());
   vigia.iniciar();
-  servidores.set(proyecto, { url, servidor });
+  servidores.set(proyecto, { url, servidor, cerrar });
   if (abrir && process.platform === 'darwin') execFile('open', [url]);
   return { url, yaEstaba: false };
 }

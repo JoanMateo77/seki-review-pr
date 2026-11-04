@@ -1,17 +1,31 @@
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { tokenDe } from '../mcp/lib/acceso.mjs';
-import { esMasNueva, iniciarServidor } from '../mcp/lib/servidor-web.mjs';
+import { estadoServidor, tokenDe } from '../mcp/lib/acceso.mjs';
+import { detenerServidores, esMasNueva, iniciarServidor } from '../mcp/lib/servidor-web.mjs';
 import { versionEnDisco } from '../mcp/lib/tablero.mjs';
 
 process.env.SEKI_VIGILANCIA_MS = '100';
 const espera = (ms) => new Promise((ok) => setTimeout(ok, ms));
 const estadoEn = async (puerto, token) => (await fetch(`http://127.0.0.1:${puerto}/api/estado`, { headers: { 'x-seki-token': token } })).json();
-const cerrarReal = (puerto, token) => fetch(`http://127.0.0.1:${puerto}/api/ceder`, { method: 'POST', headers: { 'x-seki-token': token } });
+// Whatever a failed test leaves serving or on standby is closed here, so the file always exits.
+after(detenerServidores);
+
+// Waits for the condition, not for a fixed time: the standby takes over on its own schedule. The deadline only turns a
+// broken take-over into a failure instead of a hang.
+async function hastaQueSirvaLaReal(puerto, token) {
+  const fin = Date.now() + 30_000;
+  let e = null;
+  while (!(e && !e.falso)) {
+    if (Date.now() > fin) throw new Error('the standby session did not take over the port');
+    await espera(50);
+    e = await estadoEn(puerto, token).catch(() => null);
+  }
+  return e;
+}
 
 // Each test uses its own project: the real server remembers the ones it already serves in this process.
 let n = 0;
@@ -57,8 +71,8 @@ test('with jobs in progress the port is not requested and a notice is given', as
   assert.match(r.aviso, /jobs in progress/);
   assert.equal(s.listening, true);
   s.close();
-  await espera(400);
-  await cerrarReal(puerto, token);
+  s.closeAllConnections();
+  await hastaQueSirvaLaReal(puerto, token);
 });
 
 test('an older version that cannot hand over keeps serving and the notice says what to do', async () => {
@@ -68,8 +82,8 @@ test('an older version that cannot hand over keeps serving and the notice says w
   assert.equal(r.yaEstaba, true);
   assert.match(r.aviso, /close or restart that session/);
   s.close();
-  await espera(400);
-  await cerrarReal(puerto, token);
+  s.closeAllConnections();
+  await hastaQueSirvaLaReal(puerto, token);
 });
 
 test('esMasNueva compares numerically and no version counts as the oldest', () => {
@@ -87,8 +101,8 @@ test('an older session does not take the dashboard from a newer one', async () =
   assert.equal(r.aviso, null);
   assert.equal(s.listening, true);
   s.close();
-  await espera(400);
-  await cerrarReal(puerto, token);
+  s.closeAllConnections();
+  await hastaQueSirvaLaReal(puerto, token);
 });
 
 test('if the session serving the dashboard closes, the standby one takes it on the same link', async () => {
@@ -99,9 +113,22 @@ test('if the session serving the dashboard closes, the standby one takes it on t
   assert.equal((await estadoEn(puerto, token)).falso, true);
   s.close();
   s.closeAllConnections();
-  let e = null;
-  for (let i = 0; i < 30 && !(e && !e.falso); i++) { await espera(100); e = await estadoEn(puerto, token).catch(() => null); }
-  assert.equal(e?.falso, undefined);
-  assert.equal(e?.version, versionEnDisco());
-  await cerrarReal(puerto, token);
+  const e = await hastaQueSirvaLaReal(puerto, token);
+  assert.equal(e.version, versionEnDisco());
+});
+
+test('detenerServidores closes the dashboards and stops the standby watchers', async () => {
+  const servida = proyecto();
+  const { url } = await iniciarServidor({ proyecto: servida.clave, puerto: 0, abrir: false });
+  const puertoServido = Number(new URL(url).port);
+  const enEspera = proyecto();
+  const { s, puerto } = await otraSesion({ token: enEspera.token, version: '99.0.0' });
+  assert.equal((await iniciarServidor({ proyecto: enEspera.clave, puerto, abrir: false })).yaEstaba, true);
+  await detenerServidores();
+  assert.equal(await estadoServidor(puertoServido, servida.token), null);
+  await new Promise((ok) => { s.close(ok); s.closeAllConnections(); });
+  // A stopped watcher never takes the freed port: give it several of its 100 ms intervals.
+  await espera(500);
+  assert.deepEqual(process.getActiveResourcesInfo().filter((r) => r === 'TCPServerWrap'), []);
+  assert.equal(await estadoServidor(puerto, enEspera.token), null);
 });
