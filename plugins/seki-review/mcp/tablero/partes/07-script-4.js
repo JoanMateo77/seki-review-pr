@@ -172,6 +172,15 @@ function textoResumenCostos(r) {
     ...(r.reintentos ? [`Retries and repeated analyses: ${r.reintentos}`] : [])].join('\n');
 }
 
+function textoVigia() {
+  const v = estado.vigia;
+  if (!v) return '';
+  if (v.error) return 'Automatic check failed';
+  if (!v.ultimo) return 'Not checked yet';
+  const min = Math.max(0, Math.floor((Date.now() - Date.parse(v.ultimo)) / 60000));
+  return `Checked ${min} min ago`;
+}
+
 function pintarBarra() {
   if (!API) return;
   $('filtrarIa').hidden = false;
@@ -179,13 +188,15 @@ function pintarBarra() {
   const gasto = estado.costoHoy?.trabajos ? `AI spend today: ${usd(estado.costoHoy.total)} · ${plural(estado.costoHoy.trabajos, 'job', 'jobs')}` : '';
   const texto = estado.refrescando ? 'Querying GitHub and git' : r?.sinConexion ? 'Offline: retrying' : r && !r.ok ? 'The last refresh failed' : gasto;
   $('accionesBarra').innerHTML = `<span class="estado-texto" title="${esc(textoResumenCostos(estado.resumenCostos))}">${texto}</span>
+    <span class="estado-texto" id="vigiaTexto" title="${esc(estado.vigia?.error ?? '')}"></span>
     <button class="btn chico" data-accion="refrescar" ${estado.refrescando ? 'disabled' : ''} title="${esc(r && !r.ok ? r.mensaje : 'Queries GitHub and git again: what was merged, what is new and where each PR is')}">${icono('actualizar', estado.refrescando ? 'girando' : '')} ${estado.refrescando ? 'Refreshing' : 'Refresh status'}</button>`;
+  $('vigiaTexto').textContent = textoVigia();
 }
 
-async function api(ruta, cuerpo) {
+async function api(ruta, cuerpo, cabeceras = {}) {
   const r = await fetch(ruta, {
     method: cuerpo === undefined ? 'GET' : 'POST',
-    headers: { 'X-Seki-Token': API.token, 'Content-Type': 'application/json' },
+    headers: { 'X-Seki-Token': API.token, 'Content-Type': 'application/json', ...cabeceras },
     body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo),
   });
   if (r.status === 404 && servidorDesfasado()) throw new Error('The dashboard server is from an older version and doesn’t have this feature: restart Claude Code.');
@@ -199,10 +210,12 @@ async function sondear() {
   try {
     const previo = new Map([...estado.trabajos].map(([k, t]) => [k, t.estado]));
     const eraRefresco = estado.refrescando;
-    const e = await api('/api/estado');
+    const fechaPrevia = estado.ultimoRefresco?.fecha;
+    const e = await api('/api/estado', undefined, { 'X-Seki-Tablero': '1' });
     estado.trabajos = new Map(e.trabajos.map((t) => [t.id, t]));
     estado.refrescando = e.refrescando;
     estado.ultimoRefresco = e.ultimoRefresco;
+    estado.vigia = e.vigia ?? null;
     if (e.costoHoy?.trabajos !== estado.costoHoy?.trabajos) api('/api/costos').then((r) => { estado.resumenCostos = r; pintarBarra(); }).catch(() => {});
     estado.costoHoy = e.costoHoy;
     const marcas = e.comentarios ?? {};
@@ -213,12 +226,13 @@ async function sondear() {
     estado.marcasComentarios = marcas;
     estado.avances = e.avances ?? {};
     estado.versionServidor = e.version ?? 'an older version';
-    const termino = e.trabajos.some((t) => t.estado === 'terminado' && previo.get(t.id) !== 'terminado') || (eraRefresco && !e.refrescando);
+    const termino = e.trabajos.some((t) => t.estado === 'terminado' && previo.get(t.id) !== 'terminado') || (eraRefresco && !e.refrescando) || (fechaPrevia && e.ultimoRefresco?.ok && e.ultimoRefresco.fecha !== fechaPrevia);
     if (termino) { FOTO = await api('/api/foto'); recargarEntregas(); }
     // If the user is typing in the detail, do not repaint: they would lose focus and half-written text.
     pintarTodo({ detalle: !$('detalle').contains(document.activeElement) });
     const activo = e.refrescando || e.trabajos.some((t) => t.estado === 'en_cola' || t.estado === 'en_curso');
-    if (activo) sondeo = setTimeout(sondear, 3000);
+    // While idle it keeps asking once a minute: that tells the server the dashboard is open (merge watcher).
+    sondeo = setTimeout(sondear, activo ? 3000 : 60000);
   } catch (err) {
     // If the session serving the dashboard closed, another open session takes it over on the same link: it retries on its own.
     estado.ultimoRefresco = { ok: false, sinConexion: true, mensaje: `No connection to the local server (${err.message}). Retrying every 5 seconds; if no other Claude Code session is open, open it with /seki-review:review-prs.` };
