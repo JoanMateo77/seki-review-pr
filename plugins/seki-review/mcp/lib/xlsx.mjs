@@ -455,7 +455,11 @@ function valorCelda(c, compartidas) {
   }
 }
 
-export function leerXlsx(buf) {
+export const LIMITES_XLSX = { MAX_FILAS, MAX_COLUMNAS, MAX_CELDA, MAX_FILA_EXCEL, MAX_COL_EXCEL, MAX_CELDAS_TOTAL };
+export { fallar, decodificarParte, escTexto, limpiar };
+
+// Opens the package and resolves the declared sheets to their part names.
+export function abrirLibro(buf) {
   let partes;
   try {
     partes = leerZip(buf);
@@ -485,6 +489,11 @@ export function leerXlsx(buf) {
     if (!partes.has(ruta)) fallar('XLSX_RUTA', 'Relationship target is not in the archive');
     return ruta;
   };
+  return { partes, rels, declaradas, resolver };
+}
+
+export function leerXlsx(buf) {
+  const { partes, rels, declaradas, resolver } = abrirLibro(buf);
 
   let compartidas = [];
   for (const rel of rels.values()) {
