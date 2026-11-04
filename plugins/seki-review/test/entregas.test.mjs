@@ -156,3 +156,18 @@ test('values shared by more than maxPorSenal PRs are not join signals, with one 
   assert.match(avisos[0], /^\[seki-review\/entregas\].*id:QA-1/);
   assert.equal(agrupar(muchos.slice(0, 12), { ...cfg, patronId: 'QA-\\d+' }, sin).length, 1);
 });
+
+test('a capped branch key still yields unique delivery keys', () => {
+  const ps = Array.from({ length: 13 }, (_, i) => pr('r', i + 1, { rama: 'feat/comun' }));
+  const orig = console.error;
+  console.error = () => {};
+  let r;
+  try {
+    r = agrupar(ps, cfg, sin);
+  } finally {
+    console.error = orig;
+  }
+  assert.equal(r.length, 13);
+  assert.equal(new Set(r.map((e) => e.clave)).size, 13);
+  assert.ok(r.some((e) => e.clave === 'comun'));
+});

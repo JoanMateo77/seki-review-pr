@@ -200,7 +200,10 @@ export function agrupar(prs, cfg = {}, ajustes = {}) {
   }
   for (const [, xs] of porClave) {
     if (xs.length < 2) continue;
-    for (const x of xs) if (x.e.startsWith('\u0001')) x.clave = `${x.clave}~${x.miembros[0]}`;
+    // Keys can repeat (a separated PR, or a capped signal); the largest non-separated group keeps the bare key.
+    const separado = (x) => (x.e.startsWith('\u0001') ? 1 : 0);
+    xs.sort((a, b) => separado(a) - separado(b) || b.miembros.length - a.miembros.length || cmpIds(a.miembros[0], b.miembros[0]));
+    for (const x of xs.slice(1)) x.clave = `${x.clave}~${x.miembros[0]}`;
   }
 
   return entregas
