@@ -2,14 +2,15 @@
 import { closeSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { secretoQa } from './acceso.mjs';
-import { escribirAtomico } from './bloqueo.mjs';
-import { dirQa, leerJson, rutaEntregas, rutaExplicacion, rutaInstantanea } from './cache.mjs';
+import { conBloqueo, escribirAtomico } from './bloqueo.mjs';
+import { dirQa, leerJson, rutaEntregas, rutaExplicacion, rutaGuias, rutaInstantanea } from './cache.mjs';
 import { QA_DEFECTO } from './config.mjs';
 import { htmlAPdf, rutaChrome } from './pdf.mjs';
 import { entregasDesdeCorte, filasDeGuia, firmaFila, fusionesDe, leerGuias, registrarGuia } from './qa-guia.mjs';
 import { mapaPrs } from './tablero-entregas.mjs';
-import { columnaLetra, escribirXlsx } from './xlsx.mjs';
+import { columnaLetra, escribirXlsx, limpiar } from './xlsx.mjs';
 
+export const FORMATO_SEKI = 'seki-qa-1';
 export const COLUMNAS_SEKI = ['etiqueta', 'portal', 'entrega', 'prs', 'firma'];
 const ANCHOS = [14, 12, 24, 28, 48, 36, 10, 12, 28, 20, 12, 14];
 const ANCHO_EXTRA = 16;
@@ -55,6 +56,12 @@ function reservar(dir, dia) {
   }
 }
 
+const filaSeki = (secreto, guia) => (f) => [f.etiqueta, f.portal, f.entrega, JSON.stringify(f.prs), firmaFila(secreto, { guia, etiqueta: f.etiqueta, portal: f.portal, prs: f.prs, entrega: f.entrega })];
+
+// The writer strips XML-invalid characters from every cell: the key fields are cleaned once here so that what is
+// signed, registered and written is the same text.
+const limpiarClaves = (f) => ({ ...f, etiqueta: limpiar(f.etiqueta), portal: limpiar(f.portal), entrega: limpiar(f.entrega), prs: f.prs.map(limpiar), celdas: f.celdas.map(limpiar) });
+
 const quitar = (ruta) => {
   try {
     unlinkSync(ruta);
@@ -66,7 +73,12 @@ function columnasValidas(p) {
   return Array.isArray(c) && ['ID', 'Portal', 'Result'].every((x) => c.includes(x)) ? c : QA_DEFECTO.columnas;
 }
 
-export async function generarGuia(p, { claves, desde, ahora = new Date(), rastreador = null, chrome, limiteMs } = {}) {
+// Selection, numbering and registration of one project run under one lock, so two concurrent cuts never share tracks.
+export function generarGuia(p, opciones = {}) {
+  return conBloqueo(`${rutaGuias(p.salida)}.gen`, () => generar(p, opciones), { esperaMs: 180_000 });
+}
+
+async function generar(p, { claves, desde, ahora = new Date(), rastreador = null, chrome, limiteMs } = {}) {
   const columnas = columnasValidas(p);
   const base = leerJson(rutaEntregas(p.salida));
   const prsPorId = mapaPrs(leerJson(rutaInstantanea(p.salida)));
@@ -79,16 +91,16 @@ export async function generarGuia(p, { claves, desde, ahora = new Date(), rastre
     const e = leerJson(rutaExplicacion(p.salida, pr.repo, pr.numero));
     if (e) explicaciones.set(pr.id, e);
   }
-  const filas = filasDeGuia({ entregas, prsPorId, explicaciones, rastreador, columnas });
+  const filas = filasDeGuia({ entregas, prsPorId, explicaciones, rastreador, columnas }).map(limpiarClaves);
   if (filas.length === 0) return { id: null, archivos: { xlsx: null, html: null, pdf: null }, filas: 0, pendientes: [], avisoPdf: null, vacia: true };
 
   const dir = dirQa(p.salida);
   mkdirSync(dir, { recursive: true });
   const id = reservar(dir, fechaLocal(ahora));
   const rutas = { xlsx: join(dir, `${id}.xlsx`), html: join(dir, `${id}.html`), pdf: join(dir, `${id}.pdf`) };
-  const generado = ahora.toISOString();
-  const secreto = secretoQa(p);
   try {
+    const generado = ahora.toISOString();
+    const secreto = secretoQa(p);
     const iResultado = columnas.indexOf('Result');
     const letra = columnaLetra(iResultado);
     const anchos = columnas.map((_, i) => ANCHOS[i] ?? ANCHO_EXTRA);
@@ -106,8 +118,8 @@ export async function generarGuia(p, { claves, desde, ahora = new Date(), rastre
           oculta: true,
           encabezado: false,
           filas: [
-            [id, p.clave, generado],
-            ...filas.map((f) => [f.etiqueta, f.portal, f.entrega, JSON.stringify(f.prs), firmaFila(secreto, { guia: id, etiqueta: f.etiqueta, portal: f.portal, prs: f.prs, entrega: f.entrega })]),
+            [FORMATO_SEKI, id, p.clave, generado],
+            ...filas.map(filaSeki(secreto, id)),
           ],
         },
       ],
@@ -118,7 +130,7 @@ export async function generarGuia(p, { claves, desde, ahora = new Date(), rastre
     let pdf = null;
     let avisoPdf = null;
     const exe = chrome === undefined ? rutaChrome(p) : chrome;
-    if (!exe) avisoPdf = 'PDF not generated: Chrome was not found (set qa.chrome in proyectos.json).';
+    if (!exe) avisoPdf = p.qa?.chrome && chrome === undefined ? 'PDF not generated: The configured Chrome path does not exist.' : 'PDF not generated: Chrome was not found (set qa.chrome in proyectos.json).';
     else {
       const temporal = `${rutas.pdf}.tmp.pdf`;
       quitar(temporal);

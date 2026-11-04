@@ -24,8 +24,12 @@ const esArchivo = (ruta) => {
 };
 
 export function rutaChrome(p) {
-  const propia = p?.qa?.chrome ? expandir(p.qa.chrome) : null;
-  return [propia, ...CANDIDATOS].filter(Boolean).find(esArchivo) ?? null;
+  // A configured path is never replaced by an auto-detected browser: if it is missing there is no Chrome.
+  if (p?.qa?.chrome) {
+    const propia = expandir(p.qa.chrome);
+    return esArchivo(propia) ? propia : null;
+  }
+  return CANDIDATOS.find(esArchivo) ?? null;
 }
 
 let turno = Promise.resolve();
@@ -39,6 +43,17 @@ const tieneContenido = (ruta) => {
   }
 };
 
+// Detached child = its own process group: helpers that outlive the browser die with the group.
+function matar(hijo) {
+  try {
+    process.kill(-hijo.pid, 'SIGKILL');
+  } catch {
+    try {
+      hijo.kill('SIGKILL');
+    } catch { /* already gone */ }
+  }
+}
+
 export function htmlAPdf(chrome, html, pdf, { limiteMs = 60_000 } = {}) {
   return enTurno(async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'seki-chrome-'));
@@ -49,13 +64,13 @@ export function htmlAPdf(chrome, html, pdf, { limiteMs = 60_000 } = {}) {
         let vencido = false;
         let hijo;
         try {
-          hijo = spawn(chrome, args, { stdio: 'ignore' });
+          hijo = spawn(chrome, args, { stdio: 'ignore', detached: true });
           pid = hijo.pid;
         } catch {
           ok({ error: true });
           return;
         }
-        const reloj = setTimeout(() => { vencido = true; hijo.kill('SIGKILL'); }, limiteMs);
+        const reloj = setTimeout(() => { vencido = true; matar(hijo); }, limiteMs);
         hijo.on('error', () => { clearTimeout(reloj); ok({ error: true }); });
         hijo.on('close', (codigo) => { clearTimeout(reloj); ok({ codigo, vencido }); });
       });
@@ -63,9 +78,13 @@ export function htmlAPdf(chrome, html, pdf, { limiteMs = 60_000 } = {}) {
       if (fin.error) return { ok: false, motivo: 'Chrome could not be started', ...traza };
       if (fin.vencido) return { ok: false, motivo: 'Chrome did not finish in time', ...traza };
       if (fin.codigo !== 0) return { ok: false, motivo: `Chrome exited with code ${fin.codigo}`, ...traza };
-      return tieneContenido(pdf) ? { ok: true } : { ok: false, motivo: 'Chrome produced no PDF', ...traza };
+      return tieneContenido(pdf) ? { ok: true, ...traza } : { ok: false, motivo: 'Chrome produced no PDF', ...traza };
     } finally {
-      rmSync(tmp, { recursive: true, force: true });
+      try {
+        rmSync(tmp, { recursive: true, force: true, maxRetries: 3 });
+      } catch (e) {
+        process.stderr.write(`[seki-review/qa] Chrome profile could not be removed: ${e.code ?? 'error'}\n`);
+      }
     }
   });
 }

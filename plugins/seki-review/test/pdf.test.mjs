@@ -1,6 +1,6 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { htmlAPdf, rutaChrome } from '../mcp/lib/pdf.mjs';
@@ -16,7 +16,8 @@ test('ok mode writes the PDF and passes safe flags', async () => {
   const chrome = chromeFalso({ modo: 'ok' });
   const pdf = join(dir, 'ok.pdf');
   const r = await htmlAPdf(chrome, html, pdf);
-  assert.deepEqual(r, { ok: true });
+  assert.equal(r.ok, true);
+  assert.equal(existsSync(r.perfil), false);
   assert.equal(readFileSync(pdf, 'utf8').startsWith('%PDF'), true);
   const [args] = llamadasChrome(chrome);
   assert.ok(args.includes('--headless'));
@@ -48,9 +49,16 @@ test('a missing binary is reported, not thrown', async () => {
   assert.equal(r.ok, false);
 });
 
-test('rutaChrome prefers the configured regular file and ignores a missing one', () => {
+test('a profile that cannot be removed does not sink the render', async () => {
+  const chrome = chromeFalso({ modo: 'bloquea' });
+  const r = await htmlAPdf(chrome, html, join(dir, 'b.pdf'));
+  assert.equal(r.ok, true);
+  chmodSync(join(r.perfil, 'cerrado'), 0o700);
+  rmSync(r.perfil, { recursive: true, force: true });
+});
+
+test('rutaChrome uses the configured regular file and never falls back when it is missing', () => {
   const chrome = chromeFalso({ modo: 'ok' });
   assert.equal(rutaChrome({ qa: { chrome } }), chrome);
-  const otro = rutaChrome({ qa: { chrome: join(dir, 'no-existe') } });
-  assert.notEqual(otro, join(dir, 'no-existe'));
+  assert.equal(rutaChrome({ qa: { chrome: join(dir, 'no-existe') } }), null);
 });

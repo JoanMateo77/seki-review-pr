@@ -7,7 +7,7 @@ import { secretoQa } from '../mcp/lib/acceso.mjs';
 import { escribirJson, rutaEntregas, rutaInstantanea } from '../mcp/lib/cache.mjs';
 import { QA_DEFECTO } from '../mcp/lib/config.mjs';
 import { firmaFila, leerGuias } from '../mcp/lib/qa-guia.mjs';
-import { COLUMNAS_SEKI, generarGuia, htmlGuia } from '../mcp/lib/qa-salida.mjs';
+import { COLUMNAS_SEKI, FORMATO_SEKI, generarGuia, htmlGuia } from '../mcp/lib/qa-salida.mjs';
 import { leerXlsx } from '../mcp/lib/xlsx.mjs';
 import { leerZip } from '../mcp/lib/zip.mjs';
 import { chromeFalso, limpiarChrome, llamadasChrome } from './util/chrome.mjs';
@@ -56,7 +56,8 @@ test('generarGuia writes xlsx, html and pdf, signs rows and registers the guide'
   assert.equal(qa.filas.length, 5);
   assert.deepEqual(qa.filas[1].slice(0, 2), ['X-001', 'p1']);
   assert.match(qa.filas[1][4], /Open the screen 1/);
-  assert.deepEqual(seki.filas[0].slice(0, 2), [r.id, 't']);
+  assert.deepEqual(seki.filas[0].slice(0, 3), [FORMATO_SEKI, r.id, 't']);
+  assert.equal(FORMATO_SEKI, 'seki-qa-1');
   assert.equal(seki.filas.length, 5);
   const secreto = secretoQa(p);
   for (const f of seki.filas.slice(1)) {
@@ -134,6 +135,56 @@ test('failing Chrome leaves html only, with a notice', async () => {
   assert.ok(existsSync(r.archivos.html));
   assert.deepEqual(readdirSync(join(p.salida, 'qa')).filter((n) => n.endsWith('.pdf') || n.includes('.tmp')), []);
   assert.equal(llamadasChrome(chrome).length, 1);
+});
+
+test('QA sheet and HTML show no PR ids, branches or file paths', async () => {
+  const p = proyecto();
+  const foto = JSON.parse(readFileSync(join(p.salida, 'datos', 'prs.json'), 'utf8'));
+  foto.prs[0].descripcion = '## How to test\n- Open r#2 from fix/login-bug and src/a.mjs';
+  writeFileSync(join(p.salida, 'datos', 'prs.json'), JSON.stringify(foto));
+  const r = await generarGuia(p, { ahora: AHORA, chrome: null });
+  const qa = leerXlsx(readFileSync(r.archivos.xlsx)).hojas.find((h) => h.nombre === 'QA');
+  const texto = qa.filas.flat().join('\n') + readFileSync(r.archivos.html, 'utf8');
+  assert.doesNotMatch(texto, /r#\d|fix\/|\.mjs|github\.com|origin\//);
+});
+
+test('a configured Chrome path that does not exist gives no PDF and says so', async () => {
+  const p = proyecto();
+  p.qa.chrome = join(tmpdir(), 'seki-no-existe-chrome');
+  const r = await generarGuia(p, { ahora: AHORA });
+  assert.equal(r.archivos.pdf, null);
+  assert.match(r.avisoPdf, /The configured Chrome path does not exist/);
+});
+
+test('key fields with XML-invalid characters are signed as written', async () => {
+  const p = proyecto();
+  const e = JSON.parse(readFileSync(rutaEntregas(p.salida), 'utf8'));
+  e.entregas[0].ids = ['X-\u0001001'];
+  escribirJson(rutaEntregas(p.salida), e);
+  const r = await generarGuia(p, { ahora: AHORA, chrome: null });
+  const seki = leerXlsx(readFileSync(r.archivos.xlsx)).hojas.find((h) => h.nombre === '_seki');
+  const [etiqueta, portal, entrega, prs, firma] = seki.filas[1];
+  assert.equal(etiqueta, 'X-001');
+  assert.equal(firma, firmaFila(secretoQa(p), { guia: r.id, etiqueta, portal, prs: JSON.parse(prs), entrega }));
+  assert.equal(leerGuias(p).guias[0].filas[0].etiqueta, 'X-001');
+});
+
+test('a failure after the reservation leaves no file behind', async () => {
+  const p = proyecto();
+  mkdirSync(join(p.salida, 'datos', 'secreto-qa'));
+  await assert.rejects(generarGuia(p, { ahora: AHORA, chrome: null }));
+  assert.deepEqual(readdirSync(join(p.salida, 'qa')), []);
+  assert.equal(leerGuias(p).guias.length, 0);
+});
+
+test('two concurrent cuts never share tracks', async () => {
+  const p = proyecto();
+  const [a, b] = await Promise.all([
+    generarGuia(p, { ahora: AHORA, chrome: null, desde: 'ultimo-corte' }),
+    generarGuia(p, { ahora: AHORA, chrome: null, desde: 'ultimo-corte' }),
+  ]);
+  assert.deepEqual([a.vacia, b.vacia].sort(), [false, true]);
+  assert.equal(leerGuias(p).guias.length, 1);
 });
 
 test('no Chrome found gives html only with a notice', async () => {
