@@ -1,7 +1,11 @@
-import { test } from 'node:test';
+import { test, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { compararFotos, hayCambios } from '../mcp/lib/cambios.mjs';
-import { falsoGhRutas } from './util/gh-rutas.mjs';
+import { falsoGhRutas, limpiarGhRutas } from './util/gh-rutas.mjs';
+
+const previoGh = process.env.SEKI_GH;
+afterEach(() => { if (previoGh === undefined) delete process.env.SEKI_GH; else process.env.SEKI_GH = previoGh; });
+after(limpiarGhRutas);
 
 const pr = (numero, accion, extra = {}) => ({ id: `r#${numero}`, repo: 'r', numero, titulo: `PR ${numero}`, base: 'main', portal: 'p', accion, estadoPr: 'OPEN', ...extra });
 

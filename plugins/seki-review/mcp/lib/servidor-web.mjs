@@ -96,7 +96,8 @@ function vigilar(proyecto, puerto) {
   vigilantes.set(proyecto, reloj);
 }
 
-export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true, soloPuerto = false, intervaloVigiaMs = null } = {}) {
+// intervaloVigiaMs and relojVigia exist for tests only.
+export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true, soloPuerto = false, intervaloVigiaMs = null, relojVigia } = {}) {
   if (servidores.has(proyecto)) {
     const s = servidores.get(proyecto);
     if (abrir) execFile('open', [s.url]);
@@ -160,6 +161,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
   });
   const vigia = crearVigia({
     intervaloMs: intervaloVigiaMs ?? p.vigia.intervaloSeg * 1000,
+    reloj: relojVigia,
     tableroAbierto: () => Date.now() - ultimoTablero < VENTANA_TABLERO_MS,
     sondear: async () => (refresco ? [] : sondeo.sondear()),
     refrescar: async (repos) => {

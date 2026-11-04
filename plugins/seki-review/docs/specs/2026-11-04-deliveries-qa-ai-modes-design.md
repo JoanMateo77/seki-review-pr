@@ -77,7 +77,7 @@ Signals, strongest first, combined with union-find:
 
 1. **Normalized branch key.** Strip configured suffixes repeatedly and the type prefix:
    `fix/qa-x-y-pruebas` and `fix/qa-x-y` → `qa-x-y`; `feat/z-admin-pruebas`,
-   `feat/z-multipagas` → `z`. Suffixes come from `entregas.sufijosRama` in the project config
+   `feat/z-portal-b` → `z`. Suffixes come from `entregas.sufijosRama` in the project config
    (default `["-pruebas", "-testing", "-staging"]`). PRs in different repos with the same key
    join the same delivery — this is what links backend and frontend.
 2. **Finding IDs.** `entregas.patronId` (regex string, flag `g`, no default) applied to

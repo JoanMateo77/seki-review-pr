@@ -35,7 +35,7 @@ by looking at the line in context and say whether it is real or a false positive
 
 **"deliveries" ("entregas"):** call `entregas` and summarize by stage, starting with what needs action (QA failed, stalled, merge order alerts, ready for production). Do not call GitHub; if the data may be stale, say that the dashboard refresh updates it. In the dashboard the default tab is Deliveries, where cards can be joined, split, renamed and closed.
 
-**"since-last" ("desde-ultima"):** call `entregas` with `desde: "ultima-visita"` and list the events recorded since the last dashboard visit (merges, closures, stage changes) before the current state.
+**"since-last" ("desde-ultima"):** call `entregas` with `desde: "ultima-visita"` and list the events recorded since the "Since last visit" banner was last dismissed (merges, closures, delivery adjustments) before the current state.
 
 **"explain <repo>#<n>" ("explicar"):** `pr_detalle` → read description, commits and diff → review the findings from `pr_verificaciones` → if the diff comes trimmed and it is needed, read the file in the local checkout with a bounded read (grep + range) → `pr_guardar_explicacion` → `tablero_servir`.
 
@@ -84,10 +84,10 @@ before releasing a version or after updating Claude Code.
 reviewer. The served dashboard lives as long as a Claude Code session is open; its link is fixed per machine. With several sessions, the one with the newest version serves it and the others stay on standby: if that one closes, another takes over on the same link and the page reconnects on its own. Outside Claude Code:
 `sh <plugin>/bin/tablero.sh`.
 
-**"what was merged" / "what changed":** consult the event history first with `entregas` (`desde: "ultima-visita"`) before calling GitHub; it already records merges and closures. Use `prs_pendientes` compares with the previous snapshot and opens its output with
-"Detected changes": merged (and into which branch), closed without merging, new, and those that changed group.
-For the state per delivery (what each one needs next), call `entregas` with `desde: "ultima-visita"`; it does not
-query GitHub, so refresh first if the data may be stale.
+**"what was merged" / "what changed":** call `entregas` with `desde: "ultima-visita"` first: it lists the recorded
+merges and closures and the state per delivery (what each one needs next) without querying GitHub, so refresh first
+if the data may be stale. For changes not yet recorded, `prs_pendientes` compares with the previous snapshot and opens
+its output with "Detected changes": merged (and into which branch), closed without merging, new, and those that changed group.
 
 ## How to write the explanation
 

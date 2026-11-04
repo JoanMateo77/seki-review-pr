@@ -158,7 +158,7 @@ All paths below are relative to `plugins/seki-review/`.
   - `registrarEventos(p, eventos): Promise<number>` — reads ids already in `eventos.jsonl`, appends only new ones under one lock, returns count.
   - `leerEventos(p, { desde?: string }): Evento[]`.
   - `entregas.json` = `{ generado, entregas: Array<Entrega & { pistas: Array<Pista & { etapa, alertas }>, etapa, ultimoEvento: Evento | null }> }`.
-- [ ] **Step 1:** Tests, one per row of the §6.2 table (6 rows + no-testing case + stale QA result ignored); `orden` alert when front merged in testing before back; `gemela_faltante` when a line has only a testing PR; two tracks (bac-admin, Multipagas) + shared back: one track in production and the other open → delivery stage = the other track's stage; `eventosDe` twice on the same snapshot → `registrarEventos` returns N then 0; concurrent `registrarEventos` from two promises → no duplicate ids in the file.
+- [ ] **Step 1:** Tests, one per row of the §6.2 table (6 rows + no-testing case + stale QA result ignored); `orden` alert when front merged in testing before back; `gemela_faltante` when a line has only a testing PR; two tracks (portal-a, portal-b) + shared back: one track in production and the other open → delivery stage = the other track's stage; `eventosDe` twice on the same snapshot → `registrarEventos` returns N then 0; concurrent `registrarEventos` from two promises → no duplicate ids in the file.
 - [ ] **Step 2:** Run → FAIL. **Step 3:** Implement and wire into `recolectar` (after writing `prs.json`; failures here are logged with tag `[seki-review/entregas]` and never fail the refresh). **Step 4:** Run → PASS; full suite + smoke → PASS.
 - [ ] **Step 5:** Commit `seki-review: delivery stages, alerts and event history`.
 
@@ -181,7 +181,7 @@ All paths below are relative to `plugins/seki-review/`.
   - Tool `entregas { proyecto?, desde?: 'ultima-visita' }` → text summary by stage with next action per delivery and the events since the last visit.
   - UI: default tab **Deliveries** (columns in stage order, cards: title, IDs, track chips with stage, PR matrix repo × environment with state and link, alert badges, last event, actions Join/Split/Close); tab **PRs** = current view. DOM built with `textContent`/`createElement`, no `innerHTML` with data, no inline handlers. Copy in formal, impersonal English.
 - [ ] **Step 1:** API tests against the served server (existing pattern in `acceso.test.mjs`/`ceder.test.mjs`): token required (401 without), unknown PR id in `unir` → 400, `titulo` over 200 chars → 400, valid `separar` returns a delivery set with one more element, `cerrar` makes the delivery `cerrada`.
-- [ ] **Step 2:** Run → FAIL. **Step 3:** Implement endpoints, tool and view. **Step 4:** Run → PASS; full suite + smoke → PASS; open the served dashboard against the real REVAL config and check by eye that QA fixes merged on 2026-11-03 appear grouped (back + front + both environments) — record the result in the PR description.
+- [ ] **Step 2:** Run → FAIL. **Step 3:** Implement endpoints, tool and view. **Step 4:** Run → PASS; full suite + smoke → PASS; open the served dashboard against the owner's real configuration and check by eye that QA fixes merged on 2026-11-03 appear grouped (back + front + both environments) — record the result in the PR description.
 - [ ] **Step 5:** Commit `seki-review: deliveries board, last-visit banner and entregas tool`.
 
 ### Task 9: Merge watcher

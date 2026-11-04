@@ -1,6 +1,6 @@
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,7 +12,17 @@ import { iniciarServidor } from '../mcp/lib/servidor-web.mjs';
 import { construirHtml } from '../mcp/lib/tablero.mjs';
 import { compactarAjustes } from '../mcp/lib/tablero-entregas.mjs';
 import herramienta from '../mcp/tools/entregas.mjs';
-import { falsoGhRutas } from './util/gh-rutas.mjs';
+import { falsoGhRutas, limpiarGhRutas } from './util/gh-rutas.mjs';
+
+after(limpiarGhRutas);
+const temporales = [];
+const temporal = (prefijo) => {
+  const dir = mkdtempSync(join(tmpdir(), prefijo));
+  temporales.push(dir);
+  return dir;
+};
+after(() => { for (const d of temporales.splice(0)) rmSync(d, { recursive: true, force: true }); });
+
 
 const hace = (dias) => new Date(Date.now() - dias * 86400000).toISOString();
 const pr = (repo, numero, ambiente, estadoPr, rama, extra = {}) => ({
@@ -33,7 +43,7 @@ const FOTO = () => ({
 let n = 0;
 async function entorno({ servir = true } = {}) {
   const clave = `ent${++n}`;
-  const dir = mkdtempSync(join(tmpdir(), 'seki-entregas-api-'));
+  const dir = temporal('seki-entregas-api-');
   const salida = join(dir, 'salida');
   mkdirSync(join(salida, 'datos'), { recursive: true });
   const linea = { portal: 'P', prod: 'main', pruebas: 'develop' };
@@ -186,7 +196,7 @@ test('the entregas tool summarizes by stage with next actions and events since t
 });
 
 test('the entregas tool asks to refresh when entregas.json is missing', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'seki-entregas-vacio-'));
+  const dir = temporal('seki-entregas-vacio-');
   const ruta = join(dir, 'proyectos.json');
   writeFileSync(ruta, JSON.stringify({ vacio: { owner: 'o', salida: join(dir, 'salida'), repos: {} } }));
   process.env.SEKI_REVIEW_CONFIG = ruta;
@@ -255,7 +265,7 @@ test('desdeVisita keeps the newest 200 events and totalDesdeVisita counts them a
 });
 
 test('a refresh that was already running does not undo a join made meanwhile', async (t) => {
-  const dir = mkdtempSync(join(tmpdir(), 'seki-entregas-carrera-'));
+  const dir = temporal('seki-entregas-carrera-');
   const salida = join(dir, 'salida');
   mkdirSync(join(salida, 'datos'), { recursive: true });
   const clave = `carrera${++n}`;

@@ -4,7 +4,8 @@
 // A route answers with `json` (serialized), or `texto` (raw stdout); `stderr` is written to stderr and
 // `salida` is the exit code (default 0). Unmatched calls exit 1 with `no route: <args>`. Every call is
 // appended to a calls file as one JSON line (the argv array). Routes can be replaced during a test.
-import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+// Test files register `after(limpiarGhRutas)` to remove the temp folders.
+import { chmodSync, existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -25,14 +26,24 @@ process.stderr.write('no route: ' + linea);
 process.exit(1);
 `;
 
+const creadas = [];
+export function limpiarGhRutas() {
+  for (const dir of creadas.splice(0)) rmSync(dir, { recursive: true, force: true });
+}
+
 export function falsoGhRutas(rutas) {
   const dir = mkdtempSync(join(tmpdir(), 'seki-gh-rutas-'));
+  creadas.push(dir);
   const archivoRutas = join(dir, 'rutas.json');
   const archivoLlamadas = join(dir, 'llamadas.jsonl');
   const ruta = join(dir, 'gh');
   writeFileSync(ruta, GUION(archivoRutas, archivoLlamadas));
   chmodSync(ruta, 0o755);
-  const fijar = (nuevas) => writeFileSync(archivoRutas, JSON.stringify(nuevas));
+  // Atomic: a gh call running while routes change reads either the old or the new file, never half of it.
+  const fijar = (nuevas) => {
+    writeFileSync(`${archivoRutas}.tmp`, JSON.stringify(nuevas));
+    renameSync(`${archivoRutas}.tmp`, archivoRutas);
+  };
   const llamadas = () => (existsSync(archivoLlamadas) ? readFileSync(archivoLlamadas, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
   fijar(rutas);
   return { ruta, llamadas, fijar };

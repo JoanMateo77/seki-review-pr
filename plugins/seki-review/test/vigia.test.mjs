@@ -1,6 +1,6 @@
-import { test } from 'node:test';
+import { test, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { escribirJson, rutaInstantanea } from '../mcp/lib/cache.mjs';
@@ -9,6 +9,18 @@ import { ghJson } from '../mcp/lib/proceso.mjs';
 import { crearSondeo, crearVigia } from '../mcp/lib/vigia.mjs';
 
 const MIN = 60 * 1000;
+
+const previo = { gh: process.env.SEKI_GH, config: process.env.SEKI_REVIEW_CONFIG };
+afterEach(() => {
+  for (const [k, v] of [['SEKI_GH', previo.gh], ['SEKI_REVIEW_CONFIG', previo.config]]) v === undefined ? delete process.env[k] : (process.env[k] = v);
+});
+const temporales = [];
+const temporal = (prefijo) => {
+  const dir = mkdtempSync(join(tmpdir(), prefijo));
+  temporales.push(dir);
+  return dir;
+};
+after(() => { for (const d of temporales.splice(0)) rmSync(d, { recursive: true, force: true }); });
 
 // Fake clock: timers fire only when the test advances time.
 function relojFalso(inicio = Date.parse('2026-11-04T10:00:00Z')) {
@@ -193,9 +205,10 @@ test('a gh failure for one repo fails the probe', async () => {
 
 // Server: real HTTP with a slow gh double (appends each call to a file, answers an empty list after a delay).
 let n = 0;
-async function servidor({ demoraMs, repos = ['r1'], cambiados = [] }) {
+// Fake gh answers after demoraMs or, with retener, only once the release file exists.
+async function servidor({ demoraMs = 0, retener = false, repos = ['r1'], cambiados = [], reloj } = {}) {
   const clave = `vig${++n}`;
-  const dir = mkdtempSync(join(tmpdir(), 'seki-vigia-'));
+  const dir = temporal('seki-vigia-');
   const salida = join(dir, 'salida');
   mkdirSync(join(salida, 'datos'), { recursive: true });
   const ruta = join(dir, 'proyectos.json');
@@ -203,37 +216,51 @@ async function servidor({ demoraMs, repos = ['r1'], cambiados = [] }) {
   process.env.SEKI_REVIEW_CONFIG = ruta;
   escribirJson(rutaInstantanea(salida), { proyecto: clave, generado: '2026-11-04T09:00:00.000Z', owner: 'o', prs: [], recientes: [] });
   const registro = join(dir, 'llamadas.txt');
+  const suelta = join(dir, 'suelta');
   const gh = join(dir, 'gh');
-  writeFileSync(gh, `#!${process.execPath}\nrequire('node:fs').appendFileSync(${JSON.stringify(registro)}, process.argv.slice(2).join(' ') + '\\n');\nconst a = process.argv.slice(2);\nconst cambiado = a.includes('--search') && ${JSON.stringify(cambiados)}.some((r) => a.includes('o/' + r));\nsetTimeout(() => { process.stdout.write(cambiado ? '[{"number":1}]' : '[]'); }, ${demoraMs});\n`);
+  writeFileSync(gh, `#!${process.execPath}
+const fs = require('node:fs');
+fs.appendFileSync(${JSON.stringify(registro)}, process.argv.slice(2).join(' ') + '\\n');
+const a = process.argv.slice(2);
+const cambiado = a.includes('--search') && ${JSON.stringify(cambiados)}.some((r) => a.includes('o/' + r));
+const responder = () => process.stdout.write(cambiado ? '[{"number":1}]' : '[]');
+if (${retener}) { const t = setInterval(() => { if (fs.existsSync(${JSON.stringify(suelta)})) { clearInterval(t); responder(); } }, 5); }
+else setTimeout(responder, ${demoraMs});
+`);
   chmodSync(gh, 0o755);
   process.env.SEKI_GH = gh;
-  const { url } = await iniciarServidor({ proyecto: clave, puerto: 0, abrir: false, intervaloVigiaMs: 60 });
+  const { url } = await iniciarServidor({ proyecto: clave, puerto: 0, abrir: false, intervaloVigiaMs: 60, relojVigia: reloj });
   const u = new URL(url);
   const token = u.searchParams.get('t');
   const llamar = (ruta, { metodo = 'GET', cabeceras = {} } = {}) => fetch(`${u.origin}${ruta}`, { method: metodo, headers: { 'x-seki-token': token, ...cabeceras } });
   const llamadas = () => (existsSync(registro) ? readFileSync(registro, 'utf8').split('\n').filter(Boolean) : []);
-  return { llamar, llamadas };
+  return { llamar, llamadas, soltar: () => writeFileSync(suelta, '') };
 }
 const pausa = (ms) => new Promise((ok) => setTimeout(ok, ms));
 const esperar = async (cond, ms = 4000) => { const fin = Date.now() + ms; while (!cond()) { if (Date.now() > fin) throw new Error('timeout'); await pausa(10); } };
 
 test('server: only the dashboard marker opens the window; ceder is refused while a probe runs; nothing runs after ceder', async () => {
-  const { llamar, llamadas } = await servidor({ demoraMs: 400 });
+  const reloj = relojFalso();
+  const { llamar, llamadas, soltar } = await servidor({ retener: true, reloj });
+  assert.equal(reloj.cuantos(), 1);
   assert.equal((await llamar('/api/estado')).status, 200);
-  await pausa(250);
+  // The cycle runs to completion inside avanzar: without the marker it never reaches the probe.
+  await reloj.avanzar(60);
   assert.equal(llamadas().length, 0, 'a request without the marker must not start the watcher');
+  assert.equal(reloj.cuantos(), 1);
   const e = await (await llamar('/api/estado', { cabeceras: { 'x-seki-tablero': '1' } })).json();
   assert.equal(e.vigia.ultimo, null);
+  const ciclo = reloj.avanzar(60);
   await esperar(() => llamadas().length === 1);
   assert.equal((await llamar('/api/ceder', { metodo: 'POST' })).status, 409);
-  // Once the cycle ends the port can be handed over.
-  let codigo = 409;
-  const fin = Date.now() + 3000;
-  while (codigo === 409 && Date.now() < fin) { await pausa(20); codigo = (await llamar('/api/ceder', { metodo: 'POST' })).status; }
-  assert.equal(codigo, 200);
-  const antes = llamadas().length;
-  await pausa(400);
-  assert.equal(llamadas().length, antes);
+  // Once the held probe answers, the cycle ends and the port can be handed over.
+  soltar();
+  await ciclo;
+  assert.equal(reloj.cuantos(), 1);
+  assert.equal((await llamar('/api/ceder', { metodo: 'POST' })).status, 200);
+  assert.equal(reloj.cuantos(), 0, 'ceder must clear the watcher timer');
+  await reloj.avanzar(60 * MIN);
+  assert.equal(llamadas().length, 1);
 });
 
 test('server: a manual refresh during a watcher partial refresh is followed by a full refresh', async () => {
@@ -255,7 +282,7 @@ test('server: a manual refresh during a watcher partial refresh is followed by a
 });
 
 test('gh helper: a timeout rejects a hung process and the probe passes its timeout', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'seki-vigia-gh-'));
+  const dir = temporal('seki-vigia-gh-');
   const colgado = join(dir, 'gh');
   writeFileSync(colgado, `#!${process.execPath}\nsetInterval(() => {}, 1000);\n`);
   chmodSync(colgado, 0o755);

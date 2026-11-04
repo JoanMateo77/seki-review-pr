@@ -1,9 +1,13 @@
-import { test } from 'node:test';
+import { test, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { falsoGhRutas } from './util/gh-rutas.mjs';
+import { falsoGhRutas, limpiarGhRutas } from './util/gh-rutas.mjs';
 import { gh, ghJson } from '../mcp/lib/proceso.mjs';
+
+const previoGh = process.env.SEKI_GH;
+afterEach(() => { if (previoGh === undefined) delete process.env.SEKI_GH; else process.env.SEKI_GH = previoGh; });
+after(limpiarGhRutas);
 
 const exec = promisify(execFile);
 

@@ -22,3 +22,15 @@ test('buscarGemela returns the best candidate at or above the threshold, else nu
   assert.equal(g.parecido, 1);
   assert.equal(buscarGemela('chore: Actualizar dependencias', candidatas), null);
 });
+
+test('near the 0.6 threshold: 5/9 shared tokens is not a twin, 5/8 and exactly 3/5 are', () => {
+  const base = 'alpha bravo charlie delta echo';
+  const debajo = parecido(`${base} foxtrot golf`, `${base} hotel india`);
+  const encima = parecido(`${base} foxtrot`, `${base} hotel india`);
+  assert.equal(+debajo.toFixed(3), 0.556);
+  assert.equal(encima, 0.625);
+  assert.equal(parecido('alpha bravo charlie delta', 'alpha bravo charlie echo'), 0.6);
+  assert.equal(buscarGemela(`${base} foxtrot golf`, [{ number: 1, state: 'OPEN', title: `${base} hotel india` }]), null);
+  assert.equal(buscarGemela(`${base} foxtrot`, [{ number: 2, state: 'OPEN', title: `${base} hotel india` }]).numero, 2);
+  assert.equal(buscarGemela('alpha bravo charlie delta', [{ number: 3, state: 'OPEN', title: 'alpha bravo charlie echo' }]).parecido, 0.6);
+});

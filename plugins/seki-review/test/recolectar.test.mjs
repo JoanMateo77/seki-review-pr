@@ -1,12 +1,21 @@
-import { test, afterEach } from 'node:test';
+import { test, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { falsoGhRutas } from './util/gh-rutas.mjs';
+import { falsoGhRutas, limpiarGhRutas } from './util/gh-rutas.mjs';
 import { recolectar } from '../mcp/lib/recolectar.mjs';
 import { leerJson, rutaEntregas, rutaEventos, rutaInstantanea } from '../mcp/lib/cache.mjs';
 import { proyecto } from '../mcp/lib/config.mjs';
+
+after(limpiarGhRutas);
+const temporales = [];
+const temporal = (prefijo) => {
+  const dir = mkdtempSync(join(tmpdir(), prefijo));
+  temporales.push(dir);
+  return dir;
+};
+after(() => { for (const d of temporales.splice(0)) rmSync(d, { recursive: true, force: true }); });
 
 const previo = { config: process.env.SEKI_REVIEW_CONFIG, gh: process.env.SEKI_GH };
 afterEach(() => {
@@ -17,7 +26,7 @@ const hace = (dias) => new Date(Date.now() - dias * 86400000).toISOString();
 const linea = { portal: 'P', prod: 'main', pruebas: 'testing' };
 
 function entorno(extra = {}) {
-  const dir = mkdtempSync(join(tmpdir(), 'seki-rec-'));
+  const dir = temporal('seki-rec-');
   const salida = join(dir, 'salida');
   mkdirSync(join(salida, 'datos'), { recursive: true });
   const ruta = join(dir, 'proyectos.json');
@@ -144,7 +153,7 @@ test('a PR created long ago and merged recently appears in recientes', async () 
 });
 
 test('a line with a single base does not request base=undefined', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'seki-rec-'));
+  const dir = temporal('seki-rec-');
   const salida = join(dir, 'salida');
   mkdirSync(join(salida, 'datos'), { recursive: true });
   const ruta = join(dir, 'proyectos.json');
