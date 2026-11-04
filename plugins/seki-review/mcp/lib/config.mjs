@@ -19,6 +19,15 @@ export const ENTREGAS_DEFECTO = { sufijosRama: ['-pruebas', '-testing', '-stagin
 export const VIGIA_DEFECTO = { intervaloSeg: 300 };
 export const VIGIA_INTERVALO_MIN = 120;
 
+export const QA_DEFECTO = {
+  columnas: ['ID', 'Portal', 'Screen and access', 'Preconditions and data', 'Steps', 'Expected result', 'Priority', 'Result', 'QA notes', 'Evidence', 'Date', 'Tester'],
+  resultados: ['OK', 'Fail', 'Blocked', 'Pending', 'N/A'],
+  mapeo: { OK: 'ok', Fail: 'fallo', Blocked: 'bloqueado', Pending: null, 'N/A': 'na' },
+  chrome: null,
+  rastreador: null,
+};
+
+const textos = (v) => Array.isArray(v) && v.every((x) => typeof x === 'string');
 const positivo = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
 const VALIDOS = {
   sufijosRama: (v) => Array.isArray(v) && v.every((x) => typeof x === 'string'),
@@ -28,7 +37,53 @@ const VALIDOS = {
   cerrarTrasDias: positivo,
   maxPorSenal: positivo,
   intervaloSeg: positivo,
+  columnas: (v) => textos(v) && ['ID', 'Portal', 'Result'].every((c) => v.includes(c)),
+  resultados: textos,
+  mapeo: (v) => v !== null && typeof v === 'object' && !Array.isArray(v) && Object.values(v).every((x) => x === null || typeof x === 'string'),
+  chrome: (v) => v === null || typeof v === 'string',
 };
+
+const RASTREADOR_LECTURA = ['hallazgo', 'pasos', 'esperado', 'pantalla', 'prioridad'];
+const RASTREADOR_COLUMNAS = ['estado', 'prPruebas', 'prProd', 'enPruebas', 'enProd'];
+const objeto = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const cadena = (v) => typeof v === 'string' && v.length > 0;
+
+// Null when the tracker section is not usable; otherwise the section with its optional parts completed.
+function validarRastreador(r) {
+  if (r === null || r === undefined) return null;
+  if (!objeto(r) || r.tipo !== 'xlsx' || !cadena(r.ruta) || !cadena(r.hoja) || !cadena(r.columnaId)) {
+    avisar('qa.rastreador is invalid (it needs tipo "xlsx" and text values for ruta, hoja and columnaId); it is ignored');
+    return null;
+  }
+  const claves = (valor, nombres, nombre) => {
+    const base = Object.fromEntries(nombres.map((k) => [k, null]));
+    if (valor === undefined) return base;
+    if (!objeto(valor) || !Object.values(valor).every((x) => x === null || typeof x === 'string')) {
+      avisar(`qa.rastreador.${nombre} has an invalid value; no column is used`);
+      return base;
+    }
+    for (const k of nombres) if (typeof valor[k] === 'string') base[k] = valor[k];
+    return base;
+  };
+  let estados = {};
+  if (r.estados !== undefined) {
+    if (objeto(r.estados) && Object.values(r.estados).every((x) => typeof x === 'string')) estados = { ...r.estados };
+    else avisar('qa.rastreador.estados has an invalid value; no state text is used');
+  }
+  const fila = Number.isInteger(r.filaEncabezado) && r.filaEncabezado >= 1 ? r.filaEncabezado : 1;
+  if (r.filaEncabezado !== undefined && fila !== r.filaEncabezado) avisar('qa.rastreador.filaEncabezado has an invalid value; 1 is used');
+  return {
+    tipo: 'xlsx',
+    ruta: r.ruta,
+    hoja: r.hoja,
+    filaEncabezado: fila,
+    columnaId: r.columnaId,
+    lectura: claves(r.lectura, RASTREADOR_LECTURA, 'lectura'),
+    columnas: claves(r.columnas, RASTREADOR_COLUMNAS, 'columnas'),
+    estados,
+    escribir: typeof r.escribir === 'boolean' ? r.escribir : true,
+  };
+}
 
 // proyecto() runs on every tool call: each bad key is reported once per process.
 const avisados = new Set();
@@ -58,7 +113,9 @@ export function proyecto(clave) {
   if (!p) throw new Error(`Project "${elegida}" is not in ${ruta}. Available: ${Object.keys(proyectos).join(', ')}`);
   const vigia = conDefectos(VIGIA_DEFECTO, p.vigia, 'vigia');
   vigia.intervaloSeg = Math.max(VIGIA_INTERVALO_MIN, vigia.intervaloSeg);
-  return { clave: elegida, ...p, entregas: conDefectos(ENTREGAS_DEFECTO, p.entregas, 'entregas'), vigia, salida: expandir(p.salida), copias: expandir(p.copias ?? `~/.cache/seki-review/copias/${elegida}`) };
+  const qa = conDefectos(QA_DEFECTO, p.qa, 'qa');
+  qa.rastreador = validarRastreador(p.qa?.rastreador);
+  return { clave: elegida, ...p, qa, entregas: conDefectos(ENTREGAS_DEFECTO, p.entregas, 'entregas'), vigia, salida: expandir(p.salida), copias: expandir(p.copias ?? `~/.cache/seki-review/copias/${elegida}`) };
 }
 
 // Locates a base branch within the repo's deployment lines.

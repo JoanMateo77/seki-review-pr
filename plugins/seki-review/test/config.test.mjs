@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { proyecto } from '../mcp/lib/config.mjs';
+import { proyecto, QA_DEFECTO } from '../mcp/lib/config.mjs';
 import { reglasDeConfig } from '../mcp/lib/reglas.mjs';
 import { verificar } from '../mcp/lib/verificar.mjs';
 import { sistemaDe } from '../mcp/lib/ia.mjs';
@@ -79,4 +79,34 @@ test('valid config values are kept and the interval is clamped to the minimum', 
   assert.deepEqual(p.entregas.sufijosRama, ['-qa']);
   assert.equal(p.entregas.patronId, 'T-\\d+');
   assert.equal(p.vigia.intervaloSeg, 120);
+});
+
+test('qa defaults are applied and the tracker defaults are completed', () => {
+  config({ q: { salida: '/s/q', repos: {} }, r: { salida: '/s/r', repos: {}, qa: { rastreador: { tipo: 'xlsx', ruta: '~/t.xlsx', hoja: 'S', columnaId: 'ID', lectura: { pasos: 'Steps' } } } } });
+  assert.deepEqual(proyecto('q').qa, QA_DEFECTO);
+  const r = proyecto('r').qa.rastreador;
+  assert.equal(r.filaEncabezado, 1);
+  assert.equal(r.escribir, true);
+  assert.deepEqual(r.estados, {});
+  assert.equal(r.lectura.pasos, 'Steps');
+  assert.equal(r.lectura.hallazgo, null);
+  assert.equal(r.columnas.estado, null);
+});
+
+test('qa columnas without Result fall back with one warning; invalid rastreador.tipo gives null', () => {
+  config({ w: { salida: '/s/w', repos: {}, qa: { columnas: ['ID', 'Portal'], chrome: 5, rastreador: { tipo: 'csv', ruta: 'x', hoja: 'S', columnaId: 'ID' } } } });
+  const previo = console.error;
+  const avisos = [];
+  console.error = (m) => avisos.push(String(m));
+  try {
+    const qa = proyecto('w').qa;
+    proyecto('w');
+    assert.deepEqual(qa.columnas, QA_DEFECTO.columnas);
+    assert.equal(qa.chrome, null);
+    assert.equal(qa.rastreador, null);
+  } finally {
+    console.error = previo;
+  }
+  assert.equal(avisos.filter((m) => m.includes('qa.columnas')).length, 1);
+  assert.equal(avisos.filter((m) => m.includes('qa.rastreador')).length, 1);
 });

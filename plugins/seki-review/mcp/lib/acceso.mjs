@@ -17,6 +17,20 @@ export function tokenDe(p) {
   return token;
 }
 
+// Secret of the QA guide signatures: 32 random bytes, created once per project and machine.
+export function secretoQa(p) {
+  const ruta = join(p.salida, 'datos', 'secreto-qa');
+  if (existsSync(ruta)) {
+    const guardado = readFileSync(ruta);
+    if (guardado.length === 32) return guardado;
+  }
+  mkdirSync(join(p.salida, 'datos'), { recursive: true });
+  const secreto = randomBytes(32);
+  writeFileSync(ruta, secreto, { mode: 0o600 });
+  chmodSync(ruta, 0o600);
+  return secreto;
+}
+
 // Another Claude Code session may already be serving the same dashboard on the port.
 // State of the dashboard already listening on the port with the same token, or null if there is none.
 export const estadoServidor = (puerto, token) => new Promise((ok) => {
