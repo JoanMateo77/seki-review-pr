@@ -56,6 +56,9 @@ function reservar(dir, dia) {
   }
 }
 
+// Cut keys use the same cleaned PR ids as the registered rows.
+const entregasLimpias = (entregas) => entregas.map((e) => ({ ...e, pistas: e.pistas.map((x) => ({ ...x, prs: x.prs.map(limpiar) })) }));
+
 const filaSeki = (secreto, guia) => (f) => [f.etiqueta, f.portal, f.entrega, JSON.stringify(f.prs), firmaFila(secreto, { guia, etiqueta: f.etiqueta, portal: f.portal, prs: f.prs, entrega: f.entrega })];
 
 // The writer strips XML-invalid characters from every cell: the key fields are cleaned once here so that what is
@@ -145,7 +148,7 @@ async function generar(p, { claves, desde, ahora = new Date(), rastreador = null
     }
 
     const pendientes = [...new Set(filas.filter((f) => f.pendiente).flatMap((f) => f.prs))].sort();
-    await registrarGuia(p, { id, fecha: generado, entregas: [...new Set(filas.map((f) => f.entrega))], filas, fusiones: fusionesDe(entregas, prsPorId) });
+    await registrarGuia(p, { id, fecha: generado, entregas: [...new Set(filas.map((f) => f.entrega))], filas, fusiones: fusionesDe(entregasLimpias(entregas), new Map([...prsPorId].map(([k, v]) => [limpiar(k), v]))) });
     return { id, archivos: { xlsx: rutas.xlsx, html: rutas.html, pdf }, filas: filas.length, pendientes, avisoPdf, vacia: false };
   } catch (e) {
     for (const r of Object.values(rutas)) quitar(r);

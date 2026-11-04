@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { htmlAPdf, rutaChrome } from '../mcp/lib/pdf.mjs';
-import { chromeFalso, limpiarChrome, llamadasChrome } from './util/chrome.mjs';
+import { chromeFalso, limpiarChrome, llamadasChrome, pidNieto } from './util/chrome.mjs';
 
 after(limpiarChrome);
 const dir = mkdtempSync(join(tmpdir(), 'seki-pdf-'));
@@ -42,6 +42,21 @@ test('a hanging Chrome is killed at the limit and its profile removed', async ()
   assert.ok(r.pid);
   assert.throws(() => process.kill(r.pid, 0), (e) => e.code === 'ESRCH');
   assert.equal(existsSync(r.perfil), false);
+});
+
+test('the group kill takes the grandchild too', async () => {
+  const chrome = chromeFalso({ modo: 'nieto' });
+  // Generous limit: the grandchild pid is written a moment after the fake starts.
+  const r = await htmlAPdf(chrome, html, join(dir, 'g.pdf'), { limiteMs: 4000 });
+  const nieto = pidNieto(chrome);
+  try {
+    assert.equal(r.ok, false);
+    assert.ok(nieto, 'the fake wrote the grandchild pid');
+    assert.throws(() => process.kill(r.pid, 0), (e) => e.code === 'ESRCH');
+    assert.throws(() => process.kill(nieto, 0), (e) => e.code === 'ESRCH');
+  } finally {
+    if (nieto) try { process.kill(nieto, 'SIGKILL'); } catch { /* gone */ }
+  }
 });
 
 test('a missing binary is reported, not thrown', async () => {

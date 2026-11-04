@@ -1,5 +1,5 @@
 // Fake Chrome: a Node script. Every call appends its argv (JSON) to `<ruta>.llamadas` and its pid to `<ruta>.pid`.
-// modo 'bloquea' is 'ok' leaving a profile subfolder that cannot be removed; 'ok' writes %PDF-1.4 to the --print-to-pdf path, 'falla' exits 1, 'cuelga' sleeps until killed.
+// modo 'nieto' hangs after spawning a sleeping grandchild (pid in `<ruta>.nieto`), 'bloquea' is 'ok' leaving a profile subfolder that cannot be removed; 'ok' writes %PDF-1.4 to the --print-to-pdf path, 'falla' exits 1, 'cuelga' sleeps until killed.
 // Test files register `after(limpiarChrome)` to remove the temp folders.
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -18,7 +18,11 @@ if (modo === 'bloquea') {
   fs.writeFileSync(perfil + '/cerrado/x', 'x');
   fs.chmodSync(perfil + '/cerrado', 0);
 }
-if (modo === 'cuelga') setInterval(() => {}, 1000);
+if (modo === 'nieto') {
+  const nieto = require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+  fs.writeFileSync(${JSON.stringify(`${base}.nieto`)}, String(nieto.pid));
+}
+if (modo === 'cuelga' || modo === 'nieto') setInterval(() => {}, 1000);
 else {
   const destino = args.find((a) => a.startsWith('--print-to-pdf=')).slice('--print-to-pdf='.length);
   fs.writeFileSync(destino, '%PDF-1.4\\n');
@@ -41,3 +45,4 @@ export function chromeFalso({ modo = 'ok' } = {}) {
 
 export const llamadasChrome = (ruta) => (existsSync(`${ruta}.llamadas`) ? readFileSync(`${ruta}.llamadas`, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
 export const pidChrome = (ruta) => (existsSync(`${ruta}.pid`) ? Number(readFileSync(`${ruta}.pid`, 'utf8')) : null);
+export const pidNieto = (ruta) => (existsSync(`${ruta}.nieto`) ? Number(readFileSync(`${ruta}.nieto`, 'utf8')) : null);

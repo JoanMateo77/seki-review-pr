@@ -167,6 +167,22 @@ test('key fields with XML-invalid characters are signed as written', async () =>
   assert.equal(etiqueta, 'X-001');
   assert.equal(firma, firmaFila(secretoQa(p), { guia: r.id, etiqueta, portal, prs: JSON.parse(prs), entrega }));
   assert.equal(leerGuias(p).guias[0].filas[0].etiqueta, 'X-001');
+  assert.ok(leerGuias(p).guias[0].filas.every((x) => x.prs.every((id) => !/[\u0000-\u0008]/.test(id))));
+});
+
+test('cut keys use the cleaned PR ids of the registered rows', async () => {
+  const p = proyecto();
+  const e = JSON.parse(readFileSync(rutaEntregas(p.salida), 'utf8'));
+  e.entregas[0].pistas[0].prs = ['r#\u00011'];
+  escribirJson(rutaEntregas(p.salida), e);
+  const f = JSON.parse(readFileSync(rutaInstantanea(p.salida), 'utf8'));
+  f.prs[0].id = 'r#\u00011';
+  escribirJson(rutaInstantanea(p.salida), f);
+  await generarGuia(p, { ahora: AHORA, chrome: null });
+  const g = leerGuias(p).guias[0];
+  assert.ok(g.filas.some((x) => x.prs[0] === 'r#1'));
+  assert.ok(Object.keys(g.fusiones).includes('["r#1"]'));
+  assert.ok(!Object.keys(g.fusiones).some((k) => k.includes('\\u0001')));
 });
 
 test('a failure after the reservation leaves no file behind', async () => {
