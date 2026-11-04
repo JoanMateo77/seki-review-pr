@@ -57,7 +57,7 @@ const cmpIds = (a, b) => {
 function patronDe(patronId) {
   if (patronId == null || patronId === '') return null;
   try {
-    return compilarPatron(patronId, 'i');
+    return compilarPatron(patronId, 'i'); // always case-insensitive
   } catch (e) {
     console.error(`[seki-review/entregas] entregas.patronId ignored: ${e.message}`);
     return null;
@@ -69,8 +69,14 @@ export function agrupar(prs, cfg = {}, ajustes = {}) {
   const separar = new Set(ajustes?.separar ?? []);
   const titulos = ajustes?.titulo ?? {};
   const re = patronDe(cfg.patronId);
-  const lista = [...prs].sort((a, b) => cmpIds(a.id, b.id));
+  const todos = [...prs].sort((a, b) => cmpIds(a.id, b.id));
+  const porTodos = new Map(todos.map((p) => [p.id, p]));
+  // Separated PRs are taken out before any signal is indexed and come back as singletons at the end.
+  const lista = todos.filter((p) => !separar.has(p.id));
+  const separados = todos.filter((p) => separar.has(p.id));
   const porId = new Map(lista.map((p) => [p.id, p]));
+  const maxPorSenal = Number.isInteger(cfg.maxPorSenal) && cfg.maxPorSenal > 0 ? cfg.maxPorSenal : 12;
+  const omitidas = [];
 
   const padre = new Map(lista.map((p) => [p.id, p.id]));
   const raiz = (x) => {
@@ -81,29 +87,32 @@ export function agrupar(prs, cfg = {}, ajustes = {}) {
     return x;
   };
   const eventos = [];
-  // Separated PRs never take part in a join, so they cannot bridge other PRs either.
   const unir = (a, b, senal) => {
-    if (separar.has(a) || separar.has(b)) return;
     eventos.push([a, b, senal]);
     const ra = raiz(a);
     const rb = raiz(b);
     if (ra !== rb) padre.set(rb, ra);
   };
   const indice = (senal, valoresDe) => {
+    const cuenta = new Map();
+    for (const p of lista) for (const v of new Set(valoresDe(p))) if (v) cuenta.set(v, (cuenta.get(v) ?? 0) + 1);
+    // A value held by too many PRs is noise, not a delivery.
+    for (const [v, n] of cuenta) if (n > maxPorSenal) omitidas.push(`${senal}:${v.slice(0, 40)}`);
     const primero = new Map();
     for (const p of lista) {
       for (const v of valoresDe(p)) {
-        if (!v) continue;
+        if (!v || cuenta.get(v) > maxPorSenal) continue;
         if (primero.has(v)) unir(primero.get(v), p.id, senal);
         else primero.set(v, p.id);
       }
     }
   };
 
-  const clavesRama = new Map(lista.map((p) => [p.id, claveRama(p.rama, cfg.sufijosRama, { bases: cfg.bases })]));
-  const idsPr = new Map(lista.map((p) => [p.id, idsDe(p, re)]));
+  const clavesRama = new Map(todos.map((p) => [p.id, claveRama(p.rama, cfg.sufijosRama, { bases: cfg.bases })]));
+  const idsPr = new Map(todos.map((p) => [p.id, idsDe(p, re)]));
   indice('rama', (p) => [clavesRama.get(p.id)]);
   indice('id', (p) => idsPr.get(p.id));
+  if (omitidas.length) console.error(`[seki-review/entregas] values shared by more than ${maxPorSenal} PRs not used as join signals: ${omitidas.slice(0, 5).join(', ')}${omitidas.length > 5 ? ', ...' : ''}`);
   for (const p of lista) {
     for (const ref of relacionadasDe(textoDe(p), cfg.mapaRepos)) {
       if (ref !== p.id && porId.has(ref)) unir(p.id, ref, 'relacionada');
@@ -111,6 +120,7 @@ export function agrupar(prs, cfg = {}, ajustes = {}) {
   }
 
   // Title similarity: only PRs still alone, same repo and portal, opposite environment.
+  // PRs whose ambiente is neither 'prod' nor 'pruebas' never enter this step.
   const enGrupo = new Set();
   for (const [a, b] of eventos) {
     enGrupo.add(a);
@@ -166,6 +176,7 @@ export function agrupar(prs, cfg = {}, ajustes = {}) {
     if (!grupos.has(e)) grupos.set(e, []);
     grupos.get(e).push(p.id);
   }
+  for (const p of separados) grupos.set(`\u0001${p.id}`, [p.id]);
   const senales = new Map();
   for (const [a, b, s] of eventos) {
     if (etiqueta(a) !== etiqueta(b)) continue;
@@ -189,14 +200,13 @@ export function agrupar(prs, cfg = {}, ajustes = {}) {
   }
   for (const [, xs] of porClave) {
     if (xs.length < 2) continue;
-    xs.sort((a, b) => b.miembros.length - a.miembros.length || cmpIds(a.miembros[0], b.miembros[0]));
-    for (const x of xs.slice(1)) x.clave = `${x.clave}~${x.miembros[0]}`;
+    for (const x of xs) if (x.e.startsWith('\u0001')) x.clave = `${x.clave}~${x.miembros[0]}`;
   }
 
   return entregas
     .map((x) => ({
       clave: x.clave,
-      titulo: titulos[x.clave] ?? porId.get([...x.miembros].sort((a, b) => numeroDe(a) - numeroDe(b) || cmpIds(a, b))[0]).titulo,
+      titulo: titulos[x.clave] ?? porTodos.get([...x.miembros].sort((a, b) => numeroDe(a) - numeroDe(b) || cmpIds(a, b))[0]).titulo,
       ids: x.ids,
       prs: x.miembros,
       señales: ORDEN_SENALES.filter((s) => senales.get(x.e)?.has(s)),

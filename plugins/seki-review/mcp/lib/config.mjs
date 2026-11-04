@@ -15,7 +15,7 @@ export function cargarProyectos() {
   return { ruta, proyectos: JSON.parse(readFileSync(ruta, 'utf8')) };
 }
 
-export const ENTREGAS_DEFECTO = { sufijosRama: ['-pruebas', '-testing', '-staging'], patronId: null, ventanaDias: 30, alertaDias: 5, cerrarTrasDias: 7 };
+export const ENTREGAS_DEFECTO = { sufijosRama: ['-pruebas', '-testing', '-staging'], patronId: null, ventanaDias: 30, alertaDias: 5, cerrarTrasDias: 7, maxPorSenal: 12 };
 export const VIGIA_DEFECTO = { intervaloSeg: 300 };
 export const VIGIA_INTERVALO_MIN = 120;
 

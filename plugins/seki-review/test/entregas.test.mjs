@@ -121,3 +121,38 @@ test('2000 PRs group in under 500 ms', () => {
   assert.ok(performance.now() - t < 500);
   assert.ok(r.length > 0);
 });
+
+test('separating the first holder of a key keeps the rest joined', () => {
+  const ps = [pr('a', 1, { rama: 'feat/zeta' }), pr('b', 2, { rama: 'feat/zeta' }), pr('c', 3, { rama: 'feat/zeta' })];
+  const r = agrupar(ps, cfg, { unir: [], separar: ['a#1'], titulo: {} });
+  assert.equal(r.length, 2);
+  assert.deepEqual(r.map((e) => e.prs).sort(), [['a#1'], ['b#2', 'c#3']]);
+  assert.ok(r.find((e) => e.prs.length === 2).clave === 'zeta');
+  assert.ok(r.find((e) => e.prs.length === 1).clave.startsWith('zeta~'));
+});
+
+test('a separated PR does not consume the best title partner of a single', () => {
+  const t = 'Corrige fecha corte reporte mensual';
+  const ps = [pr('a', 1, { titulo: t }), pr('a', 2, { titulo: t, ambiente: 'pruebas' }), pr('a', 3, { titulo: `${t} extra`, ambiente: 'pruebas' })];
+  const r = agrupar(ps, cfg, { unir: [], separar: ['a#2'], titulo: {} });
+  assert.deepEqual(r.map((e) => e.prs).sort(), [['a#1', 'a#3'], ['a#2']]);
+});
+
+test('values shared by more than maxPorSenal PRs are not join signals, with one warning', () => {
+  const muchos = Array.from({ length: 300 }, (_, i) => pr('r', i + 1, { titulo: 'QA-1', rama: `feat/rama-${i}` }));
+  const pocos = [10001, 10002, 10003].map((n) => pr('s', n, { titulo: 'QA-2', rama: `feat/otra-${n}` }));
+  const orig = console.error;
+  const avisos = [];
+  console.error = (m) => avisos.push(m);
+  let r;
+  try {
+    r = agrupar([...muchos, ...pocos], { ...cfg, patronId: 'QA-\\d+' }, sin);
+  } finally {
+    console.error = orig;
+  }
+  assert.equal(r.length, 301);
+  assert.equal(r.find((e) => e.ids.includes('QA-2')).prs.length, 3);
+  assert.equal(avisos.length, 1);
+  assert.match(avisos[0], /^\[seki-review\/entregas\].*id:QA-1/);
+  assert.equal(agrupar(muchos.slice(0, 12), { ...cfg, patronId: 'QA-\\d+' }, sin).length, 1);
+});
