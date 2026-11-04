@@ -178,6 +178,19 @@ test('extLst inside a row is preserved and cells are inserted before it', () => 
   assert.match(out, /<c r="J2" t="inlineStr"><is><t xml:space="preserve">w<\/t><\/is><\/c><extLst><ext uri="\{x\}"\/><\/extLst><\/row>/);
 });
 
+test('the filter database name follows an extended autoFilter, and workbook.xml is untouched otherwise', () => {
+  const nombre = (f) => `<definedNames><definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">Sheet1!$A$1:$I$${f}</definedName><definedName name="Other" localSheetId="1">Sheet1!$A$1:$I$4</definedName></definedNames>`;
+  const base = trackerFixture();
+  const libroBase = leerZip(base).get('xl/workbook.xml').toString('utf8');
+  const conNombre = reemplazarEntradas(base, new Map([['xl/workbook.xml', libroBase.replace('</workbook>', `${nombre(4)}</workbook>`)]]));
+  const out = editarCeldas(conNombre, { hoja: 'Sheet1', celdas: [{ ref: 'A5', valor: 'a' }, { ref: 'A6', valor: 'b' }] });
+  assert.equal(leerZip(out).get('xl/workbook.xml').toString('utf8'), libroBase.replace('</workbook>', `${nombre(6)}</workbook>`));
+  const quieto = editarCeldas(conNombre, { hoja: 'Sheet1', celdas: [{ ref: 'A2', valor: 'a' }] });
+  assert.ok(leerZip(quieto).get('xl/workbook.xml').equals(leerZip(conNombre).get('xl/workbook.xml')));
+  const sinNombre = editarCeldas(base, { hoja: 'Sheet1', celdas: [{ ref: 'A5', valor: 'a' }] });
+  assert.ok(leerZip(sinNombre).get('xl/workbook.xml').equals(leerZip(base).get('xl/workbook.xml')));
+});
+
 test('prefixed sheet elements are refused', () => {
   const buf = conHoja(trackerFixture(), () => '<?xml version="1.0"?><x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:sheetData><x:row r="1"><x:c r="A1" t="inlineStr"><x:is><x:t>a</x:t></x:is></x:c></x:row></x:sheetData></x:worksheet>');
   assert.throws(() => editarCeldas(buf, { hoja: 'Sheet1', celdas: [{ ref: 'A1', valor: 'b' }] }), { codigo: 'XLSX_ESTRUCTURA' });

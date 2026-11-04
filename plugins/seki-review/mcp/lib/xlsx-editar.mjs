@@ -129,6 +129,25 @@ function escanearCeldas(xml, fila) {
   return { celdas, finCeldas: fin };
 }
 
+// Keeps the sheet's _xlnm._FilterDatabase defined name in step with its autoFilter range; null when nothing changes.
+function sincronizarFiltro(brutoLibro, indiceHoja, ultimaFila) {
+  const bom = brutoLibro.length >= 3 && brutoLibro[0] === 0xef && brutoLibro[1] === 0xbb && brutoLibro[2] === 0xbf;
+  const xml = decodificarParte(brutoLibro);
+  for (const m of xml.matchAll(/<definedName\b[^>]*>[^<]*<\/definedName>/g)) {
+    const abre = m[0].slice(0, m[0].indexOf('>') + 1);
+    const at = atributos(abre);
+    if (at.name !== '_xlnm._FilterDatabase' || at.localSheetId !== String(indiceHoja)) continue;
+    const valor = m[0].slice(abre.length, m[0].length - '</definedName>'.length);
+    const filaFinal = /([0-9]+)$/.exec(valor);
+    if (!filaFinal || !/\$$/.test(valor.slice(0, filaFinal.index))) return null;
+    const nuevo = valor.slice(0, filaFinal.index) + String(ultimaFila);
+    const ini = m.index + abre.length;
+    const salida = Buffer.from(xml.slice(0, ini) + nuevo + xml.slice(ini + valor.length), 'utf8');
+    return bom ? Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), salida]) : salida;
+  }
+  return null;
+}
+
 // Table ranges referenced by the sheet's <tableParts>, read through the sheet's own rels.
 function leerTablas(partes, xml, ruta) {
   if (!/<tableParts[\s/>]/.test(xml)) return [];
@@ -278,6 +297,7 @@ export function editarCeldas(buf, { hoja, celdas, filaEncabezado = 1 } = {}) {
     else if (abre !== fila.abre) cortar(fila.ini, fila.finAbre, abre);
   }
 
+  let libroNuevo = null;
   const cortarRef = (etiqueta, nuevoRango) => {
     const re = /(\sref\s*=\s*)(["'])([^"']*)\2/;
     const mm = re.exec(etiqueta.texto);
@@ -302,7 +322,10 @@ export function editarCeldas(buf, { hoja, celdas, filaEncabezado = 1 } = {}) {
   if (gf) {
     let ultima = gf.r2;
     for (const numFila of porFila.keys()) if (!filaPorNumero.has(numFila) && numFila === ultima + 1) ultima = numFila;
-    if (ultima !== gf.r2) cortarRef(filtro, textoRango({ ...gf, r2: ultima }));
+    if (ultima !== gf.r2) {
+      cortarRef(filtro, textoRango({ ...gf, r2: ultima }));
+      libroNuevo = sincronizarFiltro(partes.get('xl/workbook.xml'), declaradas.indexOf(decl), ultima);
+    }
   }
 
   if (datosAuto) {
@@ -324,5 +347,7 @@ export function editarCeldas(buf, { hoja, celdas, filaEncabezado = 1 } = {}) {
   trozos.push(xml.slice(cursor));
   const salida = Buffer.from(trozos.join(''), 'utf8');
   const datos = bom ? Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), salida]) : salida;
-  return reemplazarEntradas(buf, new Map([[ruta, datos]]));
+  const cambios = new Map([[ruta, datos]]);
+  if (libroNuevo !== null) cambios.set('xl/workbook.xml', libroNuevo);
+  return reemplazarEntradas(buf, cambios);
 }
