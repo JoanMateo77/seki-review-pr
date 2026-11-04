@@ -25,6 +25,9 @@ export const ACCIONES = {
 };
 
 const PAGINAS_GEMELAS = 3;
+const PAGINAS_MAXIMAS = 10;
+const POR_PAGINA = 100;
+const MAX_DESCRIPCION = 4096;
 const DIAS_HUERFANAS = 30;
 const SOLO_PRUEBAS = /solo pruebas|pruebas only|ambiente de pruebas|staging only|testing only|^test(\(|:)|sincroniz|traer lo que ya est/i;
 const diasDesde = (fecha) => Math.floor((Date.now() - new Date(fecha)) / 86400000);
@@ -36,14 +39,14 @@ export function esfuerzoPorTamano(lineas, archivos) {
   return Math.min(5, base + (archivos > 20 ? 1 : 0));
 }
 
-async function prsDeBase(owner, repo, base, cache) {
+async function prsDeBase(owner, repo, base, cache, ventanaDias) {
   const clave = `${repo}@${base}`;
   if (!cache.has(clave)) {
     cache.set(clave, (async () => {
       // REST rather than GraphQL: `gh pr list --state all` returns 504 on repos with many PRs.
       const todas = [];
-      for (let pagina = 1; pagina <= PAGINAS_GEMELAS; pagina++) {
-        const lote = await ghJson(['api', `repos/${owner}/${repo}/pulls?base=${encodeURIComponent(base)}&state=all&sort=created&direction=desc&per_page=100&page=${pagina}`]);
+      for (let pagina = 1; pagina <= PAGINAS_MAXIMAS; pagina++) {
+        const lote = await ghJson(['api', `repos/${owner}/${repo}/pulls?base=${encodeURIComponent(base)}&state=all&sort=created&direction=desc&per_page=${POR_PAGINA}&page=${pagina}`]);
         todas.push(...lote.map((x) => ({
           number: x.number,
           title: x.title,
@@ -52,12 +55,15 @@ async function prsDeBase(owner, repo, base, cache) {
           url: x.html_url,
           creada: x.created_at,
           mergeada: x.merged_at,
+          cerrada: x.closed_at ?? null,
           baseSha: x.base.sha,
           headSha: x.head.sha,
           rama: x.head.ref,
           body: x.body,
         })));
-        if (lote.length < 100) break;
+        if (lote.length < POR_PAGINA) break;
+        // Past the gemelas pages, keep going only while the window still reaches the oldest PR read.
+        if (pagina >= PAGINAS_GEMELAS && !(lote.at(-1)?.created_at && diasDesde(lote.at(-1).created_at) <= ventanaDias)) break;
       }
       return todas;
     })());
@@ -81,6 +87,7 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
   const cacheEstados = leerJson(rutaCacheEstados(p.salida), {});
   const cacheVerif = leerJson(rutaCacheVerificaciones(p.salida), {});
   const listas = new Map();
+  const ventana = p.entregas.ventanaDias;
   const nombres = repos?.length ? repos : Object.keys(p.repos);
   const login = p.autor === '@me' ? (await ghJson(['api', 'user'])).login : p.autor;
 
@@ -119,7 +126,7 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
   async function hermanas(repo, linea, titulo) {
     const otras = p.repos[repo].lineas.filter((l) => l.prod !== linea.prod);
     return Promise.all(otras.map(async (l) => {
-      const g = buscarGemela(titulo, await prsDeBase(p.owner, repo, l.prod, listas));
+      const g = buscarGemela(titulo, await prsDeBase(p.owner, repo, l.prod, listas, ventana));
       return g ? { portal: l.portal, numero: g.numero, estado: g.estado } : { portal: l.portal, numero: null };
     }));
   }
@@ -181,7 +188,7 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
 
     if (linea.ambiente === 'prod' || linea.ambiente === 'pruebas') {
       const otra = linea.ambiente === 'prod' ? linea.pruebas : linea.prod;
-      const candidatas = (await prsDeBase(p.owner, repo, otra, listas)).filter((c) => c.number !== pr.number);
+      const candidatas = (await prsDeBase(p.owner, repo, otra, listas, ventana)).filter((c) => c.number !== pr.number);
       item.gemela = buscarGemela(pr.title, candidatas);
       if (cfgRepo.lineas.length > 1) item.hermanas = await hermanas(repo, linea, pr.title);
     }
@@ -212,10 +219,10 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
   const huerfanas = [];
   for (const repo of nombres) {
     for (const linea of p.repos[repo].lineas) {
-      const mergeadas = (await prsDeBase(p.owner, repo, linea.pruebas, listas)).filter((x) =>
+      const mergeadas = (await prsDeBase(p.owner, repo, linea.pruebas, listas, ventana)).filter((x) =>
         x.state === 'MERGED' && diasDesde(x.mergeada) <= (p.dias_huerfanas ?? DIAS_HUERFANAS) &&
         (!login || x.autor === login) && !SOLO_PRUEBAS.test(x.title));
-      const prod = await prsDeBase(p.owner, repo, linea.prod, listas);
+      const prod = await prsDeBase(p.owner, repo, linea.prod, listas, ventana);
       const candidatas = mergeadas.filter((x) => {
         const g = buscarGemela(x.title, prod);
         return !g || g.estado === 'CLOSED';
@@ -260,12 +267,45 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
     }
   }
 
+  // Own PRs merged or closed within the window, on every configured base, that are not open or orphans.
+  const enLista = new Set([...prs, ...huerfanas].map((x) => x.id));
+  const recientes = [];
+  for (const repo of nombres) {
+    const cfgRepo = p.repos[repo];
+    const bases = new Set(cfgRepo.lineas.flatMap((l) => [l.pruebas, l.prod]));
+    for (const base of bases) {
+      const linea = clasificarBase(cfgRepo, base);
+      for (const x of await prsDeBase(p.owner, repo, base, listas, ventana)) {
+        const id = `${repo}#${x.number}`;
+        const fecha = x.mergeada ?? x.cerrada;
+        if (x.state === 'OPEN' || !fecha || diasDesde(fecha) > ventana || (login && x.autor !== login) || enLista.has(id)) continue;
+        enLista.add(id);
+        recientes.push({
+          id, repo, repoEtiqueta: cfgRepo.etiqueta ?? repo, numero: x.number, titulo: x.title, url: x.url,
+          base, rama: x.rama, portal: linea.portal, ambiente: linea.ambiente,
+          estadoPr: x.mergeada ? 'MERGED' : 'CLOSED', mergeada: x.mergeada ?? null, cerrada: x.cerrada,
+          descripcion: (x.body ?? '').slice(0, MAX_DESCRIPCION),
+        });
+      }
+    }
+  }
+
   const todas = [...prs, ...huerfanas];
   const visibles = incluirInactivas ? todas : todas.filter((x) => x.ambiente !== 'inactiva');
-  visibles.sort((a, b) => a.repo.localeCompare(b.repo) || b.numero - a.numero);
-  const instantanea = { proyecto: p.nombre ?? clave, clave, generado: new Date().toISOString(), owner: p.owner, acciones: ACCIONES, prs: visibles };
+  const orden = (a, b) => a.repo.localeCompare(b.repo) || b.numero - a.numero;
+  visibles.sort(orden);
+  recientes.sort(orden);
+  let anterior = null;
+  try { anterior = leerJson(rutaInstantanea(p.salida)); } catch { /* unreadable: treated as missing */ }
+  // A partial refresh replaces only the given repos' entries; without a readable previous snapshot it is a full one.
+  const parcial = !!repos?.length && Array.isArray(anterior?.prs);
+  const conservar = (lista) => (parcial ? (lista ?? []).filter((x) => !nombres.includes(x.repo)) : []);
+  const instantanea = {
+    proyecto: p.nombre ?? clave, clave, generado: new Date().toISOString(), owner: p.owner, acciones: ACCIONES,
+    prs: [...conservar(anterior?.prs), ...visibles].sort(orden),
+    recientes: [...conservar(anterior?.recientes), ...recientes].sort(orden),
+  };
   // If this snapshot has no changes, the last detected ones are kept so two refreshes in a row do not wipe them.
-  const anterior = repos?.length ? null : leerJson(rutaInstantanea(p.salida));
   const cambios = await compararFotos(anterior, instantanea, p.owner).catch(() => null);
   instantanea.cambios = hayCambios(cambios) ? cambios : anterior?.cambios ?? null;
   escribirJson(rutaCacheEstados(p.salida), cacheEstados);
