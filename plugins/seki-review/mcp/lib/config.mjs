@@ -19,9 +19,35 @@ export const ENTREGAS_DEFECTO = { sufijosRama: ['-pruebas', '-testing', '-stagin
 export const VIGIA_DEFECTO = { intervaloSeg: 300 };
 export const VIGIA_INTERVALO_MIN = 120;
 
-// Defaults under the user's values, merged one level deep.
-function conDefectos(defecto, usuario) {
-  return { ...defecto, ...(usuario && typeof usuario === 'object' && !Array.isArray(usuario) ? usuario : {}) };
+const positivo = (v) => typeof v === 'number' && Number.isFinite(v) && v > 0;
+const VALIDOS = {
+  sufijosRama: (v) => Array.isArray(v) && v.every((x) => typeof x === 'string'),
+  patronId: (v) => v === null || typeof v === 'string',
+  ventanaDias: positivo,
+  alertaDias: positivo,
+  cerrarTrasDias: positivo,
+  maxPorSenal: positivo,
+  intervaloSeg: positivo,
+};
+
+// proyecto() runs on every tool call: each bad key is reported once per process.
+const avisados = new Set();
+function avisar(mensaje) {
+  if (avisados.has(mensaje)) return;
+  avisados.add(mensaje);
+  console.error(`[seki-review/config] ${mensaje}`);
+}
+
+// Defaults under the user's values, merged one level deep; a value of the wrong type falls back to its default.
+function conDefectos(defecto, usuario, seccion) {
+  const salida = { ...defecto, ...(usuario && typeof usuario === 'object' && !Array.isArray(usuario) ? usuario : {}) };
+  for (const k of Object.keys(defecto)) {
+    if (VALIDOS[k] && !VALIDOS[k](salida[k])) {
+      avisar(`${seccion}.${k} has an invalid value; the default ${JSON.stringify(defecto[k])} is used`);
+      salida[k] = defecto[k];
+    }
+  }
+  return salida;
 }
 
 // Without a key: SEKI_PROYECTO or the first project in the file.
@@ -30,9 +56,9 @@ export function proyecto(clave) {
   const elegida = clave || process.env.SEKI_PROYECTO || Object.keys(proyectos)[0];
   const p = proyectos[elegida];
   if (!p) throw new Error(`Project "${elegida}" is not in ${ruta}. Available: ${Object.keys(proyectos).join(', ')}`);
-  const vigia = conDefectos(VIGIA_DEFECTO, p.vigia);
-  vigia.intervaloSeg = Number.isFinite(vigia.intervaloSeg) ? Math.max(VIGIA_INTERVALO_MIN, vigia.intervaloSeg) : VIGIA_DEFECTO.intervaloSeg;
-  return { clave: elegida, ...p, entregas: conDefectos(ENTREGAS_DEFECTO, p.entregas), vigia, salida: expandir(p.salida), copias: expandir(p.copias ?? `~/.cache/seki-review/copias/${elegida}`) };
+  const vigia = conDefectos(VIGIA_DEFECTO, p.vigia, 'vigia');
+  vigia.intervaloSeg = Math.max(VIGIA_INTERVALO_MIN, vigia.intervaloSeg);
+  return { clave: elegida, ...p, entregas: conDefectos(ENTREGAS_DEFECTO, p.entregas, 'entregas'), vigia, salida: expandir(p.salida), copias: expandir(p.copias ?? `~/.cache/seki-review/copias/${elegida}`) };
 }
 
 // Locates a base branch within the repo's deployment lines.

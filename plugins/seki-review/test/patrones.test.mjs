@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { compilarPatron, coincidencias } from '../mcp/lib/patrones.mjs';
+import { AGOTADO, compilarPatron, coincidencias } from '../mcp/lib/patrones.mjs';
 import { reglasDeConfig } from '../mcp/lib/reglas.mjs';
 import { verificar } from '../mcp/lib/verificar.mjs';
 
@@ -121,4 +121,30 @@ test('verificar: a catastrophic soloEnTexto (cuando) disables the rule after one
     assert.ok(performance.now() - t0 < 200);
   });
   assert.equal(avisos.length, 1);
+});
+
+test('coincidencias returns AGOTADO on a catastrophic pattern within its time limit', () => {
+  const t0 = performance.now();
+  assert.equal(coincidencias(/(a|aa)+b/, 'a'.repeat(4096)), AGOTADO);
+  assert.ok(performance.now() - t0 < 200);
+});
+
+test('verificar: a catastrophic archivos pattern disables the rule after one warning', () => {
+  const reglas = reglasDeConfig([{ id: 'ar', titulo: 't', patron: 'x', archivos: '(a|aa)+b', mensaje: 'm' }]);
+  const nombre = `${'a'.repeat(4096)}.js`;
+  const [{ hallazgos }, avisos] = silenciar(() => {
+    const t0 = performance.now();
+    const r = verificar({ repo: 'r', archivos: [nombre, nombre, nombre].map((filename) => ({ filename, status: 'modified', patch: parche('x') })), extra: reglas });
+    assert.ok(performance.now() - t0 < 200);
+    return r;
+  });
+  assert.equal(hallazgos.filter((h) => h.regla === 'ar').length, 0);
+  assert.equal(avisos.length, 1);
+  assert.match(avisos[0], /^\[seki-review\/reglas\] rule ar disabled/);
+});
+
+test('verificar: a config archivos and excluir still select files', () => {
+  const reglas = reglasDeConfig([{ id: 'sel', titulo: 't', patron: 'x', archivos: '\\.js$', excluir: '^vendor/', mensaje: 'm' }]);
+  const archivos = ['a.js', 'vendor/b.js', 'c.css'].map((filename) => ({ filename, status: 'modified', patch: parche('x') }));
+  assert.deepEqual(verificar({ repo: 'r', archivos, extra: reglas }).hallazgos.filter((h) => h.regla === 'sel').map((h) => h.archivo), ['a.js']);
 });
