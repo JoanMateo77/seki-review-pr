@@ -6,7 +6,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync,
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { anexarLinea, conBloqueo, conBloqueoSync, escribirAtomico } from '../mcp/lib/bloqueo.mjs';
+import { anexarLinea, conBloqueo, conBloqueoSync, escribirAtomico, retirarObsoleto } from '../mcp/lib/bloqueo.mjs';
 import { escribirJson } from '../mcp/lib/cache.mjs';
 
 const ejecutar = promisify(execFile);
@@ -243,4 +243,43 @@ test('escribirJson keeps its format and stays synchronous', () => conTemp(async 
   const r = escribirJson(ruta, { a: 1 });
   assert.equal(r, undefined);
   assert.equal(readFileSync(ruta, 'utf8'), '{\n  "a": 1\n}\n');
+}));
+
+const envejecer = (archivo) => {
+  const antes = new Date(Date.now() - 60_000);
+  utimesSync(archivo, antes, antes);
+};
+
+test('a stale guard file does not block the take-over of a stale lock', () => conTemp(async (dir) => {
+  const ruta = join(dir, 'o.json');
+  lockViejo(ruta, 999999);
+  writeFileSync(`${ruta}.lock.takeover`, '');
+  envejecer(`${ruta}.lock.takeover`);
+  assert.equal(await conBloqueo(ruta, () => 'a'), 'a');
+  lockViejo(ruta, 999999);
+  writeFileSync(`${ruta}.lock.takeover`, '');
+  envejecer(`${ruta}.lock.takeover`);
+  assert.equal(conBloqueoSync(ruta, () => 's'), 's');
+  assert.deepEqual(readdirSync(dir), []);
+}));
+
+test('a fresh guard file is left alone and the lock is reported busy', () => conTemp(async (dir) => {
+  const ruta = join(dir, 'p.json');
+  lockViejo(ruta, 999999);
+  writeFileSync(`${ruta}.lock.takeover`, '');
+  await assert.rejects(conBloqueo(ruta, () => 1, { esperaMs: 150 }), /Lock busy: p\.json/);
+  assert.equal(existsSync(`${ruta}.lock.takeover`), true);
+  assert.equal(existsSync(`${ruta}.lock`), true);
+}));
+
+test('an empty lock with an old mtime is stale; a fresh empty lock is never removed', () => conTemp(async (dir) => {
+  const ruta = join(dir, 'q.json');
+  writeFileSync(`${ruta}.lock`, '');
+  retirarObsoleto(`${ruta}.lock`, ''); // judged stale earlier as '', but this lock is new
+  assert.equal(existsSync(`${ruta}.lock`), true);
+  assert.equal(existsSync(`${ruta}.lock.takeover`), false);
+  await assert.rejects(conBloqueo(ruta, () => 1, { esperaMs: 150 }), /Lock busy: q\.json/);
+  envejecer(`${ruta}.lock`);
+  assert.equal(conBloqueoSync(ruta, () => 'ok'), 'ok');
+  assert.deepEqual(readdirSync(dir), []);
 }));

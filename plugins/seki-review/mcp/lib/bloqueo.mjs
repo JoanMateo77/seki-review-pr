@@ -1,4 +1,4 @@
-import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, closeSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomBytes } from 'node:crypto';
 import { basename, dirname } from 'node:path';
@@ -45,9 +45,28 @@ function leerLock(rutaLock) {
   }
 }
 
+// A stale guard is moved aside by rename and re-checked before deletion, so a delayed unlink can never remove a
+// fresh guard created by another contender; a fresh one is put back with link (fails if the name is taken again).
+function retirarGuardaObsoleta(guarda) {
+  const apartada = `${guarda}.${process.pid}.${randomBytes(4).toString('hex')}`;
+  try {
+    renameSync(guarda, apartada);
+  } catch {
+    return;
+  }
+  try {
+    if (Date.now() - statSync(apartada).mtimeMs <= OBSOLETO_MS) linkSync(apartada, guarda);
+  } catch { /* the name is taken or the file vanished */ }
+  try {
+    unlinkSync(apartada);
+  } catch { /* already gone */ }
+}
+
 // Take-overs are serialised by a guard file so that only one contender judges and removes a stale lock.
 // A guard older than 30 s is stale; that window is safe because a guard is held for microseconds.
-function retirarObsoleto(rutaLock, contenido) {
+// Under the guard the lock is judged again: it must still be the same content and still stale (an empty,
+// freshly created lock has the same content as an empty stale one).
+export function retirarObsoleto(rutaLock, contenido) {
   const guarda = `${rutaLock}.takeover`;
   let fd;
   try {
@@ -55,12 +74,13 @@ function retirarObsoleto(rutaLock, contenido) {
   } catch (e) {
     if (e.code !== 'EEXIST') throw e;
     try {
-      if (Date.now() - statSync(guarda).mtimeMs > OBSOLETO_MS) unlinkSync(guarda);
+      if (Date.now() - statSync(guarda).mtimeMs > OBSOLETO_MS) retirarGuardaObsoleta(guarda);
     } catch { /* released meanwhile */ }
     return;
   }
   try {
-    if (leerLock(rutaLock) === contenido) unlinkSync(rutaLock);
+    const actual = leerLock(rutaLock);
+    if (actual === contenido && esObsoleto(rutaLock, actual)) unlinkSync(rutaLock);
   } catch { /* already gone */ } finally {
     closeSync(fd);
     try {
