@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { crearZip, leerZip, reemplazarEntradas } from '../mcp/lib/zip.mjs';
+import { conDescriptores } from './util/xlsx-fixture.mjs';
 
 function centrales(buf) {
   const eocd = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
@@ -113,8 +114,40 @@ test('rechaza rutas peligrosas', () => {
   }
 });
 
-test('rechaza descriptores de datos', () => {
-  assert.equal(codigoDe(() => leerZip(parchear(base(), 0, 8, 0x0808))), 'ZIP_DESCRIPTOR');
+test('acepta descriptores de datos con y sin firma y los valida contra el directorio central', () => {
+  const esperado = leerZip(base());
+  for (const firma of [true, false]) {
+    const zip = conDescriptores(base(), { firma });
+    const leido = leerZip(zip);
+    assert.deepEqual([...leido.keys()], [...esperado.keys()]);
+    for (const [k, v] of esperado) assert.deepEqual(leido.get(k), v);
+    // crc, csize and usize of the first descriptor, right after the data.
+    const c0 = centrales(zip).lista[0];
+    const fin = zip.readUInt32LE(c0 + 42) + 30 + zip.readUInt16LE(c0 + 28) + zip.readUInt32LE(c0 + 20);
+    for (const delta of [(firma ? 4 : 0), (firma ? 8 : 4), (firma ? 12 : 8)]) {
+      const mal = Buffer.from(zip);
+      mal.writeUInt32LE(mal.readUInt32LE(fin + delta) ^ 1, fin + delta);
+      assert.equal(codigoDe(() => leerZip(mal)), 'ZIP_CORRUPTO', `firma=${firma} delta=${delta}`);
+    }
+  }
+});
+
+test('reemplazarEntradas con descriptores: copia las intactas con su descriptor y recodifica sin el bit 3', () => {
+  for (const firma of [true, false]) {
+    const zip = conDescriptores(base(), { firma });
+    const nuevo = reemplazarEntradas(zip, new Map([['a.xml', '<z/>']]));
+    const leido = leerZip(nuevo);
+    assert.equal(leido.get('a.xml').toString(), '<z/>');
+    assert.deepEqual(leido.get('b.bin'), Buffer.from([1, 2, 3, 4]));
+    const [c0, c1] = centrales(nuevo).lista;
+    assert.equal(nuevo.readUInt16LE(c0 + 8) & 0x8, 0);
+    assert.equal(nuevo.readUInt16LE(c1 + 8) & 0x8, 0x8);
+    assert.equal(nuevo.readUInt16LE(nuevo.readUInt32LE(c0 + 42) + 6) & 0x8, 0);
+  }
+});
+
+test('rechaza descriptor con bit 3 solo en el directorio central', () => {
+  assert.equal(codigoDe(() => leerZip(parchear(base(), 0, 8, 0x0808))), 'ZIP_CORRUPTO');
 });
 
 test('rechaza tamaño inflado distinto del declarado', () => {
@@ -190,7 +223,7 @@ test('rechaza discrepancias entre cabecera local y directorio central', () => {
   assert.equal(codigoDe(() => leerZip(parchearLocal(base(), 0, 18, 1, 4))), 'ZIP_CORRUPTO'); // csize
   assert.equal(codigoDe(() => leerZip(parchearLocal(base(), 0, 22, 1, 4))), 'ZIP_CORRUPTO'); // usize
   assert.equal(codigoDe(() => leerZip(parchearLocal(base(), 0, 6, 0x0801, 2))), 'ZIP_CIFRADO');
-  assert.equal(codigoDe(() => leerZip(parchearLocal(base(), 0, 6, 0x0808, 2))), 'ZIP_DESCRIPTOR');
+  assert.equal(codigoDe(() => leerZip(parchearLocal(base(), 0, 6, 0x0808, 2))), 'ZIP_CORRUPTO');
 });
 
 test('reemplazarEntradas rechaza datos de tipo inválido con TypeError', () => {

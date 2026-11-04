@@ -206,3 +206,13 @@ test('prefixed sheet elements are refused', () => {
   const buf = conHoja(trackerFixture(), () => '<?xml version="1.0"?><x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:sheetData><x:row r="1"><x:c r="A1" t="inlineStr"><x:is><x:t>a</x:t></x:is></x:c></x:row></x:sheetData></x:worksheet>');
   assert.throws(() => editarCeldas(buf, { hoja: 'Sheet1', celdas: [{ ref: 'A1', valor: 'b' }] }), { codigo: 'XLSX_ESTRUCTURA' });
 });
+
+for (const descriptores of [true, 'sin-firma']) {
+  test(`LibreOffice-style archive with data descriptors reads and edits (${descriptores})`, () => {
+    const buf = trackerFixture({ descriptores });
+    assert.equal(leerXlsx(buf).hojas[0].filas[1][0], 'X-001');
+    const out = editarCeldas(buf, { hoja: 'Sheet1', celdas: [{ ref: 'B2', valor: 'Edited' }] });
+    assert.equal(leerXlsx(out).hojas[0].filas[1][1], 'Edited');
+    assert.equal(leerXlsx(out).hojas[0].filas[2][1], 'Generic finding two & more');
+  });
+}

@@ -4,6 +4,8 @@ const SIG_LOCAL = 0x04034b50;
 const SIG_CENTRAL = 0x02014b50;
 const SIG_EOCD = 0x06054b50;
 const SIG_ZIP64_LOCALIZADOR = 0x07064b50;
+const SIG_DESCRIPTOR = 0x08074b50;
+const FLAG_DESCRIPTOR = 0x8;
 const DOS_FECHA = 0x0021; // 1980-01-01, fixed so output is deterministic
 const DOS_HORA = 0;
 const FLAG_UTF8 = 0x0800;
@@ -130,7 +132,6 @@ function analizar(buf, opciones = {}) {
     if (pos + largo > offDir + tamDir) fallar('ZIP_CORRUPTO', 'Invalid central directory record');
     if (flags & 0x1) fallar('ZIP_CIFRADO', 'Encrypted entries are not supported');
     if (csize === 0xffffffff || usize === 0xffffffff || offset === 0xffffffff) fallar('ZIP64', 'ZIP64 archives are not supported');
-    if (flags & 0x8) fallar('ZIP_DESCRIPTOR', 'Data descriptors are not supported');
     if (metodo !== 0 && metodo !== 8) fallar('ZIP_METODO', 'Unsupported compression method');
     const nombreBuf = buf.subarray(pos + 46, pos + 46 + nlen);
     const nombre = nombreBuf.toString('utf8');
@@ -143,18 +144,33 @@ function analizar(buf, opciones = {}) {
     const inicio = offset + 30 + buf.readUInt16LE(offset + 26) + buf.readUInt16LE(offset + 28);
     const fin = inicio + csize;
     if (fin > offDir) fallar('ZIP_CORRUPTO', 'Entry data out of bounds');
-    entradas.push({ nombre, nombreBuf, flags, metodo, crc, csize, usize, offset, inicio, fin, pos, largo });
+    // With a data descriptor (flag bit 3) crc and sizes come from the central directory; the descriptor
+    // after the data (optional signature) must repeat them and belongs to the entry's extent.
+    let extremo = fin;
+    if (flags & FLAG_DESCRIPTOR) {
+      const conFirma = fin + 16 <= offDir && buf.readUInt32LE(fin) === SIG_DESCRIPTOR;
+      const base = conFirma ? fin + 4 : fin;
+      if (base + 12 > offDir) fallar('ZIP_CORRUPTO', 'Entry data out of bounds');
+      if (buf.readUInt32LE(base) !== crc || buf.readUInt32LE(base + 4) !== csize || buf.readUInt32LE(base + 8) !== usize) {
+        fallar('ZIP_CORRUPTO', 'Data descriptor does not match the central directory');
+      }
+      extremo = base + 12;
+    }
+    entradas.push({ nombre, nombreBuf, flags, metodo, crc, csize, usize, offset, inicio, fin, extremo, pos, largo });
     pos += largo;
   }
   const porOffset = [...entradas].sort((a, b) => a.offset - b.offset);
   for (let i = 1; i < porOffset.length; i++) {
-    if (porOffset[i].offset < porOffset[i - 1].fin) fallar('ZIP_SOLAPADO', 'Overlapping entries');
+    if (porOffset[i].offset < porOffset[i - 1].extremo) fallar('ZIP_SOLAPADO', 'Overlapping entries');
   }
   for (const e of entradas) {
     const localFlags = buf.readUInt16LE(e.offset + 6);
-    if ((localFlags & 0x9) !== 0) fallar(localFlags & 0x1 ? 'ZIP_CIFRADO' : 'ZIP_DESCRIPTOR', 'Local header flags are not supported');
+    if (localFlags & 0x1) fallar('ZIP_CIFRADO', 'Local header flags are not supported');
+    if ((localFlags & FLAG_DESCRIPTOR) !== (e.flags & FLAG_DESCRIPTOR)) fallar('ZIP_CORRUPTO', 'Local header does not match the central directory');
     const nlen = buf.readUInt16LE(e.offset + 26);
-    if (buf.readUInt32LE(e.offset + 14) !== e.crc || buf.readUInt32LE(e.offset + 18) !== e.csize || buf.readUInt32LE(e.offset + 22) !== e.usize) {
+    // Writers using a descriptor leave crc and sizes zero in the local header, or repeat the real values.
+    const ceros = e.flags & FLAG_DESCRIPTOR && buf.readUInt32LE(e.offset + 14) === 0 && buf.readUInt32LE(e.offset + 18) === 0 && buf.readUInt32LE(e.offset + 22) === 0;
+    if (!ceros && (buf.readUInt32LE(e.offset + 14) !== e.crc || buf.readUInt32LE(e.offset + 18) !== e.csize || buf.readUInt32LE(e.offset + 22) !== e.usize)) {
       fallar('ZIP_CORRUPTO', 'Local header does not match the central directory');
     }
     if (buf.readUInt16LE(e.offset + 8) !== e.metodo || !buf.subarray(e.offset + 30, e.offset + 30 + nlen).equals(e.nombreBuf)) {
@@ -203,7 +219,7 @@ export function reemplazarEntradas(buf, cambios, opciones = {}) {
     if (cambios.has(e.nombre)) return codificar(e.nombre, cambios.get(e.nombre), e.metodo !== 0, e);
     return {
       local: buf.subarray(e.offset, e.inicio),
-      cuerpo: buf.subarray(e.inicio, e.fin),
+      cuerpo: buf.subarray(e.inicio, e.extremo),
       central: buf.subarray(e.pos, e.pos + e.largo),
     };
   });

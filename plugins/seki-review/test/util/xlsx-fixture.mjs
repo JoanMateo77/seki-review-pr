@@ -1,4 +1,5 @@
-import { crearZip } from '../../mcp/lib/zip.mjs';
+import { crc32, deflateRawSync } from 'node:zlib';
+import { crearZip, leerZip } from '../../mcp/lib/zip.mjs';
 
 const ENCABEZADOS = ['ID', 'Finding', 'How to reproduce', 'Expected', 'State', 'Testing PR', 'Production PR', 'In testing', 'In production'];
 const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
@@ -29,7 +30,7 @@ function hojaXml(todas, compartidas) {
   return `${DECL}<worksheet xmlns="${NS}" xmlns:r="${REL}"><dimension ref="A1:${ultima}"/><sheetViews><sheetView tabSelected="1" workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/><sheetData>${cuerpo.join('')}</sheetData><autoFilter ref="A1:${ultima}"/><dataValidations count="2"><dataValidation type="list" allowBlank="1" showErrorMessage="1" sqref="E2:E5000"><formula1>"Open,In progress,Closed"</formula1></dataValidation><dataValidation type="list" allowBlank="1" showErrorMessage="1" sqref="H2:H5000"><formula1>"Yes,No"</formula1></dataValidation></dataValidations></worksheet>`;
 }
 
-export function trackerFixture({ variante = 'inline', filas = FILAS_EJEMPLO } = {}) {
+export function trackerFixture({ variante = 'inline', filas = FILAS_EJEMPLO, descriptores = false } = {}) {
   const todas = [ENCABEZADOS, ...filas];
   const compartidas = variante === 'compartidas' ? [...new Set(todas.flat().filter((v) => v !== ''))] : null;
   const estilos = `${DECL}<styleSheet xmlns="${NS}"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs></styleSheet>`;
@@ -47,5 +48,52 @@ export function trackerFixture({ variante = 'inline', filas = FILAS_EJEMPLO } = 
     const si = compartidas.map((v) => `<si><t xml:space="preserve">${esc(v)}</t></si>`).join('');
     entradas.push({ nombre: 'xl/sharedStrings.xml', datos: `${DECL}<sst xmlns="${NS}" count="${compartidas.length}" uniqueCount="${compartidas.length}">${si}</sst>` });
   }
-  return crearZip(entradas);
+  const zip = crearZip(entradas);
+  return descriptores ? conDescriptores(zip, { firma: descriptores !== 'sin-firma' }) : zip;
+}
+
+// LibreOffice-style archive: every entry has flag bit 3, zeroed local crc/sizes and a data descriptor after the data.
+export function conDescriptores(buf, { firma = true } = {}) {
+  const partes = [];
+  const centrales = [];
+  let offset = 0;
+  for (const [nombre, datos] of leerZip(buf)) {
+    const nom = Buffer.from(nombre, 'utf8');
+    const cuerpo = deflateRawSync(datos);
+    const crc = crc32(datos) >>> 0;
+    const local = Buffer.alloc(30 + nom.length);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0x0808, 6);
+    local.writeUInt16LE(8, 8);
+    local.writeUInt16LE(0x0021, 12);
+    local.writeUInt16LE(nom.length, 26);
+    nom.copy(local, 30);
+    const desc = Buffer.alloc(firma ? 16 : 12);
+    let o = 0;
+    if (firma) { desc.writeUInt32LE(0x08074b50, 0); o = 4; }
+    desc.writeUInt32LE(crc, o);
+    desc.writeUInt32LE(cuerpo.length, o + 4);
+    desc.writeUInt32LE(datos.length, o + 8);
+    const central = Buffer.alloc(46 + nom.length);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    local.copy(central, 6, 4, 30);
+    central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(cuerpo.length, 20);
+    central.writeUInt32LE(datos.length, 24);
+    central.writeUInt32LE(offset, 42);
+    nom.copy(central, 46);
+    centrales.push(central);
+    partes.push(local, cuerpo, desc);
+    offset += local.length + cuerpo.length + desc.length;
+  }
+  const dir = Buffer.concat(centrales);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(centrales.length, 8);
+  eocd.writeUInt16LE(centrales.length, 10);
+  eocd.writeUInt32LE(dir.length, 12);
+  eocd.writeUInt32LE(offset, 16);
+  return Buffer.concat([...partes, dir, eocd]);
 }
