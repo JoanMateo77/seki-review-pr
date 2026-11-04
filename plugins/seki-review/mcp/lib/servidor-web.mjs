@@ -96,8 +96,9 @@ function vigilar(proyecto, puerto) {
   vigilantes.set(proyecto, v);
 }
 
-// Closes every dashboard this process serves and stops the standby watchers, even with jobs in progress.
-// A check already in flight may still take the port or start a new watcher, so it is awaited and the loop repeats.
+// Closes every dashboard this process serves and stops the standby watchers, even with jobs in progress: queued jobs
+// are cancelled and it resolves once the running work has finished (see cerrar). A check already in flight may still
+// take the port or start a new watcher, so it is awaited and the loop repeats.
 export async function detenerServidores() {
   while (vigilantes.size) {
     const pendientes = [...vigilantes.values()];
@@ -136,12 +137,13 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
   }
   let refresco = null;
   let ultimoRefresco = null;
+  let limpieza = null;
 
   const lanzar = (repos) => recolectar({ proyecto, repos }).then(
     (f) => {
       ultimoRefresco = { ok: true, fecha: f.generado };
       // Copies of closed PRs or unused for a week are deleted; traceability stays in the comments.
-      limpiarCopias(p, { abiertas: new Set(f.prs.filter((x) => x.estadoPr === 'OPEN').map((x) => x.id)) }).catch(() => {});
+      limpieza = limpiarCopias(p, { abiertas: new Set(f.prs.filter((x) => x.estadoPr === 'OPEN').map((x) => x.id)) }).catch(() => {});
     },
     (e) => { ultimoRefresco = { ok: false, fecha: new Date().toISOString(), mensaje: e.message.slice(0, 300) }; },
   );
@@ -354,12 +356,17 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
     }
   });
 
-  const cerrar = () => new Promise((ok) => {
-    vigia.detener();
+  // Stops serving at once; resolves when the watcher cycle, the refreshes (a cycle may start one), the copy clean-up
+  // and the running jobs have finished. Queued jobs are cancelled.
+  const cerrar = async () => {
+    const ciclo = vigia.detener();
     servidores.delete(proyecto);
-    servidor.close(() => ok());
+    const cerrado = new Promise((ok) => servidor.close(() => ok()));
     servidor.closeAllConnections?.();
-  });
+    await Promise.all([cerrado, ciclo, cola.detener()]);
+    while (refresco) await refresco;
+    await limpieza;
+  };
   const escuchar = (n) => new Promise((ok, falla) => {
     servidor.once('error', falla);
     servidor.listen(n, '127.0.0.1', () => { servidor.off('error', falla); ok(servidor.address().port); });

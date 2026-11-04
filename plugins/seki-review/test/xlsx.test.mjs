@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { crearZip, leerZip } from '../mcp/lib/zip.mjs';
 import { escribirXlsx, leerXlsx, columnaLetra, indiceColumna } from '../mcp/lib/xlsx.mjs';
 import { trackerFixture, FILAS_EJEMPLO } from './util/xlsx-fixture.mjs';
+import { trabajoDeTexto } from './util/ejecuciones.mjs';
 
 const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
 const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
@@ -17,6 +18,15 @@ function libroMinimo({ hoja, relsExtra = '', objetivo = 'worksheets/sheet1.xml',
 }
 
 const hojaCon = (filas) => `<worksheet xmlns="${NS}"><sheetData>${filas}</sheetData></worksheet>`;
+// Reads the workbook counting its text work: linear parsing does at most 3 units per XML character (measured: 1.0-1.5),
+// while re-scanning or re-parsing grows with the input size times the repetitions.
+function leerLineal(buf) {
+  const caracteres = [...leerZip(buf).values()].reduce((t, d) => t + d.length, 0);
+  const { resultado, error, trabajo } = trabajoDeTexto(() => leerXlsx(buf));
+  assert.ok(trabajo <= 3 * caracteres, `work ${trabajo} for ${caracteres} XML characters`);
+  if (error) throw error;
+  return resultado;
+}
 const rechaza = (fn, codigo) => assert.throws(fn, (e) => e.codigo === codigo && e.message.startsWith('[seki-review/xlsx]'));
 
 test('columnaLetra e indiceColumna', () => {
@@ -176,23 +186,17 @@ test('estructura faltante y errores del zip llevan etiqueta y codigo', () => {
   rechaza(() => leerXlsx(Buffer.from('not a zip at all, definitely')), 'ZIP_CORRUPTO');
 });
 
-test('tokenizador lineal: entrada patologica termina rapido', () => {
+test('tokenizador lineal: entrada patologica hace trabajo lineal', () => {
   const casos = ['<c '.repeat(350000), '<c r="A1" '.repeat(100000), '<'.repeat(1_000_000), `<row>${'<c r="A1" t="inlineStr"><is><t>'.repeat(30000)}`];
-  // Generous bound: it separates the linear work from the super-linear blow-up this test guards against, not a fast
-  // machine from a loaded one.
   for (const patologico of casos) {
-    const t0 = performance.now();
     try {
-      leerXlsx(libroMinimo({ hoja: patologico }));
+      leerLineal(libroMinimo({ hoja: patologico }));
     } catch (e) {
-      assert.equal(typeof e.codigo, 'string');
+      assert.equal(typeof e.codigo, 'string', e.message);
     }
-    assert.ok(performance.now() - t0 < 15_000, 'tokenizer must be linear');
   }
   const tag = `<worksheet xmlns="${NS}"><sheetData>${'<x a="&amp;&amp;&amp;"/>'.repeat(40000)}</sheetData></worksheet>`;
-  const t1 = performance.now();
-  assert.deepEqual(leerXlsx(libroMinimo({ hoja: tag })).hojas[0].filas, []);
-  assert.ok(performance.now() - t1 < 15_000);
+  assert.deepEqual(leerLineal(libroMinimo({ hoja: tag })).hojas[0].filas, []);
 });
 
 function libroConHojas(n, { mismaParte = true, hoja, ids } = {}) {
@@ -207,13 +211,9 @@ function libroConHojas(n, { mismaParte = true, hoja, ids } = {}) {
   ]);
 }
 
-test('regresion: 200 hojas sobre una misma parte fallan rapido', () => {
+test('regresion: 200 hojas sobre una misma parte fallan sin reprocesarla', () => {
   const fila = `<row r="1">${Array.from({ length: 100 }, (_, c) => `<c r="${columnaLetra(c)}1" t="inlineStr"><is><t>v</t></is></c>`).join('')}</row>`;
-  // Generous bound: it separates the linear work from the super-linear blow-up this test guards against, not a fast
-  // machine from a loaded one.
-  const t0 = performance.now();
-  rechaza(() => leerXlsx(libroConHojas(200, { hoja: hojaCon(fila.repeat(1)) })), 'XLSX_ESTRUCTURA');
-  assert.ok(performance.now() - t0 < 10_000);
+  rechaza(() => leerLineal(libroConHojas(200, { hoja: hojaCon(fila.repeat(1)) })), 'XLSX_ESTRUCTURA');
 });
 
 test('limite de hojas, ids duplicados y partes compartidas', () => {
@@ -225,11 +225,7 @@ test('limite de hojas, ids duplicados y partes compartidas', () => {
 
 test('presupuesto global de celdas entre hojas', () => {
   const filas = Array.from({ length: 2000 }, (_, r) => `<row r="${r + 1}">${Array.from({ length: 100 }, (_, c) => `<c r="${columnaLetra(c)}${r + 1}"/>`).join('')}</row>`).join('');
-  // Generous bound: it separates the linear work from the super-linear blow-up this test guards against, not a fast
-  // machine from a loaded one.
-  const t0 = performance.now();
-  rechaza(() => leerXlsx(libroConHojas(3, { mismaParte: false, hoja: hojaCon(filas) })), 'XLSX_FILAS');
-  assert.ok(performance.now() - t0 < 30_000);
+  rechaza(() => leerLineal(libroConHojas(3, { mismaParte: false, hoja: hojaCon(filas) })), 'XLSX_FILAS');
 });
 
 test('cadenas compartidas mal formadas dan error etiquetado', () => {

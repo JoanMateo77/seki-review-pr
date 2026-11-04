@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { escribirJson, rutaInstantanea } from '../mcp/lib/cache.mjs';
+import { escribirJson, leerJson, rutaInstantanea } from '../mcp/lib/cache.mjs';
 import { detenerServidores, iniciarServidor } from '../mcp/lib/servidor-web.mjs';
 import { ghJson } from '../mcp/lib/proceso.mjs';
 import { crearSondeo, crearVigia } from '../mcp/lib/vigia.mjs';
@@ -244,7 +244,7 @@ else setTimeout(responder, ${demoraMs});
   const llamadas = () => (existsSync(registro) ? readFileSync(registro, 'utf8').split('\n').filter(Boolean) : []);
   const soltar = () => { if (existsSync(dir)) writeFileSync(suelta, ''); };
   sueltas.push(soltar);
-  return { llamar, llamadas, soltar };
+  return { llamar, llamadas, soltar, salida };
 }
 const pausa = (ms) => new Promise((ok) => setTimeout(ok, ms));
 // The deadline only turns a missing event into a failure instead of a hang; it is generous so load cannot trip it.
@@ -292,6 +292,23 @@ test('server: a manual refresh during a watcher partial refresh is followed by a
   // The fake clock starts no further cycle, so once the chained full refresh ends the port can be handed over.
   await esperar(async () => !(await (await llamar('/api/estado')).json()).refrescando);
   assert.equal((await llamar('/api/ceder', { metodo: 'POST' })).status, 200);
+});
+
+test('server: detenerServidores resolves only after the watcher cycle and its refresh have finished', async () => {
+  const reloj = relojFalso();
+  const { llamar, llamadas, soltar, salida } = await servidor({ retener: 'repos/o/r1/pulls', cambiados: ['r1'], reloj });
+  await llamar('/api/estado', { cabeceras: { 'x-seki-tablero': '1' } });
+  const ciclo = reloj.avanzar(60);
+  await esperar(() => llamadas().some((l) => l.includes('repos/o/r1/pulls')));
+  let resuelto = false;
+  const parada = detenerServidores().then(() => { resuelto = true; });
+  // The refresh is held inside gh, so nothing that waits for it can have resolved yet.
+  await new Promise((ok) => setImmediate(ok));
+  assert.equal(resuelto, false);
+  soltar();
+  await parada;
+  assert.notEqual(leerJson(rutaInstantanea(salida)).generado, '2026-11-04T09:00:00.000Z', 'the refresh wrote its snapshot before the stop resolved');
+  await ciclo;
 });
 
 // The process never exits on its own, so only the timeout can end it; the test timeout turns a regression into a failure.

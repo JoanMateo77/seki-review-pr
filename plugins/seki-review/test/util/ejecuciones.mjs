@@ -12,3 +12,30 @@ export function ejecuciones(fuente, fn) {
 }
 
 export const distintas = (entradas) => [...new Set(entradas)];
+
+// Counts the text work done by `fn`: characters scanned by String#indexOf plus regex runs (the tokenizer tests one
+// character per run). It does not depend on speed, so a linear-work bound can be asserted exactly.
+export function trabajoDeTexto(fn) {
+  const indexOf = String.prototype.indexOf;
+  const exec = RegExp.prototype.exec;
+  let trabajo = 0;
+  String.prototype.indexOf = function (buscado, desde) {
+    const inicio = Math.max(0, Math.trunc(Number(desde) || 0));
+    const r = indexOf.call(this, buscado, desde);
+    trabajo += (r < 0 ? this.length : r) - inicio + 1;
+    return r;
+  };
+  RegExp.prototype.exec = function (texto) {
+    trabajo++;
+    return exec.call(this, texto);
+  };
+  try {
+    let resultado;
+    let error = null;
+    try { resultado = fn(); } catch (e) { error = e; }
+    return { resultado, error, trabajo };
+  } finally {
+    String.prototype.indexOf = indexOf;
+    RegExp.prototype.exec = exec;
+  }
+}

@@ -14,8 +14,15 @@ const estadoEn = async (puerto, token) => (await fetch(`http://127.0.0.1:${puert
 // Whatever a failed test leaves serving or on standby is closed here, so the file always exits.
 after(detenerServidores);
 
-// Waits for the condition, not for a fixed time: the standby takes over on its own schedule. The deadline only turns a
-// broken take-over into a failure instead of a hang.
+// Both wait for a condition, not for a fixed time: the standby takes over on its own schedule. The deadline only turns
+// a broken take-over into a failure instead of a hang.
+async function hasta(cond) {
+  const fin = Date.now() + 30_000;
+  while (!cond()) {
+    if (Date.now() > fin) throw new Error('the condition was not met');
+    await espera(10);
+  }
+}
 async function hastaQueSirvaLaReal(puerto, token) {
   const fin = Date.now() + 30_000;
   let e = null;
@@ -117,18 +124,21 @@ test('if the session serving the dashboard closes, the standby one takes it on t
   assert.equal(e.version, versionEnDisco());
 });
 
-test('detenerServidores closes the dashboards and stops the standby watchers', async () => {
+test('detenerServidores closes the dashboards and stops the standby watchers', async (t) => {
   const servida = proyecto();
   const { url } = await iniciarServidor({ proyecto: servida.clave, puerto: 0, abrir: false });
   const puertoServido = Number(new URL(url).port);
   const enEspera = proyecto();
   const { s, puerto } = await otraSesion({ token: enEspera.token, version: '99.0.0' });
+  // Spies keep the real timers: the check is that the standby's interval is cleared, not that it stays quiet for a while.
+  const inicio = t.mock.method(globalThis, 'setInterval');
+  const fin = t.mock.method(globalThis, 'clearInterval');
   assert.equal((await iniciarServidor({ proyecto: enEspera.clave, puerto, abrir: false })).yaEstaba, true);
+  assert.equal(inicio.mock.callCount(), 1);
+  const reloj = inicio.mock.calls[0].result;
   await detenerServidores();
+  assert.ok(fin.mock.calls.some((c) => c.arguments[0] === reloj), 'the standby watcher interval must be cleared');
   assert.equal(await estadoServidor(puertoServido, servida.token), null);
   await new Promise((ok) => { s.close(ok); s.closeAllConnections(); });
-  // A stopped watcher never takes the freed port: give it several of its 100 ms intervals.
-  await espera(500);
-  assert.deepEqual(process.getActiveResourcesInfo().filter((r) => r === 'TCPServerWrap'), []);
-  assert.equal(await estadoServidor(puerto, enEspera.token), null);
+  await hasta(() => !process.getActiveResourcesInfo().includes('TCPServerWrap'));
 });
