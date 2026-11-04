@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 
 const PARTES = new URL('../mcp/tablero/partes/', import.meta.url);
 const fuente = readFileSync(new URL('08a-panel-qa.js', PARTES), 'utf8');
-const { descripcionPanelQa } = runInNewContext(`${fuente}\n({ descripcionPanelQa })`);
+const { descripcionPanelQa, entregaElegibleQa } = runInNewContext(`${fuente}\n({ descripcionPanelQa, entregaElegibleQa })`);
 const HOSTIL = '<img src=x onerror=alert(1)>';
 
 // Every string of the tree, plus the attribute names used: nothing may be an HTML sink.
@@ -74,4 +74,13 @@ test('the board builds the panel without innerHTML', () => {
   const sinComentarios = (t) => t.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
   const f = sinComentarios(readFileSync(new URL('08b-entregas.js', PARTES), 'utf8') + fuente);
   assert.ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write/.test(f));
+});
+
+test('a delivery is selectable for a QA guide when any track waits for QA or failed it', () => {
+  const pista = (etapa) => ({ portal: 'p', etapa });
+  assert.equal(entregaElegibleQa({ etapa: 'por_mergear_pruebas', pistas: [pista('esperando_qa'), pista('por_mergear_pruebas')] }), true);
+  assert.equal(entregaElegibleQa({ etapa: 'por_mergear_pruebas', pistas: [pista('qa_fallo'), pista('por_mergear_pruebas')] }), true);
+  assert.equal(entregaElegibleQa({ etapa: 'listo_produccion', pistas: [pista('listo_produccion')] }), false);
+  assert.equal(entregaElegibleQa({ etapa: 'esperando_qa' }), true);
+  assert.equal(entregaElegibleQa({ etapa: 'en_produccion' }), false);
 });

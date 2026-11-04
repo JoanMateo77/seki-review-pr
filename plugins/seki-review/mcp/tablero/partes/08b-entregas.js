@@ -19,7 +19,6 @@ const tablero = { pestana: 'entregas', descartadas: false, accion: null, ocupado
 // QA controls: cards selected for a guide, the guide job in flight, the last result panel and the tracker state.
 // `generando` covers the guide job only; `ocupado` covers an import or a tracker write, so one never blocks the other.
 const qa = { sel: new Set(), generando: false, guia: null, mensajeGuia: null, espera: null, importacion: null, mensajeOperacion: null, rastreador: null, ocupado: false };
-const ETAPAS_QA = new Set(['esperando_qa', 'qa_fallo']);
 const MAX_QA_BYTES = 5 * 1024 * 1024;
 // Guide polling: a few failed polls in a row are tolerated; a notice appears after a while and polling stops at the cap.
 const QA_FALLOS_SEGUIDOS = 5;
@@ -67,7 +66,7 @@ async function accionEntrega(ruta, cuerpo) {
 
 function recargarEntregas() {
   if (!API) return;
-  api('/api/entregas').then((d) => { ENTREGAS = d; for (const k of [...qa.sel]) if (!d.entregas.some((e) => e.clave === k && ETAPAS_QA.has(e.etapa))) qa.sel.delete(k); pintarEntregas(); }, (err) => avisar(`Deliveries not updated: ${err.message}`));
+  api('/api/entregas').then((d) => { ENTREGAS = d; for (const k of [...qa.sel]) if (!d.entregas.some((e) => e.clave === k && entregaElegibleQa(e))) qa.sel.delete(k); pintarEntregas(); }, (err) => avisar(`Deliveries not updated: ${err.message}`));
   refrescarRastreador();
 }
 
@@ -304,7 +303,7 @@ function tarjetaEntrega(entrega) {
   const multiples = (entrega.pistas ?? []).length > 1 || (entrega.pistas ?? []).some((x) => x.portal !== 'main');
   const ultimo = entrega.ultimoEvento;
   const abiertaEnPrs = entrega.prs.find((id) => FOTO.prs.some((p) => p.id === id));
-  const elegible = API && ETAPAS_QA.has(entrega.etapa);
+  const elegible = API && entregaElegibleQa(entrega);
   return nodo('article', { class: 'tarjeta', 'data-clave': entrega.clave },
     nodo('h3', {}, elegible ? nodo('input', { type: 'checkbox', class: 'elegir-qa', 'aria-label': `Select ${entrega.titulo} for a QA guide`, checked: qa.sel.has(entrega.clave) || null, al: { change: (ev) => { if (ev.target.checked) qa.sel.add(entrega.clave); else qa.sel.delete(entrega.clave); pintarBarraQa(); } } }) : null, elegible ? ' ' : null, entrega.titulo),
     entrega.ids?.length ? nodo('div', { class: 'ids mono', text: entrega.ids.join(' · ') }) : null,

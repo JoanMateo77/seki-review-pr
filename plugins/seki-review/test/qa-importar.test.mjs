@@ -13,7 +13,7 @@ import { generarGuia } from '../mcp/lib/qa-salida.mjs';
 import { escribirXlsx, leerXlsx } from '../mcp/lib/xlsx.mjs';
 import { editarCeldas } from '../mcp/lib/xlsx-editar.mjs';
 import { crearZip } from '../mcp/lib/zip.mjs';
-import { trackerFixture } from './util/xlsx-fixture.mjs';
+import { conDescriptores, trackerFixture } from './util/xlsx-fixture.mjs';
 
 const temporales = [];
 after(() => { for (const d of temporales.splice(0)) rmSync(d, { recursive: true, force: true }); });
@@ -237,6 +237,8 @@ test('path checks: allowed folder, outside folder, symlink escape, size and exte
 
   writeFileSync(ruta, llena);
   assert.equal((await importarQa(p, { ruta, ahora: T1 })).nuevos, 1);
+  assert.equal(await codigo({ ruta: 'guia.xlsx' }), 'QA_RUTA');
+  assert.equal(await codigo({ ruta: './qa/guia.xlsx' }), 'QA_RUTA');
 
   const externo = join(fuera, 'guia.xlsx');
   writeFileSync(externo, llena);
@@ -378,6 +380,16 @@ test('rows of an older guide are rejected once a newer guide has results for the
   await importarQa(p, { buf: rellenar(buf2, { 2: 'OK' }), ahora: T2 });
   const r = await importarQa(p, { buf: rellenar(buf, { 3: 'OK' }), ahora: new Date('2026-11-04T14:00:00') });
   assert.deepEqual(conMotivos(r), ['A newer guide covers this delivery: use the newest guide']);
+});
+
+test('a guide re-saved with data descriptors (LibreOffice style) imports', async () => {
+  const { p, buf } = await escenario();
+  for (const firma of [true, false]) {
+    const r = await importarQa(p, { buf: conDescriptores(rellenar(buf, { 2: 'OK', 3: 'OK' }), { firma }), ahora: T1 });
+    assert.deepEqual(conMotivos(r), []);
+    assert.equal(r.resumen.find((x) => x.portal === 'p1').filas, 2);
+  }
+  assert.equal(leerEventos(p).filter((e) => e.tipo === 'qa_resultado').length, 4);
 });
 
 function conRastreador(p, extra = {}) {

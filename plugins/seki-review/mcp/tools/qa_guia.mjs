@@ -4,14 +4,15 @@ import { generarGuia } from '../lib/qa-salida.mjs';
 export default {
   name: 'qa_guia',
   description:
-    'Generates the QA guide (xlsx, html and pdf under the output folder) for the deliveries waiting for QA: one row per finding and portal, ' +
-    'with the steps taken from the PR explanations or descriptions. It does not run the AI: PRs without steps are listed so they can be explained first. ' +
-    'With desde="ultimo-corte" only the tracks merged into testing after the last guide are included.',
+    'Generates the QA guide (xlsx, html and pdf under the output folder): one row per finding and portal, with the steps taken from the PR explanations or descriptions. ' +
+    'Without keys it covers every track waiting for QA or already failed by QA, including tracks covered by an earlier guide; ' +
+    'use desde="ultimo-corte" to include only the tracks merged into testing after the last guide, or claves to choose deliveries. ' +
+    'It does not run the AI: PRs without steps are listed so they can be explained first.',
   inputSchema: {
     type: 'object',
     properties: {
       proyecto: { type: 'string', description: 'Project key in proyectos.json; defaults to the default project if omitted' },
-      claves: { type: 'array', items: { type: 'string' }, description: 'Delivery keys to include; all deliveries waiting for QA if omitted' },
+      claves: { type: 'array', items: { type: 'string' }, description: 'Delivery keys to include; every track waiting for QA or failed by QA if omitted' },
       desde: { type: 'string', enum: ['ultimo-corte'], description: 'Only tracks merged into testing after the last guide' },
     },
   },

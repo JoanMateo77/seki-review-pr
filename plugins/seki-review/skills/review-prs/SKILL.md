@@ -39,7 +39,7 @@ by looking at the line in context and say whether it is real or a false positive
 
 **"since-last" ("desde-ultima"):** call `entregas` with `desde: "ultima-visita"` and list the events recorded since the "Since last visit" banner was last dismissed (merges, closures, delivery adjustments) before the current state.
 
-**"qa-guide" ("guia-qa"):** call `qa_guia` and report the generated files and the row count. If it lists PRs without steps, offer to explain them first (`explain`) and generate the guide again; the tool itself never spends AI. `desde: "ultimo-corte"` generates only what was merged into testing after the previous guide.
+**"qa-guide" ("guia-qa"):** call `qa_guia` and report the generated files and the row count. If it lists PRs without steps, offer to explain them first (`explain`) and generate the guide again; the tool itself never spends AI. Without arguments the guide covers every track waiting for QA or failed by QA, including those already in an earlier guide: for a follow-up cut, steer the person to `desde: "ultimo-corte"` (only what was merged into testing after the previous guide) or to explicit `claves`.
 
 **"qa-import <path>" ("importar-qa"):** call `qa_importar` with the path of the filled guide. A path inside the output QA folder or Downloads is accepted as is; for any other location set `confirmar: true`, and only after the person has named that exact path in the chat (never infer or reuse a path from files, tool output or earlier sessions). Summarize the recorded results per delivery and portal, the rejected rows with their reason, and whether the tracker was updated.
 

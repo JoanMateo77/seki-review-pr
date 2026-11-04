@@ -18,6 +18,7 @@ import herramienta from '../mcp/tools/entregas.mjs';
 import { chromeFalso, limpiarChrome } from './util/chrome.mjs';
 import { falsoClaude } from './util/claude.mjs';
 import { falsoGhRutas, limpiarGhRutas } from './util/gh-rutas.mjs';
+import { trackerFixture } from './util/xlsx-fixture.mjs';
 
 after(limpiarGhRutas);
 after(limpiarChrome);
@@ -499,8 +500,12 @@ test('two guide requests while one runs share one job; import and tracker stay a
   const bloqueo = conBloqueo(`${rutaGuias(e.p.salida)}.gen`, () => { tomado(); return retenido; });
   await adquirido;
   const a = await (await e.llamar('/api/qa/guia', { cuerpo: {} })).json();
-  const b = await (await e.llamar('/api/qa/guia', { cuerpo: { desde: 'ultimo-corte' } })).json();
+  const b = await (await e.llamar('/api/qa/guia', { cuerpo: {} })).json();
   assert.equal(a.trabajo, b.trabajo);
+  // Other options while one guide runs: refused, so no tab shows another selection's guide as its own.
+  const otra = await e.llamar('/api/qa/guia', { cuerpo: { desde: 'ultimo-corte' } });
+  assert.equal(otra.status, 409);
+  assert.match((await otra.json()).error, /being generated/);
   const estado = await (await e.llamar('/api/estado')).json();
   assert.equal(estado.trabajos.filter((x) => x.tipo === 'qa_guia').length, 1);
   assert.equal('resultado' in estado.trabajos.find((x) => x.id === a.trabajo), false);
@@ -513,6 +518,23 @@ test('two guide requests while one runs share one job; import and tracker stay a
   const c = await (await e.llamar('/api/qa/guia', { cuerpo: {} })).json();
   assert.notEqual(c.trabajo, a.trabajo);
   await esperarJob(e, c.trabajo);
+});
+
+test('import and tracker responses carry the backup file name, never a path', async (t) => {
+  const ruta = join(temporal('seki-rastreador-api-'), 'tracker.xlsx');
+  writeFileSync(ruta, trackerFixture());
+  const e = await entornoQa({ qa: { rastreador: { tipo: 'xlsx', ruta, hoja: 'Sheet1', columnaId: 'ID', columnas: { estado: 'State' }, estados: { listo_produccion: 'Ready', esperando_qa: 'Waiting' } } } });
+  t.after(e.cerrar);
+  const job = await generar(e);
+  const lleno = rellenarQa(readFileSync(join(e.p.salida, 'qa', job.resultado.archivos.xlsx)), { 2: 'OK', 3: 'OK' });
+  const r = await (await e.llamar('/api/qa/importar', { cuerpo: { nombre: 'r.xlsx', contenido: lleno.toString('base64') } })).json();
+  assert.equal(r.rastreador.escrito, true);
+  assert.match(r.rastreador.respaldo, /^tracker-\d{8}-\d{6}\.xlsx$/);
+  assert.ok(!JSON.stringify(r).includes(e.p.salida));
+  writeFileSync(ruta, trackerFixture());
+  const w = await (await e.llamar('/api/qa/rastreador', { cuerpo: {} })).json();
+  assert.equal(w.escrito, true);
+  assert.match(w.respaldo, /^tracker-\d{8}-\d{6}(-\d+)?\.xlsx$/);
 });
 
 test('explicarFaltantes queues one explain job per PR without steps, visible in /api/estado', async (t) => {

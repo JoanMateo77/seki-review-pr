@@ -1,10 +1,11 @@
 // Import of filled QA guides: validates the file, turns each signed row into a qa_resultado event and re-derives the stages.
 // The file is untrusted input: rows are matched by their signed key, never by position.
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { closeSync, fstatSync, openSync, readSync, realpathSync, statSync } from 'node:fs';
+import { closeSync, openSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, sep } from 'node:path';
+import { isAbsolute, join, sep } from 'node:path';
 import { secretoQa } from './acceso.mjs';
+import { MAX_ARCHIVO, leerAcotado } from './archivos.mjs';
 import { dirQa, leerJson, rutaEntregas, rutaInstantanea } from './cache.mjs';
 import { expandir } from './config.mjs';
 import { leerEventos, registrarEventos } from './eventos.mjs';
@@ -15,7 +16,6 @@ import { derivarEnSerie, enSerieEntregas } from './recolectar.mjs';
 import { mapaPrs } from './tablero-entregas.mjs';
 import { leerXlsx } from './xlsx.mjs';
 
-export const MAX_ARCHIVO = 5 * 1024 * 1024;
 const ETAPAS_QA = new Set(['esperando_qa', 'qa_fallo', 'listo_produccion']);
 const ETAPAS_PROD = new Set(['en_produccion', 'cerrada']);
 const MAX_ENCABEZADO = 10;
@@ -173,6 +173,7 @@ export function analizarImportacion(p, buf, { entregas = [], guias = [], ahora =
 function leerArchivo(p, { ruta: entrada, confirmar }) {
   const ruta = expandir(entrada);
   if (typeof ruta !== 'string' || ruta === '' || !/\.xlsx$/i.test(ruta)) fallar('QA_RUTA', 'The file must be an .xlsx workbook');
+  if (!isAbsolute(ruta)) fallar('QA_RUTA', 'The path must be absolute (or start with ~/)');
   let real;
   try {
     real = realpathSync(ruta);
@@ -190,17 +191,13 @@ function leerArchivo(p, { ruta: entrada, confirmar }) {
   if (!raices.some((r) => real === r || real.startsWith(r + sep)) && confirmar !== true) {
     fallar('QA_RUTA', 'The file is outside the QA output folder and Downloads: confirm the import explicitly');
   }
-  // One descriptor for the size check and the read: the file cannot grow in between.
   const fd = openSync(real, 'r');
   try {
-    const st = fstatSync(fd);
-    if (!st.isFile()) fallar('QA_RUTA', 'The path is not a regular .xlsx file');
-    if (st.size > MAX_ARCHIVO) fallar('QA_TAMANO', 'The file exceeds 5 MB');
-    const b = Buffer.alloc(Math.min(st.size, MAX_ARCHIVO) + 1);
-    let n = 0;
-    for (let k; n < b.length && (k = readSync(fd, b, n, b.length - n, n)) > 0;) n += k;
-    if (n > MAX_ARCHIVO) fallar('QA_TAMANO', 'The file exceeds 5 MB');
-    return b.subarray(0, n);
+    return leerAcotado(fd, MAX_ARCHIVO).buf;
+  } catch (e) {
+    if (e?.motivo === 'no-regular') fallar('QA_RUTA', 'The path is not a regular .xlsx file');
+    if (e?.motivo === 'grande') fallar('QA_TAMANO', 'The file exceeds 5 MB');
+    throw e;
   } finally {
     closeSync(fd);
   }

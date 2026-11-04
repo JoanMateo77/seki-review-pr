@@ -24,7 +24,8 @@ import { ghJson } from './proceso.mjs';
 import { dirQa, leerJson, rutaEntregas, rutaInstantanea } from './cache.mjs';
 import { crearSondeo, crearVigia, VENTANA_TABLERO_MS } from './vigia.mjs';
 import { aplicarAjuste, cerrarEntrega, datosEntregas, mapaPrs, marcarVisita } from './tablero-entregas.mjs';
-import { importarQa, MAX_ARCHIVO } from './qa-importar.mjs';
+import { MAX_ARCHIVO } from './archivos.mjs';
+import { importarQa } from './qa-importar.mjs';
 import { generarGuia } from './qa-salida.mjs';
 import { aplicarRastreador, cambiosPendientes } from './rastreador-xlsx.mjs';
 import { enSerieEntregas } from './recolectar.mjs';
@@ -79,6 +80,9 @@ function opcionesGuia({ claves, desde, explicarFaltantes }) {
 }
 
 const nombreArchivo = (ruta) => (ruta ? ruta.split(/[\\/]/).pop() : null);
+// The browser gets file names only, never absolute paths.
+const rastreadorPublico = (r) => (r?.respaldo ? { ...r, respaldo: nombreArchivo(r.respaldo) } : r);
+const opcionesIguales = (a, b) => JSON.stringify([[...(a.claves ?? [])].sort(), a.desde ?? null, a.explicarFaltantes]) === JSON.stringify([[...(b.claves ?? [])].sort(), b.desde ?? null, b.explicarFaltantes]);
 
 const servidores = new Map();
 
@@ -241,14 +245,17 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
 
   const cola = crearCola();
   // QA guide jobs run outside the AI queue (they wait for a lock and for Chrome, and spend no AI): one at a time,
-  // a second request while one runs gets the same job. The newest few states stay readable by id.
+  // a second request with the same options while one runs gets the same job, with other options it gets 409. The newest few states stay readable by id.
   const trabajosGuia = new Map();
   let guiaActiva = null;
   let secuenciaGuia = 0;
   const guiaEnCurso = () => [...trabajosGuia.values()].some((t) => t.estado === 'en_curso');
   const listaGuias = () => [...trabajosGuia.values()].map(({ resultado, ...t }) => t);
   const iniciarGuia = ({ claves, desde, explicarFaltantes }) => {
-    if (guiaActiva) return guiaActiva.id;
+    if (guiaActiva) {
+      if (opcionesIguales(guiaActiva.opciones, { claves, desde, explicarFaltantes })) return guiaActiva.id;
+      throw falloHttp(409, 'A QA guide is being generated; try again when it finishes');
+    }
     const id = `qa_guia:${Date.now()}:${++secuenciaGuia}`;
     const t = { id, tipo: 'qa_guia', estado: 'en_curso', encolado: new Date().toISOString(), inicio: new Date().toISOString() };
     trabajosGuia.set(id, t);
@@ -276,7 +283,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         guiaActiva = null;
       }
     })();
-    guiaActiva = { id, promesa };
+    guiaActiva = { id, promesa, opciones: { claves, desde, explicarFaltantes } };
     return id;
   };
   recuperarInterrumpidos(p);
@@ -436,7 +443,8 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         return res.end(datos);
       }
       if (req.method === 'POST' && url.pathname === '/api/qa/importar') {
-        return responder(res, 200, await importarQa(p, { buf: decodificarImportacion(await leerJsonEstricto(req, MAX_CUERPO_IMPORTAR)) }));
+        const r = await importarQa(p, { buf: decodificarImportacion(await leerJsonEstricto(req, MAX_CUERPO_IMPORTAR)) });
+        return responder(res, 200, { ...r, rastreador: rastreadorPublico(r.rastreador) });
       }
       if (req.method === 'GET' && url.pathname === '/api/qa/rastreador') {
         const cfg = p.qa?.rastreador;
@@ -451,7 +459,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
       }
       if (req.method === 'POST' && url.pathname === '/api/qa/rastreador') {
         if (Object.keys(await leerJsonEstricto(req)).length) throw falloHttp(400, 'The body must be an empty object');
-        return responder(res, 200, await enSerieEntregas(() => aplicarRastreador(p, ...datosRastreador())));
+        return responder(res, 200, rastreadorPublico(await enSerieEntregas(() => aplicarRastreador(p, ...datosRastreador()))));
       }
       if (req.method === 'GET' && url.pathname === '/api/foto') return responder(res, 200, fotoConExplicaciones(p));
       if (req.method === 'GET' && url.pathname === '/api/diff') {

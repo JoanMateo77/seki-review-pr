@@ -23,7 +23,7 @@ All paths below are relative to `plugins/seki-review/`.
 - Generated files only under `salida/qa/`; tracker writes only to the path in the config; backups under `salida/respaldos/`.
 - XLSX reader limits: 200 entries, 20 MB total uncompressed, inflate with `maxOutputLength`, 5 000 rows, 100 columns, 32 767 chars per cell, 5 MB file.
 - Errors carry a tag (`[seki-review/qa]`, `[seki-review/xlsx]`, `[seki-review/rastreador]`) and a safe message; never cell contents or secrets in logs.
-- Tests: `node --test 'test/*.test.mjs'` and `node test/humo.mjs`, run with `/Users/dev/.proto/tools/node/24.15.0/bin/node`. Existing tests stay green.
+- Tests: `node --test 'test/*.test.mjs'` and `node test/humo.mjs`, run with `node` (Node >= 22). Existing tests stay green.
 - Commits: conventional prefix, no AI attribution of any kind, no `Co-Authored-By`, no session trailers. Never `git stash`.
 
 ## Rulings made while planning (spec silent or ambiguous)

@@ -2,6 +2,9 @@
 // Every value that comes from the server or from a file (names, reasons, PR ids) is a text child or a `text` attribute,
 // so the builder in 08b can only render it as text.
 const RESULTADO_QA = { ok: 'OK', fallo: 'Fail', bloqueado: 'Blocked', pendiente: 'Pending', na: 'N/A' };
+const ETAPAS_QA = new Set(['esperando_qa', 'qa_fallo']);
+// A delivery can go into a QA guide when any of its tracks waits for QA or failed it, even if another portal is still merging.
+const entregaElegibleQa = (e) => ((e.pistas ?? []).length ? e.pistas.some((x) => ETAPAS_QA.has(x.etapa)) : ETAPAS_QA.has(e.etapa));
 const pluralQa = (n, s, p) => `${n} ${n === 1 ? s : p}`;
 
 function descripcionPanelQa({ generando, mensajeGuia, guia, mensajeOperacion, importacion, rastreador, espera }) {
