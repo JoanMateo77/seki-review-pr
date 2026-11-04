@@ -294,3 +294,14 @@ test('a date cell holding the same Excel serial is not rewritten', () => {
   const c = cambiosPendientes(cfg, entregas, prs);
   assert.ok(!c.some((x) => x.id === 'X-001' && x.columna === 'enPruebas'));
 });
+
+test('a tracker owned by another user is refused', async () => {
+  const { dir, ruta, p } = escenario('inline');
+  const antes = readFileSync(ruta);
+  const r = await aplicarRastreador(p, entregas, prs, { uidProceso: statSync(ruta).uid + 1 });
+  assert.equal(r.escrito, false);
+  assert.equal(r.motivo, 'The spreadsheet belongs to another user');
+  assert.ok(readFileSync(ruta).equals(antes));
+  assert.deepEqual(readdirSync(dir).sort(), ['tracker.xlsx']);
+  sinRespaldos(p);
+});

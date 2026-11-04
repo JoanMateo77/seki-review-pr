@@ -22,7 +22,7 @@ const pad = (n) => String(n).padStart(2, '0');
 export const fechaLocal = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const lineas = (v) => String(v ?? '').replace(/\r\n?/g, '\n').trim();
 
-// A date cell stored as an Excel serial (1900 system, UTC day) equals the same YYYY-MM-DD text: no rewrite.
+// Excel serials are timezone-less calendar days: the serial is floored and read as a UTC date. A date cell stored as a serial (1900 system) equals the same YYYY-MM-DD text: no rewrite.
 function serialAFecha(v) {
   if (!/^\d{1,6}(\.\d+)?$/.test(v) || Number(v) < 61) return null;
   return new Date(Math.floor(Number(v) - 25569) * 86400000).toISOString().slice(0, 10);
@@ -206,8 +206,8 @@ function escribirTemporal(ruta, datos, modo) {
   return tmp;
 }
 
-// `gancho` is a test seam: it runs after the temporary file is written and before the final recheck.
-export async function aplicarRastreador(p, entregas, prsPorId, { ahora = new Date(), gancho } = {}) {
+// Test seams: uidProceso overrides the process uid; gancho runs after the temporary file is written and before the final recheck.
+export async function aplicarRastreador(p, entregas, prsPorId, { ahora = new Date(), gancho, uidProceso = process.getuid?.() } = {}) {
   const cfg = p.qa?.rastreador;
   if (!cfg) return rechazo('No tracker configured');
   if (cfg.escribir === false) return rechazo('Tracker writes are disabled in the configuration');
@@ -221,7 +221,7 @@ export async function aplicarRastreador(p, entregas, prsPorId, { ahora = new Dat
     }
     if (st.isSymbolicLink()) return 'The tracker path is a symbolic link';
     if (!st.isFile()) return 'The tracker path is not a regular file';
-    if (typeof process.getuid === 'function' && st.uid !== process.getuid()) return 'The spreadsheet belongs to another user';
+    if (typeof uidProceso === 'number' && st.uid !== uidProceso) return 'The spreadsheet belongs to another user';
     if (existsSync(join(dirname(ruta), `~$${basename(ruta)}`))) return 'The tracker is open in another program: close it and import again';
     return null;
   };
