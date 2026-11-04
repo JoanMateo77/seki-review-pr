@@ -54,7 +54,7 @@ function matar(hijo) {
   }
 }
 
-export function htmlAPdf(chrome, html, pdf, { limiteMs = 60_000 } = {}) {
+export function htmlAPdf(chrome, html, pdf, { limiteMs = 60_000, senal } = {}) {
   return enTurno(async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'seki-chrome-'));
     let pid;
@@ -62,6 +62,7 @@ export function htmlAPdf(chrome, html, pdf, { limiteMs = 60_000 } = {}) {
       const args = ['--headless', '--disable-gpu', '--no-first-run', '--no-default-browser-check', `--user-data-dir=${tmp}`, '--no-pdf-header-footer', `--print-to-pdf=${pdf}`, pathToFileURL(html).href];
       const fin = await new Promise((ok) => {
         let vencido = false;
+        let cancelado = false;
         let hijo;
         try {
           hijo = spawn(chrome, args, { stdio: 'ignore', detached: true });
@@ -71,11 +72,16 @@ export function htmlAPdf(chrome, html, pdf, { limiteMs = 60_000 } = {}) {
           return;
         }
         const reloj = setTimeout(() => { vencido = true; matar(hijo); }, limiteMs);
-        hijo.on('error', () => { clearTimeout(reloj); ok({ error: true }); });
-        hijo.on('close', (codigo) => { clearTimeout(reloj); ok({ codigo, vencido }); });
+        const cancelar = () => { cancelado = true; matar(hijo); };
+        if (senal?.aborted) cancelar();
+        else senal?.addEventListener('abort', cancelar, { once: true });
+        const soltar = () => { clearTimeout(reloj); senal?.removeEventListener('abort', cancelar); };
+        hijo.on('error', () => { soltar(); ok({ error: true }); });
+        hijo.on('close', (codigo) => { soltar(); ok({ codigo, vencido, cancelado }); });
       });
       const traza = { pid, perfil: tmp };
       if (fin.error) return { ok: false, motivo: 'Chrome could not be started', ...traza };
+      if (fin.cancelado) return { ok: false, motivo: 'Cancelled', ...traza };
       if (fin.vencido) return { ok: false, motivo: 'Chrome did not finish in time', ...traza };
       if (fin.codigo !== 0) return { ok: false, motivo: `Chrome exited with code ${fin.codigo}`, ...traza };
       return tieneContenido(pdf) ? { ok: true, ...traza } : { ok: false, motivo: 'Chrome produced no PDF', ...traza };

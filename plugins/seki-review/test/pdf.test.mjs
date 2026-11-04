@@ -44,19 +44,31 @@ test('a hanging Chrome is killed at the limit and its profile removed', async ()
   assert.equal(existsSync(r.perfil), false);
 });
 
-test('the group kill takes the grandchild too', async () => {
+test('aborting kills the child and its grandchild', { timeout: 30_000 }, async () => {
   const chrome = chromeFalso({ modo: 'nieto' });
-  // Generous limit: the grandchild pid is written a moment after the fake starts.
-  const r = await htmlAPdf(chrome, html, join(dir, 'g.pdf'), { limiteMs: 4000 });
+  const control = new AbortController();
+  const render = htmlAPdf(chrome, html, join(dir, 'g.pdf'), { limiteMs: 600_000, senal: control.signal });
+  // Abort only once the grandchild exists; the test timeout bounds the wait.
+  while (!pidNieto(chrome)) await new Promise((ok) => setTimeout(ok, 10));
   const nieto = pidNieto(chrome);
+  control.abort();
+  const r = await render;
   try {
-    assert.equal(r.ok, false);
-    assert.ok(nieto, 'the fake wrote the grandchild pid');
+    assert.deepEqual([r.ok, r.motivo], [false, 'Cancelled']);
     assert.throws(() => process.kill(r.pid, 0), (e) => e.code === 'ESRCH');
     assert.throws(() => process.kill(nieto, 0), (e) => e.code === 'ESRCH');
+    assert.equal(existsSync(r.perfil), false);
   } finally {
-    if (nieto) try { process.kill(nieto, 'SIGKILL'); } catch { /* gone */ }
+    try { process.kill(nieto, 'SIGKILL'); } catch { /* gone */ }
   }
+});
+
+test('an already aborted signal never leaves a child', async () => {
+  const chrome = chromeFalso({ modo: 'cuelga' });
+  const r = await htmlAPdf(chrome, html, join(dir, 'a2.pdf'), { limiteMs: 600_000, senal: AbortSignal.abort() });
+  assert.equal(r.motivo, 'Cancelled');
+  assert.throws(() => process.kill(r.pid, 0), (e) => e.code === 'ESRCH');
+  assert.equal(existsSync(r.perfil), false);
 });
 
 test('a missing binary is reported, not thrown', async () => {
