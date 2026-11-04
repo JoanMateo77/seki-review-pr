@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { escribirJson, rutaInstantanea } from '../mcp/lib/cache.mjs';
-import { iniciarServidor } from '../mcp/lib/servidor-web.mjs';
+import { detenerServidores, iniciarServidor } from '../mcp/lib/servidor-web.mjs';
 import { ghJson } from '../mcp/lib/proceso.mjs';
 import { crearSondeo, crearVigia } from '../mcp/lib/vigia.mjs';
 
@@ -20,7 +20,13 @@ const temporal = (prefijo) => {
   temporales.push(dir);
   return dir;
 };
-after(() => { for (const d of temporales.splice(0)) rmSync(d, { recursive: true, force: true }); });
+// Held gh doubles are released and servers closed before the folders go, so a failed test cannot keep the file alive.
+const sueltas = [];
+after(async () => {
+  for (const soltar of sueltas.splice(0)) soltar();
+  await detenerServidores();
+  for (const d of temporales.splice(0)) rmSync(d, { recursive: true, force: true });
+});
 
 // Fake clock: timers fire only when the test advances time.
 function relojFalso(inicio = Date.parse('2026-11-04T10:00:00Z')) {
@@ -205,7 +211,8 @@ test('a gh failure for one repo fails the probe', async () => {
 
 // Server: real HTTP with a slow gh double (appends each call to a file, answers an empty list after a delay).
 let n = 0;
-// Fake gh answers after demoraMs or, with retener, only once the release file exists.
+// Fake gh answers after demoraMs or, with retener (true, or a substring of the arguments), only once the release file
+// exists or its folder is gone.
 async function servidor({ demoraMs = 0, retener = false, repos = ['r1'], cambiados = [], reloj } = {}) {
   const clave = `vig${++n}`;
   const dir = temporal('seki-vigia-');
@@ -224,7 +231,8 @@ fs.appendFileSync(${JSON.stringify(registro)}, process.argv.slice(2).join(' ') +
 const a = process.argv.slice(2);
 const cambiado = a.includes('--search') && ${JSON.stringify(cambiados)}.some((r) => a.includes('o/' + r));
 const responder = () => process.stdout.write(cambiado ? '[{"number":1}]' : '[]');
-if (${retener}) { const t = setInterval(() => { if (fs.existsSync(${JSON.stringify(suelta)})) { clearInterval(t); responder(); } }, 5); }
+const retener = ${JSON.stringify(retener)};
+if (retener === true || (typeof retener === 'string' && a.join(' ').includes(retener))) { const t = setInterval(() => { if (fs.existsSync(${JSON.stringify(suelta)}) || !fs.existsSync(${JSON.stringify(dir)})) { clearInterval(t); responder(); } }, 5); }
 else setTimeout(responder, ${demoraMs});
 `);
   chmodSync(gh, 0o755);
@@ -234,10 +242,13 @@ else setTimeout(responder, ${demoraMs});
   const token = u.searchParams.get('t');
   const llamar = (ruta, { metodo = 'GET', cabeceras = {} } = {}) => fetch(`${u.origin}${ruta}`, { method: metodo, headers: { 'x-seki-token': token, ...cabeceras } });
   const llamadas = () => (existsSync(registro) ? readFileSync(registro, 'utf8').split('\n').filter(Boolean) : []);
-  return { llamar, llamadas, soltar: () => writeFileSync(suelta, '') };
+  const soltar = () => { if (existsSync(dir)) writeFileSync(suelta, ''); };
+  sueltas.push(soltar);
+  return { llamar, llamadas, soltar };
 }
 const pausa = (ms) => new Promise((ok) => setTimeout(ok, ms));
-const esperar = async (cond, ms = 4000) => { const fin = Date.now() + ms; while (!cond()) { if (Date.now() > fin) throw new Error('timeout'); await pausa(10); } };
+// The deadline only turns a missing event into a failure instead of a hang; it is generous so load cannot trip it.
+const esperar = async (cond, ms = 30_000) => { const fin = Date.now() + ms; while (!(await cond())) { if (Date.now() > fin) throw new Error('timeout'); await pausa(10); } };
 
 test('server: only the dashboard marker opens the window; ceder is refused while a probe runs; nothing runs after ceder', async () => {
   const reloj = relojFalso();
@@ -264,32 +275,33 @@ test('server: only the dashboard marker opens the window; ceder is refused while
 });
 
 test('server: a manual refresh during a watcher partial refresh is followed by a full refresh', async () => {
-  const { llamar, llamadas } = await servidor({ demoraMs: 150, repos: ['r1', 'r2'], cambiados: ['r1'] });
+  const reloj = relojFalso();
+  const { llamar, llamadas, soltar } = await servidor({ retener: 'repos/o/r1/pulls', repos: ['r1', 'r2'], cambiados: ['r1'], reloj });
   const marca = { 'x-seki-tablero': '1' };
   const pulls = (r) => llamadas().filter((l) => l.includes(`repos/o/${r}/pulls`));
   await llamar('/api/estado', { cabeceras: marca });
-  // The partial refresh (r1 only) is running when the manual one arrives.
+  // The partial refresh (r1 only) is held inside gh when the manual one arrives.
+  const ciclo = reloj.avanzar(60);
   await esperar(() => pulls('r1').length > 0);
   assert.equal(pulls('r2').length, 0);
   assert.equal((await llamar('/api/refrescar', { metodo: 'POST' })).status, 202);
+  assert.equal((await (await llamar('/api/estado')).json()).refrescando, true);
+  soltar();
+  await ciclo;
   await esperar(() => pulls('r2').length > 0);
-  const e = await (await llamar('/api/estado')).json();
-  assert.equal(typeof e.refrescando, 'boolean');
-  let codigo = 409;
-  const fin = Date.now() + 5000;
-  while (codigo === 409 && Date.now() < fin) { await pausa(30); codigo = (await llamar('/api/ceder', { metodo: 'POST' })).status; }
-  assert.equal(codigo, 200);
+  // The fake clock starts no further cycle, so once the chained full refresh ends the port can be handed over.
+  await esperar(async () => !(await (await llamar('/api/estado')).json()).refrescando);
+  assert.equal((await llamar('/api/ceder', { metodo: 'POST' })).status, 200);
 });
 
-test('gh helper: a timeout rejects a hung process and the probe passes its timeout', async () => {
+// The process never exits on its own, so only the timeout can end it; the test timeout turns a regression into a failure.
+test('gh helper: a timeout rejects a hung process and the probe passes its timeout', { timeout: 60_000 }, async () => {
   const dir = temporal('seki-vigia-gh-');
   const colgado = join(dir, 'gh');
   writeFileSync(colgado, `#!${process.execPath}\nsetInterval(() => {}, 1000);\n`);
   chmodSync(colgado, 0o755);
   process.env.SEKI_GH = colgado;
-  const inicio = Date.now();
-  await assert.rejects(ghJson(['pr', 'list'], { timeout: 150 }));
-  assert.ok(Date.now() - inicio < 3000);
+  await assert.rejects(ghJson(['pr', 'list'], { timeout: 150 }), { killed: true, signal: 'SIGTERM' });
   const opciones = [];
   const sondeo = crearSondeo({ owner: 'o', repos: ['r'], instantanea: () => '2026-11-04T09:00:00Z', gh: async (a, o) => { opciones.push(o); return []; } });
   await sondeo.sondear();

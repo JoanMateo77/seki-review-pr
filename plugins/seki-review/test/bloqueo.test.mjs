@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -28,7 +28,8 @@ const lockViejo = (ruta, pid) => {
 };
 
 // Child that holds the lock, prints "listo", and releases only after the parent writes a line to its stdin.
-// Just before releasing it writes the release time to `marcaLiberacion`.
+// Just before releasing it writes the release time to `marcaLiberacion`. `matar` ends it if the test fails first,
+// otherwise it would wait on stdin forever and keep the test file alive.
 function retenerEnHijo(ruta, marcaLiberacion) {
   const hijo = spawn(process.execPath, ['--input-type=module', '-e',
     `import { conBloqueo } from ${JSON.stringify(BLOQUEO)};
@@ -45,29 +46,36 @@ function retenerEnHijo(ruta, marcaLiberacion) {
     hijo.on('exit', (c) => c && reject(new Error(`child exited ${c}`)));
   });
   const fin = new Promise((r) => hijo.on('exit', r));
-  return { listo, fin, liberar: () => new Promise((r) => hijo.stdin.write('go\n', r)) };
+  return { listo, fin, liberar: () => new Promise((r) => hijo.stdin.write('go\n', r)), matar: () => hijo.kill('SIGKILL') };
 }
 
 // Child that waits for the go file, then takes the lock `vueltas` times. Inside the critical section it
 // creates a marker with 'wx', sleeps 5 ms and removes it: a second holder would hit EEXIST.
+// Each child records its start in `inicios`; the first holder keeps the lock until all `total` children started, so
+// their lock windows overlap by construction, not by scheduling luck (the waiters get a generous esperaMs for that).
 // Prints {inicio, fin, colisiones, ok}.
-function contender(modo, ruta, irArchivo, vueltas) {
+function contender(modo, ruta, irArchivo, vueltas, { inicios, total }) {
   const marca = `${ruta}.marca`;
+  const esperarATodos = modo === 'sync'
+    ? 'while (readdirSync(I).length < TOTAL) Atomics.wait(pausa, 0, 0, 1);'
+    : 'while (readdirSync(I).length < TOTAL) await new Promise((r) => setTimeout(r, 1));';
   const critico = modo === 'sync'
-    ? `() => { try { writeFileSync(M, '', { flag: 'wx' }); } catch (e) { if (e.code === 'EEXIST') colisiones++; else throw e; return; }
+    ? `() => { ${esperarATodos} try { writeFileSync(M, '', { flag: 'wx' }); } catch (e) { if (e.code === 'EEXIST') colisiones++; else throw e; return; }
          Atomics.wait(pausa, 0, 0, 5); unlinkSync(M); }`
-    : `async () => { try { writeFileSync(M, '', { flag: 'wx' }); } catch (e) { if (e.code === 'EEXIST') colisiones++; else throw e; return; }
+    : `async () => { ${esperarATodos} try { writeFileSync(M, '', { flag: 'wx' }); } catch (e) { if (e.code === 'EEXIST') colisiones++; else throw e; return; }
          await new Promise((r) => setTimeout(r, 5)); unlinkSync(M); }`;
-  const llamada = modo === 'sync' ? 'conBloqueoSync(RUTA, critico)' : 'await conBloqueo(RUTA, critico)';
+  const llamada = modo === 'sync' ? 'conBloqueoSync(RUTA, critico, { esperaMs: 60_000 })' : 'await conBloqueo(RUTA, critico, { esperaMs: 60_000 })';
   return ejecutar(process.execPath, ['--input-type=module', '-e',
     `import { conBloqueo, conBloqueoSync } from ${JSON.stringify(BLOQUEO)};
-     import { existsSync, writeFileSync, unlinkSync } from 'node:fs';
-     const RUTA = ${JSON.stringify(ruta)}, M = ${JSON.stringify(marca)};
+     import { existsSync, readdirSync, writeFileSync, unlinkSync } from 'node:fs';
+     import { join } from 'node:path';
+     const RUTA = ${JSON.stringify(ruta)}, M = ${JSON.stringify(marca)}, I = ${JSON.stringify(inicios)}, TOTAL = ${total};
      const pausa = new Int32Array(new SharedArrayBuffer(4));
      let colisiones = 0;
      const critico = ${critico};
      while (!existsSync(${JSON.stringify(irArchivo)})) Atomics.wait(pausa, 0, 0, 1);
      const inicio = Date.now();
+     writeFileSync(join(I, String(process.pid)), '');
      for (let i = 0; i < ${vueltas}; i++) ${llamada};
      console.log(JSON.stringify({ inicio, fin: Date.now(), colisiones, ok: true }));`]).then((r) => JSON.parse(r.stdout));
 }
@@ -95,10 +103,15 @@ test('conBloqueoSync acquires only after the holding process has released', () =
   const ruta = join(dir, 'b.json');
   const marca = join(dir, 'liberado.txt');
   const hijo = retenerEnHijo(ruta, marca);
-  await hijo.listo;
-  await hijo.liberar(); // flushed before the synchronous acquire blocks this process
-  assert.equal(conBloqueoSync(ruta, () => existsSync(marca)), true);
-  await hijo.fin;
+  try {
+    await hijo.listo;
+    await hijo.liberar(); // flushed before the synchronous acquire blocks this process
+    // Generous wait: the child releases on its own schedule; the test checks order, not speed.
+    assert.equal(conBloqueoSync(ruta, () => existsSync(marca), { esperaMs: 60_000 }), true);
+    await hijo.fin;
+  } finally {
+    hijo.matar();
+  }
   assert.equal(existsSync(`${ruta}.lock`), false);
 }));
 
@@ -186,38 +199,41 @@ test('two processes calling escribirJson on the same file leave valid JSON and n
 test('processes contending for conBloqueoSync never share the critical section', () => conTemp(async (dir) => {
   const ruta = join(dir, 'k.json');
   const ir = join(dir, 'ir');
-  const tareas = [contender('sync', ruta, ir, 30), contender('sync', ruta, ir, 30), contender('sync', ruta, ir, 30)];
-  await dormir(300);
+  const inicios = join(dir, 'inicios');
+  mkdirSync(inicios);
+  const tareas = [contender('sync', ruta, ir, 30, { inicios, total: 3 }), contender('sync', ruta, ir, 30, { inicios, total: 3 }), contender('sync', ruta, ir, 30, { inicios, total: 3 })];
   writeFileSync(ir, '');
   const r = await Promise.all(tareas);
   assert.deepEqual(r.map((x) => x.colisiones), [0, 0, 0]);
   verSolape(r);
-  assert.deepEqual(readdirSync(dir).sort(), ['ir']);
+  assert.deepEqual(readdirSync(dir).sort(), ['inicios', 'ir']);
 }));
 
 test('processes contending for async conBloqueo never share the critical section', () => conTemp(async (dir) => {
   const ruta = join(dir, 'l.json');
   const ir = join(dir, 'ir');
-  const tareas = [contender('async', ruta, ir, 30), contender('async', ruta, ir, 30), contender('async', ruta, ir, 30)];
-  await dormir(300);
+  const inicios = join(dir, 'inicios');
+  mkdirSync(inicios);
+  const tareas = [contender('async', ruta, ir, 30, { inicios, total: 3 }), contender('async', ruta, ir, 30, { inicios, total: 3 }), contender('async', ruta, ir, 30, { inicios, total: 3 })];
   writeFileSync(ir, '');
   const r = await Promise.all(tareas);
   assert.deepEqual(r.map((x) => x.colisiones), [0, 0, 0]);
   verSolape(r);
-  assert.deepEqual(readdirSync(dir).sort(), ['ir']);
+  assert.deepEqual(readdirSync(dir).sort(), ['inicios', 'ir']);
 }));
 
 test('two takers and a plain acquirer over a planted stale lock never collide', () => conTemp(async (dir) => {
   const ruta = join(dir, 'm.json');
   const ir = join(dir, 'ir');
   lockViejo(ruta, 999999);
-  const tareas = [contender('sync', ruta, ir, 20), contender('async', ruta, ir, 20), contender('sync', ruta, ir, 20)];
-  await dormir(300);
+  const inicios = join(dir, 'inicios');
+  mkdirSync(inicios);
+  const tareas = [contender('sync', ruta, ir, 20, { inicios, total: 3 }), contender('async', ruta, ir, 20, { inicios, total: 3 }), contender('sync', ruta, ir, 20, { inicios, total: 3 })];
   writeFileSync(ir, '');
   const r = await Promise.all(tareas);
   assert.deepEqual(r.map((x) => x.colisiones), [0, 0, 0]);
   assert.ok(r.every((x) => x.ok));
-  assert.deepEqual(readdirSync(dir).sort(), ['ir']);
+  assert.deepEqual(readdirSync(dir).sort(), ['inicios', 'ir']);
 }));
 
 test('anexarLinea from two processes keeps every line whole', () => conTemp(async (dir) => {
@@ -236,7 +252,7 @@ test('anexarLinea from two processes keeps every line whole', () => conTemp(asyn
 
 test('acquiring a path this process already holds throws at once (nested, mixed)', () => conTemp(async (dir) => {
   const ruta = join(dir, 'n.json');
-  const t0 = Date.now();
+  // Waiting instead of detecting re-entry would end in 'Lock busy', so the messages prove it throws at once.
   await conBloqueo(ruta, async () => {
     await assert.rejects(conBloqueo(ruta, () => 1), /Lock already held by this process: n\.json/);
     assert.throws(() => conBloqueoSync(ruta, () => 1), /Lock already held by this process: n\.json/);
@@ -244,7 +260,6 @@ test('acquiring a path this process already holds throws at once (nested, mixed)
   conBloqueoSync(ruta, () => {
     assert.throws(() => conBloqueoSync(ruta, () => 1), /Lock already held by this process/);
   });
-  assert.ok(Date.now() - t0 < 1000);
   assert.equal(existsSync(`${ruta}.lock`), false);
   assert.equal(conBloqueoSync(ruta, () => 'libre'), 'libre');
 }));

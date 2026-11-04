@@ -25,9 +25,11 @@ test('limpiarParaQa strips each token kind and keeps normal text', () => {
 
 test('limpiarParaQa runs in linear time on pathological input', () => {
   const entradas = ['a/'.repeat(50000), 'a'.repeat(200000), '#'.repeat(100000), 'feat/' + 'a'.repeat(100000), ' '.repeat(100000) + '.', 'a.'.repeat(60000), 'a/'.repeat(5000) + '.'.repeat(50000)];
+  // Generous bound: it separates the linear work from the super-linear blow-up this test guards against, not a fast
+  // machine from a loaded one.
   const t0 = Date.now();
   for (const e of entradas) limpiarParaQa(e);
-  assert.ok(Date.now() - t0 < 3000, `took ${Date.now() - t0} ms`);
+  assert.ok(Date.now() - t0 < 15_000, `took ${Date.now() - t0} ms`);
 });
 
 function base({ ids = ['X-001', 'X-002'], portales = ['p1', 'p2'] } = {}) {

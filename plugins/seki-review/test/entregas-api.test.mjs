@@ -8,13 +8,15 @@ import { escribirJson, leerJson, rutaAjustes, rutaInstantanea, rutaVisita } from
 import { proyecto as cargarProyecto } from '../mcp/lib/config.mjs';
 import { leerEventos, registrarEventos } from '../mcp/lib/eventos.mjs';
 import { derivarEntregas } from '../mcp/lib/recolectar.mjs';
-import { iniciarServidor } from '../mcp/lib/servidor-web.mjs';
+import { detenerServidores, iniciarServidor } from '../mcp/lib/servidor-web.mjs';
 import { construirHtml } from '../mcp/lib/tablero.mjs';
 import { compactarAjustes } from '../mcp/lib/tablero-entregas.mjs';
 import herramienta from '../mcp/tools/entregas.mjs';
 import { falsoGhRutas, limpiarGhRutas } from './util/gh-rutas.mjs';
 
 after(limpiarGhRutas);
+// A failed test may leave a server that /api/ceder refuses to close (refresh in progress).
+after(detenerServidores);
 const temporales = [];
 const temporal = (prefijo) => {
   const dir = mkdtempSync(join(tmpdir(), prefijo));
@@ -280,9 +282,10 @@ test('a refresh that was already running does not undo a join made meanwhile', a
     pulls('main', [rest(1, 'Payment limits', 'feat/alpha'), rest(2, 'Report export', 'feat/zeta')]),
     pulls('testing', []),
   ]);
-  // Every gh call waits, so the second refresh is still querying when the join arrives.
+  // While the hold file exists every gh call waits, so the second refresh is still querying when the join arrives.
+  const retener = join(dir, 'retener');
   const lento = join(dir, 'gh-lento');
-  writeFileSync(lento, `#!/bin/sh\nif [ -f "${join(dir, 'lento')}" ]; then sleep 0.3; fi\nexec "${gh.ruta}" "$@"\n`);
+  writeFileSync(lento, `#!/bin/sh\nwhile [ -f "${retener}" ]; do sleep 0.02; done\nexec "${gh.ruta}" "$@"\n`);
   chmodSync(lento, 0o755);
   const previoGh = process.env.SEKI_GH;
   process.env.SEKI_GH = lento;
@@ -291,16 +294,18 @@ test('a refresh that was already running does not undo a join made meanwhile', a
   const { url } = await iniciarServidor({ proyecto: clave, puerto: 0, abrir: false });
   const u = new URL(url);
   const llamar = (ruta, cuerpo) => fetch(`${u.origin}${ruta}`, { method: cuerpo === undefined ? 'GET' : 'POST', headers: { 'x-seki-token': u.searchParams.get('t'), 'content-type': 'application/json' }, body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo) });
-  t.after(() => llamar('/api/ceder', {}));
-  const terminar = async () => { for (let i = 0; i < 200; i++) { if (!(await (await llamar('/api/estado')).json()).refrescando) return; await new Promise((ok) => setTimeout(ok, 50)); } throw new Error('refresh did not finish'); };
+  t.after(() => { rmSync(retener, { force: true }); return llamar('/api/ceder', {}); });
+  // Generous deadline: it only turns a refresh that never ends into a failure instead of a hang.
+  const terminar = async () => { const fin = Date.now() + 30_000; while (Date.now() < fin) { if (!(await (await llamar('/api/estado')).json()).refrescando) return; await new Promise((ok) => setTimeout(ok, 50)); } throw new Error('refresh did not finish'); };
   await llamar('/api/refrescar', {});
   await terminar();
   assert.equal((await (await llamar('/api/entregas')).json()).entregas.length, 2);
-  writeFileSync(join(dir, 'lento'), '');
+  writeFileSync(retener, '');
   await llamar('/api/refrescar', {});
   const r = await llamar('/api/entregas/ajuste', { tipo: 'unir', prs: ['a#1', 'a#2'] });
   assert.equal(r.status, 200);
   assert.equal((await (await llamar('/api/estado')).json()).refrescando, true);
+  rmSync(retener);
   await terminar();
   const final = leerJson(join(salida, 'datos', 'entregas.json'));
   assert.deepEqual(final.entregas.map((x) => [...x.prs].sort()), [['a#1', 'a#2']]);
