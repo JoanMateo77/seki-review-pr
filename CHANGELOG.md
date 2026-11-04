@@ -4,11 +4,9 @@ Each version has its `seki-review-vX.Y.Z` tag on the commit that releases it.
 
 ## seki-review
 
-### Unreleased
+### 0.21.0 (2026-11-04)
 - The command is now `/seki-review:review-prs` (skill `review-prs`, formerly `revisar-prs`).
 - Code, dashboard, AI prompts and docs are in English; the AI answers in English.
-
-### 0.21.0 (2026-11-04)
 - Deliveries: PRs of the same change across repos and environments are grouped into one delivery (by shared branch key, finding ID or cross-reference). Each delivery shows its stage (pending merge to testing, waiting for QA, QA failed, ready for production, in production, closed), the next action and alerts (stalled, merge order between repos).
 - The default dashboard tab is now "Deliveries". Cards can be joined, split, renamed and closed; the adjustments are kept in the local data folder.
 - "Since last visit" banner: lists the merges, closures and stage changes recorded since the dashboard was last opened.
