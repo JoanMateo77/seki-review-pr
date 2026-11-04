@@ -40,7 +40,7 @@ export function diffsDeFoto(p, foto) {
   for (const pr of foto.prs) {
     if (pr.ambiente === 'inactiva') continue;
     const d = leerJson(rutaDiff(p.salida, pr.repo, pr.numero));
-    if (d?.headSha === pr.headSha) salida[pr.id] = diffParaTablero(d.archivos);
+    if (d && d.headSha === pr.headSha) salida[pr.id] = diffParaTablero(d.archivos);
   }
   return salida;
 }

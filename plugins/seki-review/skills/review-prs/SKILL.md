@@ -10,6 +10,7 @@ Tools of the `seki-review` MCP server:
 | Tool | Purpose |
 |---|---|
 | `prs_pendientes` | Snapshot of open PRs grouped by action, with real status against testing |
+| `entregas` | Deliveries (related PRs across repos and environments) by stage with the next action; `desde: "ultima-visita"` adds the events since the last dashboard visit. Reads the last refresh, no GitHub call |
 | `pr_detalle` | Description, commits and trimmed diff of a PR, to understand it |
 | `pr_verificaciones` | Fixed rules over the added lines of a PR, or of a local branch before opening it (`dir` + `base`) |
 | `pr_guardar_explicacion` | Saves a PR's explanation tied to its current commit |
@@ -81,6 +82,8 @@ reviewer. The served dashboard lives as long as a Claude Code session is open; i
 
 **"what was merged" / "what changed":** `prs_pendientes` compares with the previous snapshot and opens its output with
 "Detected changes": merged (and into which branch), closed without merging, new, and those that changed group.
+For the state per delivery (what each one needs next), call `entregas` with `desde: "ultima-visita"`; it does not
+query GitHub, so refresh first if the data may be stale.
 
 ## How to write the explanation
 

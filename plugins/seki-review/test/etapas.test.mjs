@@ -137,3 +137,21 @@ test('estancada in listo_produccion measures from the later of the QA result and
   assert.ok(alertasDePista(pista(...prs), mapa(prs), args({ resultado: 'ok', ts: '2026-11-02T00:00:00Z' })).some((x) => x.tipo === 'estancada'));
   assert.ok(!alertasDePista(pista(...prs), mapa(prs), args({ resultado: 'ok', ts: '2026-11-09T00:00:00Z' })).some((x) => x.tipo === 'estancada'));
 });
+
+test('a closure covers the production PRs it saw: it survives a key change and a new production PR reopens it', () => {
+  const prod = pr('back', 'Back', 'prod', 'MERGED', reciente);
+  const prueba = pr('back', 'Back', 'pruebas', 'MERGED', reciente);
+  const cierre = { id: 'c', ts: reciente, tipo: 'entrega_cerrada', entrega: 'clave-vieja', prs: [prod.id, prueba.id] };
+  const base = { prsPorId: mapa(prod, prueba), cfgRepos, cfg, eventos: [cierre], ahora: AHORA };
+  assert.equal(construirEntregas({ ...base, entregas: [{ clave: 'clave-nueva', prs: [prod.id, prueba.id] }] })[0].etapa, 'cerrada');
+  // A testing PR joining does not reopen it; a production PR does.
+  const otraPrueba = pr('back', 'Back', 'pruebas', 'MERGED', reciente);
+  const conPrueba = construirEntregas({ ...base, prsPorId: mapa(prod, prueba, otraPrueba), entregas: [{ clave: 'x', prs: [prod.id, prueba.id, otraPrueba.id] }] });
+  assert.equal(conPrueba[0].etapa, 'cerrada');
+  const otraProd = pr('back', 'Back', 'prod', 'MERGED', reciente);
+  const conProd = construirEntregas({ ...base, prsPorId: mapa(prod, prueba, otraProd), entregas: [{ clave: 'x', prs: [prod.id, prueba.id, otraProd.id] }] });
+  assert.equal(conProd[0].etapa, 'en_produccion');
+  // A closure event without prs (older format) closes nothing.
+  assert.equal(construirEntregas({ ...base, eventos: [{ ...cierre, prs: undefined, entrega: 'x' }], entregas: [{ clave: 'x', prs: [prod.id, prueba.id] }] })[0].etapa, 'en_produccion');
+  assert.equal(construirEntregas({ ...base, entregas: [{ clave: 'x', prs: [prod.id, prueba.id] }] })[0].ultimoEvento.id, 'c');
+});

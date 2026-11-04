@@ -37,6 +37,10 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <button class="btn-lateral" data-accion="lateral" aria-label="Show or hide the sidebar" aria-pressed="true" title="Sidebar ( [ )"><svg class="i" aria-hidden="true"><use href="#i-lateral"/></svg></button>
     <button class="btn-lateral" data-accion="cola" aria-label="Show or hide the PR queue" aria-pressed="true" title="PR queue ( ] )" style="margin-left:-12px"><svg class="i" aria-hidden="true"><use href="#i-cola"/></svg></button>
     <h1 id="titulo">Seki Review</h1>
+    <div class="rol pestanas" role="group" aria-label="Board">
+      <button type="button" data-pestana="entregas" aria-pressed="true">Deliveries</button>
+      <button type="button" data-pestana="prs" aria-pressed="false">PRs</button>
+    </div>
     <span class="foto" id="foto"></span>
     <label class="buscar">
       <svg class="i" aria-hidden="true"><use href="#i-buscar"/></svg>
@@ -56,6 +60,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
   <main class="cola" id="cola" aria-label="PR queue"></main>
 
   <section class="detalle" id="detalle" aria-label="PR detail"></section>
+
+  <section class="entregas" id="entregas" aria-label="Deliveries" hidden></section>
 </div>
 <input type="file" id="archivoRevision" accept="application/json,.json" hidden>
 

@@ -18,9 +18,11 @@ import { filtrarPrs } from './filtrar.mjs';
 import { costosDelDia, registrarCosto, resumenCostos } from './ia.mjs';
 import { estadoServidor, pedirCeder, tokenDe } from './acceso.mjs';
 import { limpiarCopias } from './copias.mjs';
+import { aplicarAjuste, cerrarEntrega, datosEntregas, marcarVisita } from './tablero-entregas.mjs';
 
 const PUERTO = 4317;
 const MAX_CUERPO = 64 * 1024;
+const MAX_CUERPO_ENTREGAS = 16 * 1024;
 
 const servidores = new Map();
 
@@ -32,6 +34,32 @@ function leerCuerpo(req) {
       if (datos.length > MAX_CUERPO) { falla(new Error('Request body too large')); req.destroy(); }
     });
     req.on('end', () => { try { ok(datos ? JSON.parse(datos) : {}); } catch { falla(new Error('Invalid JSON')); } });
+  });
+}
+
+// Stricter reader for the deliveries endpoints: JSON content type, small cap answered with 413, an object body.
+function leerJsonEstricto(req, max = MAX_CUERPO_ENTREGAS) {
+  const error = (codigo, mensaje) => Object.assign(new Error(mensaje), { codigo });
+  if (!/^application\/json\s*(;|$)/i.test(req.headers['content-type'] ?? '')) return Promise.reject(error(415, 'The body must be application/json'));
+  if (Number(req.headers['content-length']) > max) return Promise.reject(error(413, 'Request body too large'));
+  return new Promise((ok, falla) => {
+    const trozos = [];
+    let largo = 0;
+    let excedido = false;
+    req.on('data', (d) => {
+      if (excedido) return;
+      largo += d.length;
+      if (largo > max) { excedido = true; return falla(error(413, 'Request body too large')); }
+      trozos.push(d);
+    });
+    req.on('end', () => {
+      if (excedido) return;
+      let v;
+      try { v = JSON.parse(Buffer.concat(trozos).toString('utf8') || '{}'); } catch { return falla(error(400, 'Invalid JSON')); }
+      if (!v || typeof v !== 'object' || Array.isArray(v)) return falla(error(400, 'The body must be a JSON object'));
+      ok(v);
+    });
+    req.on('error', falla);
   });
 }
 
@@ -128,6 +156,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
     }
 
     if (!url.pathname.startsWith('/api/')) return responder(res, 404, { error: 'Not found' });
+    if (!req.headers['x-seki-token']) return responder(res, 401, { error: 'Missing token' });
     if (req.headers['x-seki-token'] !== token) return responder(res, 403, { error: 'Invalid token' });
 
     const prDeFoto = (id) => {
@@ -223,6 +252,20 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
           return responder(res, 202, { encolado: true });
         }
         return responder(res, 404, { error: 'Not found' });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/entregas') {
+        const datos = datosEntregas(p);
+        if (!datos) return responder(res, 503, { error: 'No deliveries yet: refresh the state first.' });
+        return responder(res, 200, datos);
+      }
+      if (req.method === 'POST' && url.pathname === '/api/entregas/ajuste') return responder(res, 200, await aplicarAjuste(p, await leerJsonEstricto(req)));
+      if (req.method === 'POST' && url.pathname === '/api/entregas/cerrar') {
+        const { clave } = await leerJsonEstricto(req);
+        return responder(res, 200, await cerrarEntrega(p, clave));
+      }
+      if (req.method === 'POST' && url.pathname === '/api/visita') {
+        await leerJsonEstricto(req);
+        return responder(res, 200, marcarVisita(p));
       }
       if (req.method === 'GET' && url.pathname === '/api/foto') return responder(res, 200, fotoConExplicaciones(p));
       if (req.method === 'GET' && url.pathname === '/api/diff') {

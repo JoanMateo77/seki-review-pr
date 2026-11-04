@@ -214,7 +214,7 @@ async function sondear() {
     estado.avances = e.avances ?? {};
     estado.versionServidor = e.version ?? 'an older version';
     const termino = e.trabajos.some((t) => t.estado === 'terminado' && previo.get(t.id) !== 'terminado') || (eraRefresco && !e.refrescando);
-    if (termino) FOTO = await api('/api/foto');
+    if (termino) { FOTO = await api('/api/foto'); recargarEntregas(); }
     // If the user is typing in the detail, do not repaint: they would lose focus and half-written text.
     pintarTodo({ detalle: !$('detalle').contains(document.activeElement) });
     const activo = e.refrescando || e.trabajos.some((t) => t.estado === 'en_cola' || t.estado === 'en_curso');

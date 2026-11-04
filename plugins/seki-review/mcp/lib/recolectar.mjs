@@ -104,8 +104,9 @@ function accionSugerida(pr) {
   return pr.gemela?.estado === 'OPEN' ? 'pruebas_abierta' : 'sin_pruebas';
 }
 
-// Groups the snapshot into deliveries, records merge/close events and writes entregas.json.
-async function derivarEntregas(p, foto) {
+// Groups the snapshot into deliveries, records merge/close events and writes entregas.json. Does not call GitHub:
+// the dashboard reuses it to regroup after a manual adjustment.
+export async function derivarEntregas(p, foto) {
   const ajustes = { unir: [], separar: [], titulo: {}, ...(leerJson(rutaAjustes(p.salida), null) ?? {}) };
   const bases = Object.values(p.repos).flatMap((r) => r.lineas.flatMap((l) => [l.prod, l.pruebas])).filter((b) => typeof b === 'string');
   const cfg = { sufijosRama: p.entregas.sufijosRama, patronId: p.entregas.patronId, maxPorSenal: p.entregas.maxPorSenal, bases, owner: p.owner };
@@ -114,7 +115,9 @@ async function derivarEntregas(p, foto) {
   const entregas = agrupar([...prsPorId.values()], cfg, ajustes);
   const { todos } = await registrarEventos(p, eventosDe(foto, entregas));
   const construidas = construirEntregas({ entregas, prsPorId, cfgRepos: p.repos, cfg: p.entregas, eventos: todos, ahora: new Date() });
-  escribirJson(rutaEntregas(p.salida), { generado: new Date().toISOString(), entregas: construidas });
+  const salida = { generado: new Date().toISOString(), entregas: construidas };
+  escribirJson(rutaEntregas(p.salida), salida);
+  return salida;
 }
 
 export async function recolectar({ proyecto: clave, repos, incluirInactivas = true } = {}) {

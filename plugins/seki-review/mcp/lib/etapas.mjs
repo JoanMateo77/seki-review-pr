@@ -120,15 +120,22 @@ export function etapaDeEntrega(pistas) {
 // entregas.json content from grouped deliveries and the events read so far.
 export function construirEntregas({ entregas, prsPorId, cfgRepos, cfg = {}, eventos = [], ahora, qaDe = () => null }) {
   exigirAhora(ahora);
-  const cerradas = new Set(eventos.filter((e) => e.tipo === 'entrega_cerrada').map((e) => e.entrega));
+  // A closure is keyed by the PRs it covered, not by the delivery key (keys change when groups change):
+  // the delivery stays closed while every current production PR was covered; a new one reopens it.
+  const cierres = eventos.filter((e) => e.tipo === 'entrega_cerrada' && Array.isArray(e.prs)).map((e) => new Set(e.prs));
+  const cerrada = (entrega) => {
+    const prod = entrega.prs.filter((id) => prsPorId.get(id)?.ambiente === 'prod');
+    return prod.length > 0 && cierres.some((c) => prod.every((id) => c.has(id)));
+  };
   return entregas.flatMap((entrega) => {
+    const cerradaEntrega = cerrada(entrega);
     const pistas = pistasDe(entrega, prsPorId, cfgRepos).filter((pista) => relevantes(pista, prsPorId).length).map((pista) => {
       const qa = qaDe(entrega, pista) ?? null;
-      const etapa = etapaDePista(pista, prsPorId, { qa, cerrada: cerradas.has(entrega.clave), ahora, cfg });
+      const etapa = etapaDePista(pista, prsPorId, { qa, cerrada: cerradaEntrega, ahora, cfg });
       return { ...pista, etapa, alertas: alertasDePista(pista, prsPorId, { etapa, qa, ahora, cfg, cfgRepos }) };
     });
     const mios = new Set(entrega.prs);
-    const ultimoEvento = eventos.filter((e) => e.pr && mios.has(e.pr)).sort((a, b) => cmp(b.ts, a.ts) || cmp(b.id, a.id))[0] ?? null;
+    const ultimoEvento = eventos.filter((e) => (e.pr && mios.has(e.pr)) || (Array.isArray(e.prs) && e.prs.some((id) => mios.has(id)))).sort((a, b) => cmp(b.ts, a.ts) || cmp(b.id, a.id))[0] ?? null;
     return pistas.length ? [{ ...entrega, pistas, etapa: etapaDeEntrega(pistas), ultimoEvento }] : [];
   });
 }
