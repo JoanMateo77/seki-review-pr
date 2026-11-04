@@ -576,3 +576,10 @@ test('rastreador endpoint reports the pending count with a capped sample and wri
   assert.equal(r.celdas, 2);
   assert.equal((await (await e.llamar('/api/qa/rastreador')).json()).pendientes, 0);
 });
+
+test('explain jobs skip PR ids that are not in the snapshot', async () => {
+  const { soloPrsConocidos } = await import('../mcp/lib/servidor-web.mjs');
+  const validas = new Map([['r#1', {}], ['r#2', {}]]);
+  assert.deepEqual(soloPrsConocidos(['r#1', 'r#9', 'r#2'], validas), ['r#1', 'r#2']);
+  assert.deepEqual(soloPrsConocidos(['x#1'], validas), []);
+});

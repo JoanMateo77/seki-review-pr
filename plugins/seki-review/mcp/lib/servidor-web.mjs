@@ -68,6 +68,9 @@ function decodificarImportacion({ nombre, contenido }) {
   return Buffer.from(contenido, 'base64');
 }
 
+// Explain jobs only for PR ids present in the snapshot; unknown ids are dropped.
+export const soloPrsConocidos = (ids, validas) => ids.filter((x) => validas.has(x));
+
 function opcionesGuia({ claves, desde, explicarFaltantes }) {
   if (claves !== undefined && (!Array.isArray(claves) || claves.length > 500 || claves.some((c) => typeof c !== 'string' || !c || c.length > 300))) throw falloHttp(400, 'claves must be a list of delivery keys');
   if (desde !== undefined && desde !== null && desde !== 'ultimo-corte') throw falloHttp(400, 'desde must be ultimo-corte');
@@ -261,7 +264,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         if (explicarFaltantes && r.pendientes.length) {
           // PRs merged into testing live in `recientes`, not in `prs`.
           const validas = mapaPrs(leerJson(rutaInstantanea(p.salida)));
-          resultado.encolados = cola.encolar(r.pendientes.filter((x) => validas.has(x)).map((x) => ({ id: x, tipo: 'explicar', prId: x, ejecutar: () => explicarConIa(p, validas.get(x)) })));
+          resultado.encolados = cola.encolar(soloPrsConocidos(r.pendientes, validas).map((x) => ({ id: x, tipo: 'explicar', prId: x, ejecutar: () => explicarConIa(p, validas.get(x)) })));
         }
         Object.assign(t, { estado: 'terminado', resultado });
       } catch (e) {

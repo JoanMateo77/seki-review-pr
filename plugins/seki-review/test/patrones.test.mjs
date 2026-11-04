@@ -164,3 +164,19 @@ test('verificar: a config archivos and excluir still select files', () => {
   const archivos = ['a.js', 'vendor/b.js', 'c.css'].map((filename) => ({ filename, status: 'modified', patch: parche('x') }));
   assert.deepEqual(verificar({ repo: 'r', archivos, extra: reglas }).hallazgos.filter((h) => h.regla === 'sel').map((h) => h.archivo), ['a.js']);
 });
+
+test('regex guard falls back to process.cpuUsage when threadCpuUsage is unavailable and keeps AGOTADO semantics', () => {
+  const original = process.threadCpuUsage;
+  const cpuUsage = process.cpuUsage;
+  let llamadas = 0;
+  try {
+    delete process.threadCpuUsage;
+    process.cpuUsage = (...a) => { llamadas++; return cpuUsage.apply(process, a); };
+    assert.equal(probarSeguro(/b/, 'abc'), true);
+    assert.equal(probarSeguro(/(a|aa)+b/, 'a'.repeat(4096), { timeoutMs: 20 }), AGOTADO);
+    assert.ok(llamadas > 0, 'the process-wide meter was read');
+  } finally {
+    process.cpuUsage = cpuUsage;
+    if (original) process.threadCpuUsage = original;
+  }
+});
