@@ -21,3 +21,7 @@ export const rutaRespuesta = (salida, clave) => join(salida, 'respuestas', `${cl
 export const rutaCopia = (p, repo, numero, sufijo = '') => join(p.copias ?? join(p.salida, 'copias'), `${repo}-${numero}${sufijo}`);
 export const rutaBaseline = (salida, repo, sha) => join(salida, 'datos', 'baseline', `${repo}-${sha}.json`);
 export const rutaPropuestas = (salida, repo, numero) => join(salida, 'propuestas', `${repo}-${numero}`);
+export const rutaEventos = (salida) => join(salida, 'datos', 'eventos.jsonl');
+export const rutaEntregas = (salida) => join(salida, 'datos', 'entregas.json');
+export const rutaAjustes = (salida) => join(salida, 'datos', 'ajustes.json');
+export const rutaVisita = (salida) => join(salida, 'datos', 'visita.json');

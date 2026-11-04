@@ -1,11 +1,11 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { falsoGhRutas } from './util/gh-rutas.mjs';
 import { recolectar } from '../mcp/lib/recolectar.mjs';
-import { leerJson, rutaInstantanea } from '../mcp/lib/cache.mjs';
+import { leerJson, rutaEntregas, rutaEventos, rutaInstantanea } from '../mcp/lib/cache.mjs';
 import { proyecto } from '../mcp/lib/config.mjs';
 
 const previo = { config: process.env.SEKI_REVIEW_CONFIG, gh: process.env.SEKI_GH };
@@ -47,6 +47,9 @@ test('a PR merged on the production base within the window appears in recientes,
   ]);
   process.env.SEKI_GH = f.ruta;
   const foto = await recolectar({ proyecto: 't' });
+  const derivadas = leerJson(rutaEntregas(proyecto('t').salida));
+  assert.deepEqual(derivadas.entregas.flatMap((e) => e.prs).sort(), ['a#1', 'a#4']);
+  assert.equal(readFileSync(rutaEventos(proyecto('t').salida), 'utf8').trim().split('\n').length, 2);
   assert.deepEqual(foto.recientes.map((x) => x.id), ['a#4', 'a#1']);
   const r = foto.recientes.find((x) => x.id === 'a#1');
   assert.equal(r.ambiente, 'prod');

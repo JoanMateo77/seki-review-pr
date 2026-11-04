@@ -1,7 +1,7 @@
 // Builds a project's PR snapshot: environment, twins, status against testing and production,
 // fixed checks and suggested action.
 import { clasificarBase, proyecto as cargarProyecto } from './config.mjs';
-import { escribirJson, leerJson, rutaCacheEstados, rutaCacheVerificaciones, rutaExplicacion, rutaInstantanea } from './cache.mjs';
+import { escribirJson, leerJson, rutaAjustes, rutaCacheEstados, rutaEntregas, rutaCacheVerificaciones, rutaExplicacion, rutaInstantanea } from './cache.mjs';
 import { archivosPr, arbolRama, commitsPr, estadoFrentePruebas } from './estado.mjs';
 import { buscarGemela } from './gemelas.mjs';
 import { enParalelo, ghJson } from './proceso.mjs';
@@ -9,6 +9,9 @@ import { verificar } from './verificar.mjs';
 import { reglasDeConfig } from './reglas.mjs';
 import { compararFotos, hayCambios } from './cambios.mjs';
 import { asegurarDiff } from './diffs.mjs';
+import { agrupar } from './entregas.mjs';
+import { construirEntregas } from './etapas.mjs';
+import { eventosDe, leerEventos, registrarEventos } from './eventos.mjs';
 
 const CAMPOS = 'number,title,url,baseRefName,headRefName,createdAt,updatedAt,additions,deletions,changedFiles,isDraft,headRefOid,author,reviewDecision,body';
 
@@ -99,6 +102,19 @@ function accionSugerida(pr) {
   if (e === 'en_pruebas') return 'solo_prod';
   if (e === 'parcial') return 'revisar_diferencias';
   return pr.gemela?.estado === 'OPEN' ? 'pruebas_abierta' : 'sin_pruebas';
+}
+
+// Groups the snapshot into deliveries, records merge/close events and writes entregas.json.
+async function derivarEntregas(p, foto) {
+  const ajustes = { unir: [], separar: [], titulo: {}, ...(leerJson(rutaAjustes(p.salida), null) ?? {}) };
+  const bases = Object.values(p.repos).flatMap((r) => r.lineas.flatMap((l) => [l.prod, l.pruebas])).filter((b) => typeof b === 'string');
+  const cfg = { sufijosRama: p.entregas.sufijosRama, patronId: p.entregas.patronId, maxPorSenal: p.entregas.maxPorSenal, bases, mapaRepos: {} };
+  const prsPorId = new Map();
+  for (const pr of [...foto.prs, ...(foto.recientes ?? [])]) if (!prsPorId.has(pr.id)) prsPorId.set(pr.id, pr);
+  const entregas = agrupar([...prsPorId.values()], cfg, ajustes);
+  await registrarEventos(p, eventosDe(foto, entregas));
+  const construidas = construirEntregas({ entregas, prsPorId, cfgRepos: p.repos, cfg: p.entregas, eventos: leerEventos(p), ahora: new Date() });
+  escribirJson(rutaEntregas(p.salida), { generado: new Date().toISOString(), entregas: construidas });
 }
 
 export async function recolectar({ proyecto: clave, repos, incluirInactivas = true } = {}) {
@@ -266,6 +282,7 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
           portal: linea.portal,
           ambiente: 'pruebas',
           estadoPr: 'MERGED',
+          mergeada: x.mergeada ?? null,
           autor: x.autor,
           creada: x.creada,
           dias: diasDesde(x.creada),
@@ -331,5 +348,10 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
   escribirJson(rutaCacheEstados(p.salida), cacheEstados);
   escribirJson(rutaCacheVerificaciones(p.salida), cacheVerif);
   escribirJson(rutaInstantanea(p.salida), instantanea);
+  try {
+    await derivarEntregas(p, instantanea);
+  } catch (e) {
+    console.error(`[seki-review/entregas] ${e.message}`);
+  }
   return instantanea;
 }
