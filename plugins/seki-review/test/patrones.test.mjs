@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AGOTADO, compilarPatron, coincidencias } from '../mcp/lib/patrones.mjs';
+import { AGOTADO, compilarPatron, coincidencias, probarSeguro } from '../mcp/lib/patrones.mjs';
 import { reglasDeConfig } from '../mcp/lib/reglas.mjs';
 import { verificar } from '../mcp/lib/verificar.mjs';
+import { distintas, ejecuciones } from './util/ejecuciones.mjs';
 
 test('compilarPatron rejects nested quantifiers, long and malformed patterns', () => {
   assert.throws(() => compilarPatron('(a+)+$'), /Invalid pattern/);
@@ -12,11 +13,8 @@ test('compilarPatron rejects nested quantifiers, long and malformed patterns', (
   assert.ok(compilarPatron('\\b[A-Z]-\\d+\\b') instanceof RegExp);
 });
 
-test('coincidencias scans only maxLargo of a 2 MB string quickly', () => {
-  const texto = 'x'.repeat(2 * 1024 * 1024);
-  const t0 = performance.now();
-  const r = coincidencias(/x+/, texto);
-  assert.ok(performance.now() - t0 < 200);
+test('coincidencias scans only maxLargo of a 2 MB string', () => {
+  const r = coincidencias(/x+/, 'x'.repeat(2 * 1024 * 1024));
   assert.equal(r[0].length, 4096);
 });
 
@@ -88,59 +86,75 @@ test('verificar: a g-flag config rule does not alternate across lines', () => {
   assert.equal(h.filter((x) => x.regla === 'g').length, 3);
 });
 
-test('verificar: a backtracking config rule over a 2 MB line stays under 200 ms', () => {
+test('verificar: a backtracking config rule over a 2 MB line runs over 4096 characters only and is cut off', () => {
   const reglas = reglasDeConfig([{ id: 'bt', titulo: 't', patron: '(a|aa)+$', archivos: '\\.js$', mensaje: 'm' }]);
   const linea = `${'a'.repeat(4000)}b${'c'.repeat(2 * 1024 * 1024)}`;
-  const [, avisos] = silenciar(() => {
-    const t0 = performance.now();
-    verificar({ repo: 'r', archivos: [{ filename: 'a.js', status: 'modified', patch: parche(linea) }], extra: reglas });
-    assert.ok(performance.now() - t0 < 200);
-  });
+  const [[, avisos], entradas] = ejecuciones('(a|aa)+$', () => silenciar(() => verificar({ repo: 'r', archivos: [{ filename: 'a.js', status: 'modified', patch: parche(linea) }], extra: reglas })));
+  assert.deepEqual(distintas(entradas), [linea.slice(0, 4096)]);
   assert.equal(avisos.length, 1);
 });
 
+// Three distinct heavy lines: a disabled rule never runs on the second or third one.
 const lineaPesada = `${'a'.repeat(4000)}b${'c'.repeat(1000)}`;
-const dosLineas = parche(`x ${lineaPesada}`, `x ${lineaPesada}`, `x ${lineaPesada}`);
+const pesadas = (prefijo) => [1, 2, 3].map((i) => `x${i} ${prefijo}${lineaPesada}`);
 
 test('verificar: a catastrophic excluir disables the rule after one warning', () => {
   const reglas = reglasDeConfig([{ id: 'ex', titulo: 't', patron: 'x', excluir: '(a|aa)+$', archivos: '\\.js$', mensaje: 'm' }]);
-  const [, avisos] = silenciar(() => {
-    const t0 = performance.now();
-    verificar({ repo: 'r', archivos: [{ filename: 'a.js', status: 'modified', patch: dosLineas }], extra: reglas });
-    assert.ok(performance.now() - t0 < 200);
-  });
+  const lineas = pesadas('');
+  const [[, avisos], entradas] = ejecuciones('(a|aa)+$', () => silenciar(() => verificar({ repo: 'r', archivos: [{ filename: 'a.js', status: 'modified', patch: parche(...lineas) }], extra: reglas })));
+  // The file name is tested first.
+  assert.deepEqual(distintas(entradas), ['a.js', lineas[0].slice(0, 4096)]);
   assert.equal(avisos.length, 1);
 });
 
 test('verificar: a catastrophic soloEnTexto (cuando) disables the rule after one warning', () => {
   const reglas = reglasDeConfig([{ id: 'cu', titulo: 't', patron: '(a|aa)+$', soloEnTexto: true, archivos: '\\.js$', mensaje: 'm' }]);
   reglas[0].patron = /x/;
-  const [, avisos] = silenciar(() => {
-    const t0 = performance.now();
-    verificar({ repo: 'r', archivos: [{ filename: 'a.js', status: 'modified', patch: parche(`x "${lineaPesada}`, `x "${lineaPesada}`, `x "${lineaPesada}`) }], extra: reglas });
-    assert.ok(performance.now() - t0 < 200);
-  });
+  const lineas = pesadas('"');
+  const [[, avisos], entradas] = ejecuciones('(a|aa)+$', () => silenciar(() => verificar({ repo: 'r', archivos: [{ filename: 'a.js', status: 'modified', patch: parche(...lineas) }], extra: reglas })));
+  assert.deepEqual(distintas(entradas), [lineas[0].slice(0, 4096)]);
   assert.equal(avisos.length, 1);
 });
 
-test('coincidencias returns AGOTADO on a catastrophic pattern within its time limit', () => {
-  const t0 = performance.now();
-  assert.equal(coincidencias(/(a|aa)+b/, 'a'.repeat(4096)), AGOTADO);
-  assert.ok(performance.now() - t0 < 200);
+test('coincidencias returns AGOTADO on a catastrophic pattern, cut off at 4096 characters', () => {
+  const [r, entradas] = ejecuciones('(a|aa)+b', () => coincidencias(/(a|aa)+b/, 'a'.repeat(5000)));
+  assert.equal(r, AGOTADO);
+  assert.deepEqual(distintas(entradas), ['a'.repeat(4096)]);
 });
 
 test('verificar: a catastrophic archivos pattern disables the rule after one warning', () => {
   const reglas = reglasDeConfig([{ id: 'ar', titulo: 't', patron: 'x', archivos: '(a|aa)+b', mensaje: 'm' }]);
-  const nombre = `${'a'.repeat(4096)}.js`;
-  const [{ hallazgos }, avisos] = silenciar(() => {
-    const t0 = performance.now();
-    const r = verificar({ repo: 'r', archivos: [nombre, nombre, nombre].map((filename) => ({ filename, status: 'modified', patch: parche('x') })), extra: reglas });
-    assert.ok(performance.now() - t0 < 200);
-    return r;
-  });
+  const nombres = [1, 2, 3].map((i) => `${i}${'a'.repeat(4096)}.js`);
+  const [[{ hallazgos }, avisos], entradas] = ejecuciones('(a|aa)+b', () => silenciar(() => verificar({ repo: 'r', archivos: nombres.map((filename) => ({ filename, status: 'modified', patch: parche('x') })), extra: reglas })));
+  assert.deepEqual(distintas(entradas), [nombres[0].slice(0, 4096)]);
   assert.equal(hallazgos.filter((h) => h.regla === 'ar').length, 0);
   assert.equal(avisos.length, 1);
   assert.match(avisos[0], /^\[seki-review\/reglas\] rule ar disabled/);
+});
+
+// The guard's limit is wall time; the injected CPU meter stands in for a machine where the run was descheduled.
+class PrimeraLenta extends RegExp {
+  constructor(...a) { super(...a); this.ejecuciones = 0; }
+  exec(texto) {
+    if (this.ejecuciones++ === 0) for (;;);
+    return super.exec(texto);
+  }
+}
+
+test('probarSeguro repeats a timed-out run that used little CPU instead of reporting AGOTADO', () => {
+  const re = new PrimeraLenta('b');
+  assert.equal(probarSeguro(re, 'abc', { timeoutMs: 20, cpu: () => 0 }), true);
+  assert.equal(re.ejecuciones, 2);
+});
+
+test('a timed-out run counts for the CPU it used: AGOTADO once the runs used half the limit, or after 20 runs', () => {
+  const lecturas = [0, 0, 0, 0, 0, 10];
+  const [r, entradas] = ejecuciones('(a|aa)+b', () => coincidencias(/(a|aa)+b/, 'a'.repeat(4096), { timeoutMs: 20, cpu: () => lecturas.shift() }));
+  assert.equal(r, AGOTADO);
+  assert.equal(entradas.length, 3);
+  const [r2, entradas2] = ejecuciones('(a|aa)+b', () => probarSeguro(/(a|aa)+b/, 'a'.repeat(4096), { timeoutMs: 5, cpu: () => 0 }));
+  assert.equal(r2, AGOTADO);
+  assert.equal(entradas2.length, 20);
 });
 
 test('verificar: a config archivos and excluir still select files', () => {
