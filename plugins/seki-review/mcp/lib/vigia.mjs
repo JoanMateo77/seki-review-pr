@@ -72,7 +72,9 @@ const sinMilisegundos = (ms) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 
 
 // Probe per repo with one `gh pr list` each. The first bound is the snapshot time (no snapshot: every repo counts as
 // changed); afterwards it is the instant the last successful probe started, so nothing falls between probe and refresh.
-export function crearSondeo({ owner, repos, instantanea, gh, ahora = Date.now }) {
+export const TIMEOUT_SONDEO_MS = 60 * 1000;
+
+export function crearSondeo({ owner, repos, instantanea, gh, ahora = Date.now, timeoutMs = TIMEOUT_SONDEO_MS }) {
   let limite = null;
   let candidato = null;
   return {
@@ -83,7 +85,7 @@ export function crearSondeo({ owner, repos, instantanea, gh, ahora = Date.now })
       if (!cota) return [...repos];
       const iso = sinMilisegundos(Date.parse(cota));
       const resultados = await enParalelo(repos, 4, async (repo) => {
-        const lista = await gh(['pr', 'list', '-R', `${owner}/${repo}`, '--state', 'all', '--search', `updated:>=${iso}`, '--json', 'number,updatedAt', '--limit', '50']);
+        const lista = await gh(['pr', 'list', '-R', `${owner}/${repo}`, '--state', 'all', '--search', `updated:>=${iso}`, '--json', 'number,updatedAt', '--limit', '50'], { timeout: timeoutMs });
         return Array.isArray(lista) && lista.length > 0;
       });
       const cambiados = repos.filter((_, i) => resultados[i]);

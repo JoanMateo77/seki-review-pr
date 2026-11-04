@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { escribirJson, rutaInstantanea } from '../mcp/lib/cache.mjs';
 import { iniciarServidor } from '../mcp/lib/servidor-web.mjs';
+import { ghJson } from '../mcp/lib/proceso.mjs';
 import { crearSondeo, crearVigia } from '../mcp/lib/vigia.mjs';
 
 const MIN = 60 * 1000;
@@ -192,22 +193,21 @@ test('a gh failure for one repo fails the probe', async () => {
 
 // Server: real HTTP with a slow gh double (appends each call to a file, answers an empty list after a delay).
 let n = 0;
-async function servidor({ demoraMs }) {
+async function servidor({ demoraMs, repos = ['r1'], cambiados = [] }) {
   const clave = `vig${++n}`;
   const dir = mkdtempSync(join(tmpdir(), 'seki-vigia-'));
   const salida = join(dir, 'salida');
   mkdirSync(join(salida, 'datos'), { recursive: true });
   const ruta = join(dir, 'proyectos.json');
-  writeFileSync(ruta, JSON.stringify({ [clave]: { owner: 'o', salida, repos: { r1: { lineas: [{ portal: 'P', prod: 'main', pruebas: 'develop' }] } } } }));
+  writeFileSync(ruta, JSON.stringify({ [clave]: { owner: 'o', salida, repos: Object.fromEntries(repos.map((r) => [r, { lineas: [{ portal: 'P', prod: 'main', pruebas: 'develop' }] }])) } }));
   process.env.SEKI_REVIEW_CONFIG = ruta;
-  process.env.SEKI_VIGIA_MS = '60';
   escribirJson(rutaInstantanea(salida), { proyecto: clave, generado: '2026-11-04T09:00:00.000Z', owner: 'o', prs: [], recientes: [] });
   const registro = join(dir, 'llamadas.txt');
   const gh = join(dir, 'gh');
-  writeFileSync(gh, `#!${process.execPath}\nrequire('node:fs').appendFileSync(${JSON.stringify(registro)}, process.argv.slice(2).join(' ') + '\\n');\nsetTimeout(() => { process.stdout.write('[]'); }, ${demoraMs});\n`);
+  writeFileSync(gh, `#!${process.execPath}\nrequire('node:fs').appendFileSync(${JSON.stringify(registro)}, process.argv.slice(2).join(' ') + '\\n');\nconst a = process.argv.slice(2);\nconst cambiado = a.includes('--search') && ${JSON.stringify(cambiados)}.some((r) => a.includes('o/' + r));\nsetTimeout(() => { process.stdout.write(cambiado ? '[{"number":1}]' : '[]'); }, ${demoraMs});\n`);
   chmodSync(gh, 0o755);
   process.env.SEKI_GH = gh;
-  const { url } = await iniciarServidor({ proyecto: clave, puerto: 0, abrir: false });
+  const { url } = await iniciarServidor({ proyecto: clave, puerto: 0, abrir: false, intervaloVigiaMs: 60 });
   const u = new URL(url);
   const token = u.searchParams.get('t');
   const llamar = (ruta, { metodo = 'GET', cabeceras = {} } = {}) => fetch(`${u.origin}${ruta}`, { method: metodo, headers: { 'x-seki-token': token, ...cabeceras } });
@@ -234,4 +234,37 @@ test('server: only the dashboard marker opens the window; ceder is refused while
   const antes = llamadas().length;
   await pausa(400);
   assert.equal(llamadas().length, antes);
+});
+
+test('server: a manual refresh during a watcher partial refresh is followed by a full refresh', async () => {
+  const { llamar, llamadas } = await servidor({ demoraMs: 150, repos: ['r1', 'r2'], cambiados: ['r1'] });
+  const marca = { 'x-seki-tablero': '1' };
+  const pulls = (r) => llamadas().filter((l) => l.includes(`repos/o/${r}/pulls`));
+  await llamar('/api/estado', { cabeceras: marca });
+  // The partial refresh (r1 only) is running when the manual one arrives.
+  await esperar(() => pulls('r1').length > 0);
+  assert.equal(pulls('r2').length, 0);
+  assert.equal((await llamar('/api/refrescar', { metodo: 'POST' })).status, 202);
+  await esperar(() => pulls('r2').length > 0);
+  const e = await (await llamar('/api/estado')).json();
+  assert.equal(typeof e.refrescando, 'boolean');
+  let codigo = 409;
+  const fin = Date.now() + 5000;
+  while (codigo === 409 && Date.now() < fin) { await pausa(30); codigo = (await llamar('/api/ceder', { metodo: 'POST' })).status; }
+  assert.equal(codigo, 200);
+});
+
+test('gh helper: a timeout rejects a hung process and the probe passes its timeout', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'seki-vigia-gh-'));
+  const colgado = join(dir, 'gh');
+  writeFileSync(colgado, `#!${process.execPath}\nsetInterval(() => {}, 1000);\n`);
+  chmodSync(colgado, 0o755);
+  process.env.SEKI_GH = colgado;
+  const inicio = Date.now();
+  await assert.rejects(ghJson(['pr', 'list'], { timeout: 150 }));
+  assert.ok(Date.now() - inicio < 3000);
+  const opciones = [];
+  const sondeo = crearSondeo({ owner: 'o', repos: ['r'], instantanea: () => '2026-11-04T09:00:00Z', gh: async (a, o) => { opciones.push(o); return []; } });
+  await sondeo.sondear();
+  assert.deepEqual(opciones, [{ timeout: 60000 }]);
 });

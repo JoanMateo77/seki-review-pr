@@ -211,7 +211,7 @@ async function sondear() {
     const previo = new Map([...estado.trabajos].map(([k, t]) => [k, t.estado]));
     const eraRefresco = estado.refrescando;
     const fechaPrevia = estado.ultimoRefresco?.fecha;
-    const e = await api('/api/estado', undefined, { 'X-Seki-Tablero': '1' });
+    const e = await api('/api/estado', undefined, document.visibilityState === 'visible' ? { 'X-Seki-Tablero': '1' } : {});
     estado.trabajos = new Map(e.trabajos.map((t) => [t.id, t]));
     estado.refrescando = e.refrescando;
     estado.ultimoRefresco = e.ultimoRefresco;
@@ -240,6 +240,9 @@ async function sondear() {
     sondeo = setTimeout(sondear, 5000);
   }
 }
+
+// A hidden tab stops marking the dashboard as open; coming back to it polls at once.
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && API) sondear(); });
 
 async function accionApi(ruta, cuerpo) {
   try { await api(ruta, cuerpo); } catch (err) { avisar(err.message); }

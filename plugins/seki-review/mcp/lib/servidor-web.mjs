@@ -96,7 +96,7 @@ function vigilar(proyecto, puerto) {
   vigilantes.set(proyecto, reloj);
 }
 
-export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true, soloPuerto = false } = {}) {
+export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true, soloPuerto = false, intervaloVigiaMs = null } = {}) {
   if (servidores.has(proyecto)) {
     const s = servidores.get(proyecto);
     if (abrir) execFile('open', [s.url]);
@@ -124,15 +124,28 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
   let refresco = null;
   let ultimoRefresco = null;
 
+  const lanzar = (repos) => recolectar({ proyecto, repos }).then(
+    (f) => {
+      ultimoRefresco = { ok: true, fecha: f.generado };
+      // Copies of closed PRs or unused for a week are deleted; traceability stays in the comments.
+      limpiarCopias(p, { abiertas: new Set(f.prs.filter((x) => x.estadoPr === 'OPEN').map((x) => x.id)) }).catch(() => {});
+    },
+    (e) => { ultimoRefresco = { ok: false, fecha: new Date().toISOString(), mensaje: e.message.slice(0, 300) }; },
+  );
+  // Single-flight. A full refresh requested while a partial one (the watcher's) runs is chained after it, so the
+  // manual click still yields a full refresh.
+  let refrescoParcial = false;
   const refrescar = (repos) => {
-    refresco ??= recolectar({ proyecto, repos }).then(
-      (f) => {
-        ultimoRefresco = { ok: true, fecha: f.generado };
-        // Copies of closed PRs or unused for a week are deleted; traceability stays in the comments.
-        limpiarCopias(p, { abiertas: new Set(f.prs.filter((x) => x.estadoPr === 'OPEN').map((x) => x.id)) }).catch(() => {});
-      },
-      (e) => { ultimoRefresco = { ok: false, fecha: new Date().toISOString(), mensaje: e.message.slice(0, 300) }; },
-    ).finally(() => { refresco = null; });
+    const completo = !repos?.length;
+    const fijar = (pr) => { const mio = pr.finally(() => { if (refresco === mio) refresco = null; }); refresco = mio; return mio; };
+    if (refresco && refrescoParcial && completo) {
+      refrescoParcial = false;
+      return fijar(refresco.then(() => lanzar()));
+    }
+    if (!refresco) {
+      refrescoParcial = !completo;
+      return fijar(lanzar(repos));
+    }
     return refresco;
   };
 
@@ -146,7 +159,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
     gh: ghJson,
   });
   const vigia = crearVigia({
-    intervaloMs: Number(process.env.SEKI_VIGIA_MS) || p.vigia.intervaloSeg * 1000,
+    intervaloMs: intervaloVigiaMs ?? p.vigia.intervaloSeg * 1000,
     tableroAbierto: () => Date.now() - ultimoTablero < VENTANA_TABLERO_MS,
     sondear: async () => (refresco ? [] : sondeo.sondear()),
     refrescar: async (repos) => {
