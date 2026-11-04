@@ -39,31 +39,50 @@ export function esfuerzoPorTamano(lineas, archivos) {
   return Math.min(5, base + (archivos > 20 ? 1 : 0));
 }
 
-async function prsDeBase(owner, repo, base, cache, ventanaDias) {
+const aEntrada = (x) => ({
+  number: x.number,
+  title: x.title,
+  state: x.merged_at ? 'MERGED' : x.state.toUpperCase(),
+  autor: x.user?.login,
+  url: x.html_url,
+  creada: x.created_at,
+  mergeada: x.merged_at,
+  cerrada: x.closed_at ?? null,
+  baseSha: x.base.sha,
+  headSha: x.head.sha,
+  rama: x.head.ref,
+  body: x.body,
+});
+
+async function prsDeBase(owner, repo, base, cache) {
   const clave = `${repo}@${base}`;
   if (!cache.has(clave)) {
     cache.set(clave, (async () => {
       // REST rather than GraphQL: `gh pr list --state all` returns 504 on repos with many PRs.
       const todas = [];
-      for (let pagina = 1; pagina <= PAGINAS_MAXIMAS; pagina++) {
+      for (let pagina = 1; pagina <= PAGINAS_GEMELAS; pagina++) {
         const lote = await ghJson(['api', `repos/${owner}/${repo}/pulls?base=${encodeURIComponent(base)}&state=all&sort=created&direction=desc&per_page=${POR_PAGINA}&page=${pagina}`]);
-        todas.push(...lote.map((x) => ({
-          number: x.number,
-          title: x.title,
-          state: x.merged_at ? 'MERGED' : x.state.toUpperCase(),
-          autor: x.user?.login,
-          url: x.html_url,
-          creada: x.created_at,
-          mergeada: x.merged_at,
-          cerrada: x.closed_at ?? null,
-          baseSha: x.base.sha,
-          headSha: x.head.sha,
-          rama: x.head.ref,
-          body: x.body,
-        })));
+        todas.push(...lote.map(aEntrada));
         if (lote.length < POR_PAGINA) break;
-        // Past the gemelas pages, keep going only while the window still reaches the oldest PR read.
-        if (pagina >= PAGINAS_GEMELAS && !(lote.at(-1)?.created_at && diasDesde(lote.at(-1).created_at) <= ventanaDias)) break;
+      }
+      return todas;
+    })());
+  }
+  return cache.get(clave);
+}
+
+// Closed PRs by update date, so a PR created long ago and merged recently is not missed.
+async function recientesDeBase(owner, repo, base, cache, ventanaDias) {
+  const clave = `${repo}@${base}#rec`;
+  if (!cache.has(clave)) {
+    cache.set(clave, (async () => {
+      const todas = [];
+      for (let pagina = 1; pagina <= PAGINAS_MAXIMAS; pagina++) {
+        const lote = await ghJson(['api', `repos/${owner}/${repo}/pulls?base=${encodeURIComponent(base)}&state=closed&sort=updated&direction=desc&per_page=${POR_PAGINA}&page=${pagina}`]);
+        todas.push(...lote.map(aEntrada));
+        if (lote.length < POR_PAGINA) break;
+        const ultima = lote.at(-1)?.updated_at;
+        if (!ultima || diasDesde(ultima) > ventanaDias) break;
       }
       return todas;
     })());
@@ -126,7 +145,7 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
   async function hermanas(repo, linea, titulo) {
     const otras = p.repos[repo].lineas.filter((l) => l.prod !== linea.prod);
     return Promise.all(otras.map(async (l) => {
-      const g = buscarGemela(titulo, await prsDeBase(p.owner, repo, l.prod, listas, ventana));
+      const g = buscarGemela(titulo, await prsDeBase(p.owner, repo, l.prod, listas));
       return g ? { portal: l.portal, numero: g.numero, estado: g.estado } : { portal: l.portal, numero: null };
     }));
   }
@@ -188,16 +207,16 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
 
     if (linea.ambiente === 'prod' || linea.ambiente === 'pruebas') {
       const otra = linea.ambiente === 'prod' ? linea.pruebas : linea.prod;
-      const candidatas = (await prsDeBase(p.owner, repo, otra, listas, ventana)).filter((c) => c.number !== pr.number);
+      const candidatas = (otra ? await prsDeBase(p.owner, repo, otra, listas) : []).filter((c) => c.number !== pr.number);
       item.gemela = buscarGemela(pr.title, candidatas);
       if (cfgRepo.lineas.length > 1) item.hermanas = await hermanas(repo, linea, pr.title);
     }
 
-    if (linea.ambiente === 'prod') {
+    if (linea.ambiente === 'prod' && linea.pruebas) {
       item.estadoPruebas = await estadoEn({ repo, numero: pr.number, headSha: pr.headRefOid, origen: linea.prod, destino: linea.pruebas });
     }
 
-    if (linea.ambiente === 'pruebas' && !SOLO_PRUEBAS.test(pr.title) && (!item.gemela || item.gemela.estado === 'CLOSED')) {
+    if (linea.ambiente === 'pruebas' && linea.prod && !SOLO_PRUEBAS.test(pr.title) && (!item.gemela || item.gemela.estado === 'CLOSED')) {
       item.estadoProd = await estadoEn({ repo, numero: pr.number, headSha: pr.headRefOid, origen: linea.pruebas, destino: linea.prod });
       item.cubiertaPor = ausenteEnProd(item.estadoProd) ? await cubiertaPor(repo, linea, pr.number) : null;
       item.sinProd = ausenteEnProd(item.estadoProd) && !item.cubiertaPor;
@@ -219,10 +238,11 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
   const huerfanas = [];
   for (const repo of nombres) {
     for (const linea of p.repos[repo].lineas) {
-      const mergeadas = (await prsDeBase(p.owner, repo, linea.pruebas, listas, ventana)).filter((x) =>
+      if (!linea.pruebas || !linea.prod) continue;
+      const mergeadas = (await prsDeBase(p.owner, repo, linea.pruebas, listas)).filter((x) =>
         x.state === 'MERGED' && diasDesde(x.mergeada) <= (p.dias_huerfanas ?? DIAS_HUERFANAS) &&
         (!login || x.autor === login) && !SOLO_PRUEBAS.test(x.title));
-      const prod = await prsDeBase(p.owner, repo, linea.prod, listas, ventana);
+      const prod = await prsDeBase(p.owner, repo, linea.prod, listas);
       const candidatas = mergeadas.filter((x) => {
         const g = buscarGemela(x.title, prod);
         return !g || g.estado === 'CLOSED';
@@ -272,10 +292,10 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
   const recientes = [];
   for (const repo of nombres) {
     const cfgRepo = p.repos[repo];
-    const bases = new Set(cfgRepo.lineas.flatMap((l) => [l.pruebas, l.prod]));
+    const bases = new Set(cfgRepo.lineas.flatMap((l) => [l.pruebas, l.prod]).filter((b) => typeof b === 'string'));
     for (const base of bases) {
       const linea = clasificarBase(cfgRepo, base);
-      for (const x of await prsDeBase(p.owner, repo, base, listas, ventana)) {
+      for (const x of await recientesDeBase(p.owner, repo, base, listas, ventana)) {
         const id = `${repo}#${x.number}`;
         const fecha = x.mergeada ?? x.cerrada;
         if (x.state === 'OPEN' || !fecha || diasDesde(fecha) > ventana || (login && x.autor !== login) || enLista.has(id)) continue;

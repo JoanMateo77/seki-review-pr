@@ -26,7 +26,8 @@ function entorno(extra = {}) {
   return salida;
 }
 
-const pulls = (repo, base, lista, pagina = 1) => ({ patron: `^api repos/o/${repo}/pulls\\?base=${base}&state=all&sort=created&direction=desc&per_page=100&page=${pagina}$`, json: lista });
+// One list answers both the twin listing (by creation) and the recent listing (by update).
+const pulls = (repo, base, lista, pagina = 1) => ({ patron: `^api repos/o/${repo}/pulls\\?base=${base}&state=(all&sort=created|closed&sort=updated)&direction=desc&per_page=100&page=${pagina}$`, json: lista });
 const rest = (n, titulo, usuario, extra) => ({
   number: n, title: titulo, state: 'closed', user: { login: usuario }, html_url: `u/${n}`, created_at: hace(40),
   merged_at: null, closed_at: null, base: { sha: 'b' }, head: { sha: 'h', ref: `rama-${n}` }, body: null, ...extra,
@@ -103,28 +104,57 @@ test('partial refresh without a readable previous snapshot behaves as a full ref
   assert.equal(foto.cambios, null);
 });
 
-test('pagination continues past page 3 only while the window reaches the oldest entry, up to 10 pages', async () => {
+test('the twin listing stops at 3 pages; the recent listing stops when a page ends outside the window', async () => {
   entorno();
-  const pagina = (n, dias) => Array.from({ length: 100 }, (_, i) => rest(n * 1000 + i, `t${n}-${i}`, 'yo', { created_at: hace(dias) }));
+  const pagina = (n, dias) => Array.from({ length: 100 }, (_, i) => rest(n * 1000 + i, `t${n}-${i}`, 'yo', { updated_at: hace(dias) }));
   const f = falsoGhRutas([
     { patron: '^api user$', json: { login: 'yo' } }, { patron: '^pr list ', json: [] },
-    pulls('a', 'main', pagina(1, 3), 1), pulls('a', 'main', pagina(2, 3), 2), pulls('a', 'main', pagina(3, 3), 3),
-    ...Array.from({ length: 7 }, (_, i) => pulls('a', 'main', pagina(i + 4, 3), i + 4)),
+    ...Array.from({ length: 10 }, (_, i) => pulls('a', 'main', pagina(i + 1, 3), i + 1)),
     pulls('a', 'testing', []), pulls('b', 'main', []), pulls('b', 'testing', []),
   ]);
   process.env.SEKI_GH = f.ruta;
   await recolectar({ proyecto: 't' });
-  const paginas = (b) => f.llamadas().filter((c) => c[0] === 'api' && c[1]?.startsWith(`repos/o/a/pulls?base=${b}&`)).length;
-  assert.equal(paginas('main'), 10);
+  const contar = (f2, tipo) => f2.llamadas().filter((c) => c[1]?.startsWith('repos/o/a/pulls?base=main&') && c[1].includes(tipo)).length;
+  assert.equal(contar(f, 'state=all'), 3);
+  assert.equal(contar(f, 'state=closed'), 10);
 
+  entorno();
   const g = falsoGhRutas([
     { patron: '^api user$', json: { login: 'yo' } }, { patron: '^pr list ', json: [] },
-    pulls('a', 'main', pagina(1, 3), 1), pulls('a', 'main', pagina(2, 3), 2), pulls('a', 'main', pagina(3, 90), 3),
+    pulls('a', 'main', pagina(1, 90), 1), pulls('a', 'main', pagina(2, 3), 2), pulls('a', 'main', pagina(3, 3), 3),
     pulls('a', 'testing', []), pulls('b', 'main', []), pulls('b', 'testing', []),
   ]);
   process.env.SEKI_GH = g.ruta;
   await recolectar({ proyecto: 't' });
-  assert.equal(g.llamadas().filter((c) => c[1]?.startsWith('repos/o/a/pulls?base=main&')).length, 3);
+  assert.equal(contar(g, 'state=closed'), 1);
+  assert.ok(!g.llamadas().some((c) => c[1]?.includes('state=closed') && c[1].includes('page=2')));
+});
+
+test('a PR created long ago and merged recently appears in recientes', async () => {
+  entorno();
+  process.env.SEKI_GH = falsoGhRutas([
+    { patron: '^api user$', json: { login: 'yo' } }, { patron: '^pr list ', json: [] },
+    pulls('a', 'main', [rest(7, 'slow', 'yo', { created_at: hace(200), merged_at: hace(2), closed_at: hace(2), updated_at: hace(2) })]),
+    pulls('a', 'testing', []), pulls('b', 'main', []), pulls('b', 'testing', []),
+  ]).ruta;
+  assert.deepEqual((await recolectar({ proyecto: 't' })).recientes.map((x) => x.id), ['a#7']);
+});
+
+test('a line with a single base does not request base=undefined', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'seki-rec-'));
+  const salida = join(dir, 'salida');
+  mkdirSync(join(salida, 'datos'), { recursive: true });
+  const ruta = join(dir, 'proyectos.json');
+  writeFileSync(ruta, JSON.stringify({ t: { owner: 'o', autor: 'yo', salida, repos: { a: { lineas: [{ portal: 'P', prod: 'main' }] } } } }));
+  process.env.SEKI_REVIEW_CONFIG = ruta;
+  const f = falsoGhRutas([
+    { patron: '^api user$', json: { login: 'yo' } }, { patron: '^pr list ', json: [] },
+    pulls('a', 'main', [rest(1, 't', 'yo', { merged_at: hace(1), closed_at: hace(1) })]),
+  ]);
+  process.env.SEKI_GH = f.ruta;
+  const foto = await recolectar({ proyecto: 't' });
+  assert.deepEqual(foto.recientes.map((x) => x.id), ['a#1']);
+  assert.ok(!f.llamadas().some((c) => c.join(' ').includes('undefined')));
 });
 
 test('proyecto() merges entregas and vigia defaults under user values and clamps the interval', () => {
