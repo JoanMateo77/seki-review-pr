@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { proyecto } from '../mcp/lib/config.mjs';
@@ -9,12 +9,16 @@ import { verificar } from '../mcp/lib/verificar.mjs';
 import { sistemaDe } from '../mcp/lib/ia.mjs';
 
 const previo = { config: process.env.SEKI_REVIEW_CONFIG, proyecto: process.env.SEKI_PROYECTO };
+const temporales = [];
 afterEach(() => {
+  for (const d of temporales.splice(0)) rmSync(d, { recursive: true, force: true });
   for (const [k, v] of [['SEKI_REVIEW_CONFIG', previo.config], ['SEKI_PROYECTO', previo.proyecto]]) v === undefined ? delete process.env[k] : (process.env[k] = v);
 });
 
 function config(obj) {
-  const ruta = join(mkdtempSync(join(tmpdir(), 'seki-cfg-')), 'proyectos.json');
+  const dir = mkdtempSync(join(tmpdir(), 'seki-cfg-'));
+  temporales.push(dir);
+  const ruta = join(dir, 'proyectos.json');
   writeFileSync(ruta, JSON.stringify(obj));
   process.env.SEKI_REVIEW_CONFIG = ruta;
 }
@@ -45,4 +49,34 @@ test('a project-specific rule applies with soloEnTexto, exclusions and repos', (
 test('the system prompt includes the project context only if it exists', () => {
   assert.match(sistemaDe({ contexto: 'Decir "usuario".' }, 'base'), /# Project context\n\nDecir "usuario"\./);
   assert.doesNotMatch(sistemaDe({}, 'base'), /Project context/);
+});
+
+test('config values of the wrong type fall back to their defaults with one warning per key', () => {
+  config({ x: { salida: '/tmp/x', repos: {}, entregas: { sufijosRama: '-qa', patronId: 7, ventanaDias: 'many', alertaDias: -1, cerrarTrasDias: Infinity, maxPorSenal: 4 }, vigia: { intervaloSeg: '60' } } });
+  const original = console.error;
+  const avisos = [];
+  console.error = (m) => avisos.push(m);
+  let p;
+  try {
+    p = proyecto('x');
+    proyecto('x');
+  } finally {
+    console.error = original;
+  }
+  assert.deepEqual(p.entregas.sufijosRama, ['-pruebas', '-testing', '-staging']);
+  assert.equal(p.entregas.patronId, null);
+  assert.deepEqual([p.entregas.ventanaDias, p.entregas.alertaDias, p.entregas.cerrarTrasDias, p.entregas.maxPorSenal], [30, 5, 7, 4]);
+  assert.equal(p.vigia.intervaloSeg, 300);
+  assert.equal(avisos.length, 6);
+  assert.ok(avisos.every((m) => m.startsWith('[seki-review/config] ')));
+  assert.ok(avisos.some((m) => m.includes('entregas.sufijosRama')));
+  assert.ok(avisos.some((m) => m.includes('vigia.intervaloSeg')));
+});
+
+test('valid config values are kept and the interval is clamped to the minimum', () => {
+  config({ y: { salida: '/tmp/y', repos: {}, entregas: { sufijosRama: ['-qa'], patronId: 'T-\\d+' }, vigia: { intervaloSeg: 30 } } });
+  const p = proyecto('y');
+  assert.deepEqual(p.entregas.sufijosRama, ['-qa']);
+  assert.equal(p.entregas.patronId, 'T-\\d+');
+  assert.equal(p.vigia.intervaloSeg, 120);
 });

@@ -1,6 +1,6 @@
 ---
 name: review-prs
-description: Use when asked to review which PRs are pending promotion to testing or production, to understand or explain a PR (what changes, technologies, why, alternatives, how to test), or to open the local PR review dashboard (Seki Review). With no argument it opens the served dashboard. Optional arguments - "pending", "explain <repo>#<n>", "explain pending", "verify <repo>#<n>", "file" (the Spanish forms "pendientes", "explicar", "verificar", "archivo" are also accepted).
+description: Use when asked to review which PRs are pending promotion to testing or production, to understand or explain a PR (what changes, technologies, why, alternatives, how to test), or to open the local PR review dashboard (Seki Review). With no argument it opens the served dashboard. Optional arguments - "pending", "explain <repo>#<n>", "explain pending", "verify <repo>#<n>", "deliveries", "since-last", "file" (the Spanish forms "pendientes", "explicar", "verificar", "entregas", "desde-ultima", "archivo" are also accepted).
 ---
 
 # Review PRs (seki-review)
@@ -10,6 +10,7 @@ Tools of the `seki-review` MCP server:
 | Tool | Purpose |
 |---|---|
 | `prs_pendientes` | Snapshot of open PRs grouped by action, with real status against testing |
+| `entregas` | Deliveries (related PRs across repos and environments) by stage with the next action; `desde: "ultima-visita"` adds the events since the last dashboard visit. Reads the last refresh, no GitHub call |
 | `pr_detalle` | Description, commits and trimmed diff of a PR, to understand it |
 | `pr_verificaciones` | Fixed rules over the added lines of a PR, or of a local branch before opening it (`dir` + `base`) |
 | `pr_guardar_explicacion` | Saves a PR's explanation tied to its current commit |
@@ -31,6 +32,10 @@ both portals, "another version in testing" and old PRs with conflicts. Do not re
 
 **"verify <repo>#<n>"** or **"verify <path> <base>"** ("verificar"): `pr_verificaciones`; explain each blocking or high finding
 by looking at the line in context and say whether it is real or a false positive. Before opening your own PR, run it on the local branch.
+
+**"deliveries" ("entregas"):** call `entregas` and summarize by stage, starting with what needs action (QA failed, stalled, merge order alerts, ready for production). Do not call GitHub; if the data may be stale, say that the dashboard refresh updates it. In the dashboard the default tab is Deliveries, where cards can be joined, split, renamed and closed.
+
+**"since-last" ("desde-ultima"):** call `entregas` with `desde: "ultima-visita"` and list the events recorded since the "Since last visit" banner was last dismissed (merges, closures, delivery adjustments) before the current state.
 
 **"explain <repo>#<n>" ("explicar"):** `pr_detalle` → read description, commits and diff → review the findings from `pr_verificaciones` → if the diff comes trimmed and it is needed, read the file in the local checkout with a bounded read (grep + range) → `pr_guardar_explicacion` → `tablero_servir`.
 
@@ -79,8 +84,10 @@ before releasing a version or after updating Claude Code.
 reviewer. The served dashboard lives as long as a Claude Code session is open; its link is fixed per machine. With several sessions, the one with the newest version serves it and the others stay on standby: if that one closes, another takes over on the same link and the page reconnects on its own. Outside Claude Code:
 `sh <plugin>/bin/tablero.sh`.
 
-**"what was merged" / "what changed":** `prs_pendientes` compares with the previous snapshot and opens its output with
-"Detected changes": merged (and into which branch), closed without merging, new, and those that changed group.
+**"what was merged" / "what changed":** call `entregas` with `desde: "ultima-visita"` first: it lists the recorded
+merges and closures and the state per delivery (what each one needs next) without querying GitHub, so refresh first
+if the data may be stale. For changes not yet recorded, `prs_pendientes` compares with the previous snapshot and opens
+its output with "Detected changes": merged (and into which branch), closed without merging, new, and those that changed group.
 
 ## How to write the explanation
 

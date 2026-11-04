@@ -28,8 +28,8 @@ test('commitsPr splits title and body and fetches author and date of each commit
 
 // The formatting functions live inside the template; they are extracted as-is to test them.
 async function formato() {
-  const { readFile } = await import('node:fs/promises');
-  const html = await readFile(new URL('../mcp/tablero/plantilla.html', import.meta.url), 'utf8');
+  const { leerPlantilla } = await import('../mcp/lib/tablero.mjs');
+  const html = leerPlantilla();
   const esc = /^const esc = .*$/m.exec(html)[0];
   const inicio = html.indexOf('function md(texto)');
   const fin = html.indexOf('\n}\n', html.indexOf('function mdTexto')) + 3;

@@ -1,0 +1,68 @@
+</style>
+</head>
+<body>
+<!--
+THESIS: a work inbox ordered by the next action, not a wall of cards; rejects big-number tiles and tag soup.
+OWN-WORLD: warm tool neutrals, color only for status (green ready, amber review, red blocks, violet merged), system sans at 13 px, mono only for ids, branches and paths.
+STORY: the author sees what to do today; the reviewer understands a PR, records a decision and exports it as a file.
+FIRST VIEWPORT: sidebar with views and counts, grouped queue with one-line rows, detail with status stack and tabs.
+FORM: three-column inbox (Linear, GitHub) and merge-request-style detail (GitLab, Graphite); Mobbin references.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
+-->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-buscar" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 16 16"><path d="m4 6 4 4 4-4"/></symbol>
+  <symbol id="i-ok" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2"/><path d="m5.4 8.2 1.8 1.8 3.4-3.6"/></symbol>
+  <symbol id="i-alerta" viewBox="0 0 16 16"><path d="M8 2.2 14.3 13H1.7L8 2.2Z"/><path d="M8 6.5v3"/><path d="M8 11.4v.1"/></symbol>
+  <symbol id="i-bloqueo" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></symbol>
+  <symbol id="i-circulo" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2" stroke-dasharray="2.5 2"/></symbol>
+  <symbol id="i-merge" viewBox="0 0 16 16"><circle cx="4.5" cy="3.5" r="1.6"/><circle cx="4.5" cy="12.5" r="1.6"/><circle cx="11.5" cy="8" r="1.6"/><path d="M4.5 5.1v5.8M4.5 5.5c0 2.5 2.5 2.5 5.4 2.5"/></symbol>
+  <symbol id="i-externo" viewBox="0 0 16 16"><path d="M9 3h4v4M13 3 7.5 8.5M11.5 9.5V13h-8.5V4.5H6.5"/></symbol>
+  <symbol id="i-copiar" viewBox="0 0 16 16"><rect x="5" y="5" width="8.5" height="8.5" rx="1.5"/><path d="M3 10.5V3.8C3 3.3 3.3 3 3.8 3h6.7"/></symbol>
+  <symbol id="i-escudo" viewBox="0 0 16 16"><path d="M8 1.8 13 3.7v4c0 3.1-2.1 5.4-5 6.5-2.9-1.1-5-3.4-5-6.5v-4L8 1.8Z"/></symbol>
+  <symbol id="i-reloj" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.8V8l2.2 1.4"/></symbol>
+  <symbol id="i-ojo" viewBox="0 0 16 16"><path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8Z"/><circle cx="8" cy="8" r="1.8"/></symbol>
+  <symbol id="i-flecha" viewBox="0 0 16 16"><path d="M10 3.5 5.5 8l4.5 4.5"/></symbol>
+  <symbol id="i-descargar" viewBox="0 0 16 16"><path d="M8 2.5v8M4.8 7.5 8 10.7l3.2-3.2M3 13.5h10"/></symbol>
+  <symbol id="i-chispa" viewBox="0 0 16 16"><path d="M8 1.8v3M8 11.2v3M1.8 8h3M11.2 8h3M3.6 3.6l2 2M10.4 10.4l2 2M12.4 3.6l-2 2M5.6 10.4l-2 2"/></symbol>
+  <symbol id="i-actualizar" viewBox="0 0 16 16"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></symbol>
+  <symbol id="i-lateral" viewBox="0 0 16 16"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M6 2.5v11"/></symbol>
+  <symbol id="i-cola" viewBox="0 0 16 16"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M6 2.5v11M7.8 5.5h2.4M7.8 8h2.4M7.8 10.5h2.4"/></symbol>
+  <symbol id="i-comentario" viewBox="0 0 16 16"><path d="M2.5 3.5h11v7.5h-6l-3 2.5V11h-2V3.5Z"/></symbol>
+  <symbol id="i-subir" viewBox="0 0 16 16"><path d="M8 10.5v-8M4.8 5.7 8 2.5l3.2 3.2M3 13.5h10"/></symbol>
+</svg>
+
+<div class="app">
+  <header class="barra">
+    <button class="btn-lateral" data-accion="lateral" aria-label="Show or hide the sidebar" aria-pressed="true" title="Sidebar ( [ )"><svg class="i" aria-hidden="true"><use href="#i-lateral"/></svg></button>
+    <button class="btn-lateral" data-accion="cola" aria-label="Show or hide the PR queue" aria-pressed="true" title="PR queue ( ] )" style="margin-left:-12px"><svg class="i" aria-hidden="true"><use href="#i-cola"/></svg></button>
+    <h1 id="titulo">Seki Review</h1>
+    <div class="rol pestanas" role="group" aria-label="Board">
+      <button type="button" data-pestana="entregas" aria-pressed="true">Deliveries</button>
+      <button type="button" data-pestana="prs" aria-pressed="false">PRs</button>
+    </div>
+    <span class="foto" id="foto"></span>
+    <label class="buscar">
+      <svg class="i" aria-hidden="true"><use href="#i-buscar"/></svg>
+      <input type="search" id="buscar" placeholder="Search by number, title, branch or file" aria-label="Search PRs">
+      <kbd>/</kbd>
+    </label>
+    <button type="button" class="btn chico filtrar-ia" id="filtrarIa" data-accion="filtrarIa" hidden aria-label="Filter with AI using the search text" title="AI keeps only the PRs that match what you typed, for example “cybersecurity PRs” (Ctrl + Enter in the search box)"><svg class="i" aria-hidden="true"><use href="#i-chispa"/></svg><span>Filter with AI</span></button>
+    <div class="acciones-barra" id="accionesBarra"></div>
+    <div class="rol" role="group" aria-label="View">
+      <button data-rol="autor" aria-pressed="true">Author</button>
+      <button data-rol="revisor" aria-pressed="false">Reviewer</button>
+    </div>
+  </header>
+
+  <nav class="lateral" id="lateral" aria-label="Views and filters"></nav>
+
+  <main class="cola" id="cola" aria-label="PR queue"></main>
+
+  <section class="detalle" id="detalle" aria-label="PR detail"></section>
+
+  <section class="entregas" id="entregas" aria-label="Deliveries" hidden></section>
+</div>
+<input type="file" id="archivoRevision" accept="application/json,.json" hidden>
+
+<script>/*ANCLAJE*/</script>

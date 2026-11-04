@@ -1,4 +1,4 @@
-import { SEVERIDADES, reglasDelRepo } from './reglas.mjs';
+import { SEVERIDADES, probarRegla, reglasDelRepo } from './reglas.mjs';
 
 // Accepts both `ignore` and the original Spanish `ignorar`, so existing directives keep working.
 const IGNORAR = /seki-review:\s*(?:ignore|ignorar)\s+([\w-]+)/;
@@ -34,20 +34,24 @@ const ATRIBUCION_IA = /co-authored-by:\s*claude|claude-session:|generated with \
 export function verificar({ repo, archivos, commits = [], omitidas = [], extra = [] }) {
   const reglas = reglasDelRepo(repo, omitidas, extra);
   const hallazgos = [];
+  // Config patterns go through probarRegla (time limit); built-in ones are trusted.
+  const prueba = (r, re, texto) => (r.deConfig ? probarRegla(r, re, texto) : re.test(texto));
 
   for (const a of archivos) {
     if (a.status === 'removed') continue;
-    for (const r of reglas.filter((x) => x.archivos.test(a.filename))) {
+    for (const r of reglas.filter((x) => prueba(x, x.archivos, a.filename))) {
       if (r.porArchivo) {
         if (!r.soloAgregados || a.status === 'added') hallazgos.push(hallazgo(r, a.filename));
         continue;
       }
-      if (r.excluir && r.excluir.test(a.filename)) continue;
+      if (r.excluir && prueba(r, r.excluir, a.filename)) continue;
       let n = 0;
       for (const { linea, texto } of lineasAgregadas(a.patch)) {
-        if (!r.patron.test(texto)) continue;
-        if (r.excluir && r.excluir.test(texto)) continue;
+        if (r.agotada) break;
+        if (!prueba(r, r.patron, texto)) continue;
+        if (r.excluir && prueba(r, r.excluir, texto)) continue;
         if (r.cuando && !r.cuando(texto, a.filename)) continue;
+        if (r.agotada) break;
         if (IGNORAR.exec(texto)?.[1] === r.id) continue;
         const severidad = r.severidadPara ? r.severidadPara(texto) : r.severidad;
         if (!severidad) continue;

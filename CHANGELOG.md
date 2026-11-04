@@ -4,9 +4,24 @@ Each version has its `seki-review-vX.Y.Z` tag on the commit that releases it.
 
 ## seki-review
 
-### Unreleased
+### 0.21.0 (2026-11-04)
 - The command is now `/seki-review:review-prs` (skill `review-prs`, formerly `revisar-prs`).
 - Code, dashboard, AI prompts and docs are in English; the AI answers in English.
+- Deliveries: PRs of the same change across repos and environments are grouped into one delivery (by shared branch key, finding ID or cross-reference). Each delivery shows its stage (pending merge to testing, waiting for QA, QA failed, ready for production, in production, closed), the next action and alerts (stalled, merge order between repos).
+- The default dashboard tab is now "Deliveries". Cards can be joined, split, renamed and closed; the adjustments are kept in the local data folder.
+- "Since last visit" banner: lists the events (merges, closures, delivery adjustments) recorded since the banner was last dismissed, by the time they were recorded, so a merge first seen after the visit is still listed.
+- Append-only event history (`eventos.jsonl`) with merges, closures and delivery changes; the same PR with an unchanged state does not duplicate events.
+- Collection now includes recently merged and closed PRs (update-date window, `entregas.ventanaDias`); a partial refresh keeps the data of the other repos.
+- New MCP tool `entregas`: deliveries by stage with the next action, and the events since the last visit with `desde: "ultima-visita"`. It reads the last refresh and makes no GitHub call.
+- New endpoints `/api/entregas`, `/api/entregas/ajuste`, `/api/entregas/cerrar` and `/api/visita`.
+- Merge watcher: while the dashboard tab is visible, GitHub is polled at `vigia.intervaloSeg` (default 300 s, minimum 120 s) with backoff on errors; it stops when the tab is hidden or the port is handed over.
+- Shared data files are written atomically under a lock, so two sessions cannot corrupt or duplicate `prs.json` or `eventos.jsonl`.
+- Regular expressions from the configuration (`patronId`, custom rules) are compiled with a guard and run with a 50 ms time limit: an invalid pattern is dropped, and a pattern that exceeds the limit is disabled for that run, each with a warning, instead of hanging collection or verification.
+- Configuration values of the wrong type (for example a string where `entregas.sufijosRama` expects a list) fall back to their defaults with a warning.
+- Per-project configuration: `entregas` (`sufijosRama`, `patronId`, `ventanaDias`, `alertaDias`, `cerrarTrasDias`, `maxPorSenal`), `vigia.intervaloSeg` and `orden` per repo; see `config/proyectos.ejemplo.json`.
+- The launchers (`bin/servidor.sh`, `bin/tablero.sh`) now require Node 22 or newer and exit with a clear message otherwise.
+- Skill arguments `deliveries` and `since-last` (Spanish `entregas`, `desde-ultima`).
+- Known limits: a delivery is closed only after reaching production; the title override is keyed by the delivery key and is lost if that key changes; an ID or branch key shared by more than `entregas.maxPorSenal` PRs is not used for grouping; the watcher runs only while the dashboard tab is visible, with a minimum interval of 120 s.
 
 ### 0.20.0 (2026-10-29)
 - Explanations with more diff coverage: the line budget is split by priority (schema and code first; screens, tests and documentation after; generated files left out) and per file, so one huge file no longer leaves the others unreviewed.

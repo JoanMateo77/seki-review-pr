@@ -1,0 +1,44 @@
+
+/* Deliveries board (default tab). */
+body[data-pestana="entregas"] .lateral, body[data-pestana="entregas"] .cola, body[data-pestana="entregas"] .detalle,
+body[data-pestana="entregas"] .btn-lateral, body[data-pestana="entregas"] .buscar, body[data-pestana="entregas"] .filtrar-ia,
+body[data-pestana="entregas"] .rol:not(.pestanas) { display: none; }
+.entregas { grid-column: 1 / -1; grid-row: 2; min-height: 0; overflow: auto; padding: 14px 16px 24px; }
+.entregas[hidden] { display: none; }
+.entregas-cabecera { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; color: var(--texto-3); }
+.entregas-cabecera label { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; color: var(--texto-2); }
+
+.aviso-visita { margin-bottom: 14px; padding: 10px 14px; border: 1px solid var(--linea-fuerte); border-left: 3px solid var(--acento); border-radius: 6px; background: var(--panel); box-shadow: var(--sombra); }
+.aviso-visita header { display: flex; align-items: center; gap: 8px; }
+.aviso-visita h2 { margin: 0; font-size: 13px; font-weight: 600; }
+.aviso-visita header .btn { margin-left: auto; }
+.aviso-visita ul { margin: 6px 0 0; padding-left: 18px; }
+.aviso-visita li { margin: 2px 0; }
+.aviso-visita h3 { margin: 8px 0 0; font-size: 12px; font-weight: 600; color: var(--texto-2); }
+
+.columnas { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(270px, 1fr); gap: 12px; align-items: start; overflow-x: auto; padding-bottom: 6px; }
+.columna { min-width: 0; }
+.columna > h2 { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--texto-2); text-transform: uppercase; letter-spacing: .03em; }
+.columna > h2 .cuenta { font-weight: 400; color: var(--texto-3); }
+.columna .sin-tarjetas { padding: 12px; border: 1px dashed var(--linea); border-radius: 8px; color: var(--texto-3); font-size: 12px; }
+
+.tarjeta { display: grid; gap: 7px; margin-bottom: 10px; padding: 10px 12px; border: 1px solid var(--linea); border-radius: 8px; background: var(--panel); box-shadow: var(--sombra); }
+.tarjeta h3 { margin: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.tarjeta .ids { color: var(--texto-3); overflow-wrap: anywhere; }
+.tarjeta .pistas, .tarjeta .alertas { display: flex; flex-wrap: wrap; gap: 4px; }
+.tarjeta .siguiente { font-weight: 500; }
+.tarjeta .ultimo { color: var(--texto-3); font-size: 12px; }
+.matriz { width: 100%; border-collapse: collapse; font-size: 12px; }
+.matriz th { padding: 2px 4px; text-align: left; font-weight: 500; color: var(--texto-3); }
+.matriz td { padding: 2px 4px; border-top: 1px solid var(--linea); vertical-align: top; }
+.matriz td:first-child { color: var(--texto-2); white-space: nowrap; }
+.matriz a { display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; color: var(--texto); text-decoration: none; white-space: nowrap; }
+.matriz a:hover { text-decoration: underline; }
+.acciones-entrega { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.acciones-entrega select, .acciones-entrega input { min-width: 0; max-width: 100%; height: 26px; padding: 0 6px; border: 1px solid var(--linea-fuerte); border-radius: 6px; background: var(--bg); color: var(--texto); font: inherit; font-size: 12px; }
+.acciones-entrega input { flex: 1 1 160px; }
+.acciones-entrega select { flex: 1 1 160px; }
+.acciones-entrega .pregunta { flex-basis: 100%; color: var(--texto-2); font-size: 12px; }
+.separar-lista { display: grid; gap: 4px; flex-basis: 100%; }
+.separar-lista div { display: flex; align-items: center; gap: 6px; }
+.entregas .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

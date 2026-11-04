@@ -4,12 +4,12 @@ import { promisify } from 'node:util';
 const exec = promisify(execFile);
 const OPCIONES = { maxBuffer: 64 * 1024 * 1024, env: { ...process.env, GH_PAGER: '', GIT_PAGER: '' } };
 
-export async function gh(args) {
-  const { stdout } = await exec(process.env.SEKI_GH ?? 'gh', args, OPCIONES);
+export async function gh(args, opciones = {}) {
+  const { stdout } = await exec(process.env.SEKI_GH ?? 'gh', args, { ...OPCIONES, ...opciones });
   return stdout;
 }
 
-export const ghJson = async (args) => JSON.parse(await gh(args));
+export const ghJson = async (args, opciones) => JSON.parse(await gh(args, opciones));
 
 // gh api --paginate concatenates JSON arrays; --slurp gathers them into one array of pages.
 export async function ghApiLista(ruta) {

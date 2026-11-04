@@ -6,6 +6,8 @@
 // repos (optional), patron (regex on the added line), excluir (optional), cuando(linea, archivo)
 // (optional, extra filter), mensaje, origen.
 
+import { AGOTADO, compilarPatron, probarSeguro } from './patrones.mjs';
+
 const VISTAS = /\.(ejs|html)$/;
 const CODIGO = /\.(ts|js|mjs|cjs)$/;
 const PRUEBAS = /(__tests__|\.spec\.|\.test\.)/;
@@ -131,23 +133,47 @@ export const REGLAS = [
   },
 ];
 
+// Tests a config pattern with a time limit; on timeout the rule is disabled and warned about once.
+export function probarRegla(regla, re, texto) {
+  if (regla.agotada) return false;
+  const r = probarSeguro(re, texto);
+  if (r !== AGOTADO) return r;
+  regla.agotada = true;
+  console.error(`[seki-review/reglas] rule ${String(regla.id ?? '(no id)').slice(0, 60)} disabled: pattern exceeded its time limit`);
+  return false;
+}
+
 // Project-specific rules, under `reglas` in proyectos.json, with the expressions as strings.
 // soloEnTexto: the line counts only in views or if the pattern appears inside a string literal (visible text).
 export function reglasDeConfig(lista = []) {
-  return lista.map((r) => {
-    const re = (x) => (x ? new RegExp(x, r.flags ?? '') : undefined);
-    const patron = re(r.patron);
-    const enCadena = r.patron && new RegExp(`['"\`][^'"\`]*(?:${r.patron})`, r.flags ?? '');
-    return {
-      ...r,
-      severidad: SEVERIDADES.includes(r.severidad) ? r.severidad : 'aviso',
-      archivos: re(r.archivos) ?? /./,
-      patron,
-      excluir: re(r.excluir),
-      ...(r.soloEnTexto ? { cuando: (linea, archivo) => VISTAS.test(archivo) || enCadena.test(linea) } : {}),
-      origen: r.origen ?? 'Project rule.',
-    };
-  });
+  const reglas = [];
+  for (const r of lista) {
+    try {
+      // g/y would make .test() stateful across lines.
+      const flags = (r.flags ?? '').replace(/[gy]/g, '');
+      const re = (x) => (x ? compilarPatron(x, flags) : undefined);
+      const patron = re(r.patron);
+      const archivos = re(r.archivos) ?? /./;
+      const excluir = re(r.excluir);
+      // The user source was validated above; the wrapper adds no quantifier.
+      const enCadena = r.patron && new RegExp(`['"\`][^'"\`]*(?:${r.patron})`, flags);
+      const regla = {
+        ...r,
+        deConfig: true,
+        severidad: SEVERIDADES.includes(r.severidad) ? r.severidad : 'aviso',
+        archivos,
+        patron,
+        excluir,
+        ...(r.soloEnTexto ? { cuando: (linea, archivo) => VISTAS.test(archivo) || probarRegla(regla, enCadena, linea) } : {}),
+        origen: r.origen ?? 'Project rule.',
+      };
+      reglas.push(regla);
+    } catch (e) {
+      const id = String(r?.id ?? '(no id)').slice(0, 60);
+      console.error(`[seki-review/reglas] rule ${id} dropped: ${String(e.message).slice(0, 120)}`);
+    }
+  }
+  return reglas;
 }
 
 export const reglasDelRepo = (repo, omitidas = [], extra = []) =>

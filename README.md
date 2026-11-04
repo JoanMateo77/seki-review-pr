@@ -24,7 +24,7 @@ fill it in with your repos and branches. In Claude Code, `/seki-review:review-pr
 
 After editing the plugin: `claude plugin marketplace update seki` and restart the session.
 
-Requirements: authenticated `gh` and Node >= 18 (the launcher looks in `~/.proto` first; `SEKI_NODE`
+Requirements: authenticated `gh` and Node >= 22 (the launcher looks in `~/.proto` first; `SEKI_NODE`
 sets it explicitly). No npm dependencies.
 
 ## seki-review
@@ -35,7 +35,7 @@ sets it explicitly). No npm dependencies.
 | Tools, one per file | `plugins/seki-review/mcp/tools/*.mjs` |
 | Shared logic (GitHub, git, twin PRs, status against testing and production) | `plugins/seki-review/mcp/lib/` |
 | Generic verification rules | `plugins/seki-review/mcp/lib/reglas.mjs` |
-| Dashboard template | `plugins/seki-review/mcp/tablero/plantilla.html` |
+| Dashboard template (parts concatenated in `orden.json` order) | `plugins/seki-review/mcp/tablero/partes/` |
 | Projects, repos, branches, context and custom rules | `~/.config/seki-review/proyectos.json` (example in `config/proyectos.ejemplo.json`) |
 | Workflow for the agent | `plugins/seki-review/skills/review-prs/SKILL.md` |
 | Dashboard server with actions (127.0.0.1, token in the URL) | `plugins/seki-review/mcp/lib/servidor-web.mjs`, `bin/tablero.sh` |

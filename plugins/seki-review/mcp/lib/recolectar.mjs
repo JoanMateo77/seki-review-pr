@@ -1,7 +1,7 @@
 // Builds a project's PR snapshot: environment, twins, status against testing and production,
 // fixed checks and suggested action.
 import { clasificarBase, proyecto as cargarProyecto } from './config.mjs';
-import { escribirJson, leerJson, rutaCacheEstados, rutaCacheVerificaciones, rutaExplicacion, rutaInstantanea } from './cache.mjs';
+import { escribirJson, leerJson, rutaAjustes, rutaCacheEstados, rutaEntregas, rutaCacheVerificaciones, rutaExplicacion, rutaInstantanea } from './cache.mjs';
 import { archivosPr, arbolRama, commitsPr, estadoFrentePruebas } from './estado.mjs';
 import { buscarGemela } from './gemelas.mjs';
 import { enParalelo, ghJson } from './proceso.mjs';
@@ -9,6 +9,9 @@ import { verificar } from './verificar.mjs';
 import { reglasDeConfig } from './reglas.mjs';
 import { compararFotos, hayCambios } from './cambios.mjs';
 import { asegurarDiff } from './diffs.mjs';
+import { agrupar } from './entregas.mjs';
+import { construirEntregas } from './etapas.mjs';
+import { eventosDe, registrarEventos } from './eventos.mjs';
 
 const CAMPOS = 'number,title,url,baseRefName,headRefName,createdAt,updatedAt,additions,deletions,changedFiles,isDraft,headRefOid,author,reviewDecision,body';
 
@@ -25,6 +28,9 @@ export const ACCIONES = {
 };
 
 const PAGINAS_GEMELAS = 3;
+const PAGINAS_MAXIMAS = 10;
+const POR_PAGINA = 100;
+const MAX_DESCRIPCION = 4096;
 const DIAS_HUERFANAS = 30;
 const SOLO_PRUEBAS = /solo pruebas|pruebas only|ambiente de pruebas|staging only|testing only|^test(\(|:)|sincroniz|traer lo que ya est/i;
 const diasDesde = (fecha) => Math.floor((Date.now() - new Date(fecha)) / 86400000);
@@ -36,6 +42,21 @@ export function esfuerzoPorTamano(lineas, archivos) {
   return Math.min(5, base + (archivos > 20 ? 1 : 0));
 }
 
+const aEntrada = (x) => ({
+  number: x.number,
+  title: x.title,
+  state: x.merged_at ? 'MERGED' : x.state.toUpperCase(),
+  autor: x.user?.login,
+  url: x.html_url,
+  creada: x.created_at,
+  mergeada: x.merged_at,
+  cerrada: x.closed_at ?? null,
+  baseSha: x.base.sha,
+  headSha: x.head.sha,
+  rama: x.head.ref,
+  body: x.body,
+});
+
 async function prsDeBase(owner, repo, base, cache) {
   const clave = `${repo}@${base}`;
   if (!cache.has(clave)) {
@@ -43,21 +64,28 @@ async function prsDeBase(owner, repo, base, cache) {
       // REST rather than GraphQL: `gh pr list --state all` returns 504 on repos with many PRs.
       const todas = [];
       for (let pagina = 1; pagina <= PAGINAS_GEMELAS; pagina++) {
-        const lote = await ghJson(['api', `repos/${owner}/${repo}/pulls?base=${encodeURIComponent(base)}&state=all&sort=created&direction=desc&per_page=100&page=${pagina}`]);
-        todas.push(...lote.map((x) => ({
-          number: x.number,
-          title: x.title,
-          state: x.merged_at ? 'MERGED' : x.state.toUpperCase(),
-          autor: x.user?.login,
-          url: x.html_url,
-          creada: x.created_at,
-          mergeada: x.merged_at,
-          baseSha: x.base.sha,
-          headSha: x.head.sha,
-          rama: x.head.ref,
-          body: x.body,
-        })));
-        if (lote.length < 100) break;
+        const lote = await ghJson(['api', `repos/${owner}/${repo}/pulls?base=${encodeURIComponent(base)}&state=all&sort=created&direction=desc&per_page=${POR_PAGINA}&page=${pagina}`]);
+        todas.push(...lote.map(aEntrada));
+        if (lote.length < POR_PAGINA) break;
+      }
+      return todas;
+    })());
+  }
+  return cache.get(clave);
+}
+
+// Closed PRs by update date, so a PR created long ago and merged recently is not missed.
+async function recientesDeBase(owner, repo, base, cache, ventanaDias) {
+  const clave = `${repo}@${base}#rec`;
+  if (!cache.has(clave)) {
+    cache.set(clave, (async () => {
+      const todas = [];
+      for (let pagina = 1; pagina <= PAGINAS_MAXIMAS; pagina++) {
+        const lote = await ghJson(['api', `repos/${owner}/${repo}/pulls?base=${encodeURIComponent(base)}&state=closed&sort=updated&direction=desc&per_page=${POR_PAGINA}&page=${pagina}`]);
+        todas.push(...lote.map(aEntrada));
+        if (lote.length < POR_PAGINA) break;
+        const ultima = lote.at(-1)?.updated_at;
+        if (!ultima || diasDesde(ultima) > ventanaDias) break;
       }
       return todas;
     })());
@@ -76,11 +104,39 @@ function accionSugerida(pr) {
   return pr.gemela?.estado === 'OPEN' ? 'pruebas_abierta' : 'sin_pruebas';
 }
 
+// Every regrouping in this process (refresh, join, split, rename, close) runs one at a time: otherwise a refresh
+// that read the previous ajustes.json could write its entregas.json after an adjustment and undo it.
+let colaEntregas = Promise.resolve();
+export function enSerieEntregas(fn) {
+  const r = colaEntregas.then(fn);
+  colaEntregas = r.catch(() => {});
+  return r;
+}
+
+// Groups the snapshot into deliveries, records merge/close events and writes entregas.json. Does not call GitHub.
+// Call it only from inside enSerieEntregas; everyone else uses derivarEntregas.
+export async function derivarEnSerie(p, foto) {
+  const ajustes = { unir: [], separar: [], titulo: {}, ...(leerJson(rutaAjustes(p.salida), null) ?? {}) };
+  const bases = Object.values(p.repos).flatMap((r) => r.lineas.flatMap((l) => [l.prod, l.pruebas])).filter((b) => typeof b === 'string');
+  const cfg = { sufijosRama: p.entregas.sufijosRama, patronId: p.entregas.patronId, maxPorSenal: p.entregas.maxPorSenal, bases, owner: p.owner };
+  const prsPorId = new Map();
+  for (const pr of [...foto.prs, ...(foto.recientes ?? [])]) if (!prsPorId.has(pr.id)) prsPorId.set(pr.id, pr);
+  const entregas = agrupar([...prsPorId.values()], cfg, ajustes);
+  const { todos } = await registrarEventos(p, eventosDe(foto, entregas));
+  const construidas = construirEntregas({ entregas, prsPorId, cfgRepos: p.repos, cfg: p.entregas, eventos: todos, ahora: new Date() });
+  const salida = { generado: new Date().toISOString(), entregas: construidas };
+  escribirJson(rutaEntregas(p.salida), salida);
+  return salida;
+}
+
+export const derivarEntregas = (p, foto) => enSerieEntregas(() => derivarEnSerie(p, foto));
+
 export async function recolectar({ proyecto: clave, repos, incluirInactivas = true } = {}) {
   const p = cargarProyecto(clave);
   const cacheEstados = leerJson(rutaCacheEstados(p.salida), {});
   const cacheVerif = leerJson(rutaCacheVerificaciones(p.salida), {});
   const listas = new Map();
+  const ventana = p.entregas.ventanaDias;
   const nombres = repos?.length ? repos : Object.keys(p.repos);
   const login = p.autor === '@me' ? (await ghJson(['api', 'user'])).login : p.autor;
 
@@ -181,16 +237,16 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
 
     if (linea.ambiente === 'prod' || linea.ambiente === 'pruebas') {
       const otra = linea.ambiente === 'prod' ? linea.pruebas : linea.prod;
-      const candidatas = (await prsDeBase(p.owner, repo, otra, listas)).filter((c) => c.number !== pr.number);
+      const candidatas = (otra ? await prsDeBase(p.owner, repo, otra, listas) : []).filter((c) => c.number !== pr.number);
       item.gemela = buscarGemela(pr.title, candidatas);
       if (cfgRepo.lineas.length > 1) item.hermanas = await hermanas(repo, linea, pr.title);
     }
 
-    if (linea.ambiente === 'prod') {
+    if (linea.ambiente === 'prod' && linea.pruebas) {
       item.estadoPruebas = await estadoEn({ repo, numero: pr.number, headSha: pr.headRefOid, origen: linea.prod, destino: linea.pruebas });
     }
 
-    if (linea.ambiente === 'pruebas' && !SOLO_PRUEBAS.test(pr.title) && (!item.gemela || item.gemela.estado === 'CLOSED')) {
+    if (linea.ambiente === 'pruebas' && linea.prod && !SOLO_PRUEBAS.test(pr.title) && (!item.gemela || item.gemela.estado === 'CLOSED')) {
       item.estadoProd = await estadoEn({ repo, numero: pr.number, headSha: pr.headRefOid, origen: linea.pruebas, destino: linea.prod });
       item.cubiertaPor = ausenteEnProd(item.estadoProd) ? await cubiertaPor(repo, linea, pr.number) : null;
       item.sinProd = ausenteEnProd(item.estadoProd) && !item.cubiertaPor;
@@ -212,6 +268,7 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
   const huerfanas = [];
   for (const repo of nombres) {
     for (const linea of p.repos[repo].lineas) {
+      if (!linea.pruebas || !linea.prod) continue;
       const mergeadas = (await prsDeBase(p.owner, repo, linea.pruebas, listas)).filter((x) =>
         x.state === 'MERGED' && diasDesde(x.mergeada) <= (p.dias_huerfanas ?? DIAS_HUERFANAS) &&
         (!login || x.autor === login) && !SOLO_PRUEBAS.test(x.title));
@@ -239,6 +296,7 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
           portal: linea.portal,
           ambiente: 'pruebas',
           estadoPr: 'MERGED',
+          mergeada: x.mergeada ?? null,
           autor: x.autor,
           creada: x.creada,
           dias: diasDesde(x.creada),
@@ -260,16 +318,54 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
     }
   }
 
+  // Own PRs merged or closed within the window, on every configured base, that are not open or orphans.
+  const enLista = new Set([...prs, ...huerfanas].map((x) => x.id));
+  const recientes = [];
+  for (const repo of nombres) {
+    const cfgRepo = p.repos[repo];
+    const bases = new Set(cfgRepo.lineas.flatMap((l) => [l.pruebas, l.prod]).filter((b) => typeof b === 'string'));
+    for (const base of bases) {
+      const linea = clasificarBase(cfgRepo, base);
+      for (const x of await recientesDeBase(p.owner, repo, base, listas, ventana)) {
+        const id = `${repo}#${x.number}`;
+        const fecha = x.mergeada ?? x.cerrada;
+        if (x.state === 'OPEN' || !fecha || diasDesde(fecha) > ventana || (login && x.autor !== login) || enLista.has(id)) continue;
+        enLista.add(id);
+        recientes.push({
+          id, repo, repoEtiqueta: cfgRepo.etiqueta ?? repo, numero: x.number, titulo: x.title, url: x.url,
+          base, rama: x.rama, portal: linea.portal, ambiente: linea.ambiente,
+          estadoPr: x.mergeada ? 'MERGED' : 'CLOSED', mergeada: x.mergeada ?? null, cerrada: x.cerrada,
+          descripcion: (x.body ?? '').slice(0, MAX_DESCRIPCION),
+        });
+      }
+    }
+  }
+
   const todas = [...prs, ...huerfanas];
   const visibles = incluirInactivas ? todas : todas.filter((x) => x.ambiente !== 'inactiva');
-  visibles.sort((a, b) => a.repo.localeCompare(b.repo) || b.numero - a.numero);
-  const instantanea = { proyecto: p.nombre ?? clave, clave, generado: new Date().toISOString(), owner: p.owner, acciones: ACCIONES, prs: visibles };
+  const orden = (a, b) => a.repo.localeCompare(b.repo) || b.numero - a.numero;
+  visibles.sort(orden);
+  recientes.sort(orden);
+  let anterior = null;
+  try { anterior = leerJson(rutaInstantanea(p.salida)); } catch { /* unreadable: treated as missing */ }
+  // A partial refresh replaces only the given repos' entries; without a readable previous snapshot it is a full one.
+  const parcial = !!repos?.length && Array.isArray(anterior?.prs);
+  const conservar = (lista) => (parcial ? (lista ?? []).filter((x) => !nombres.includes(x.repo)) : []);
+  const instantanea = {
+    proyecto: p.nombre ?? clave, clave, generado: new Date().toISOString(), owner: p.owner, acciones: ACCIONES,
+    prs: [...conservar(anterior?.prs), ...visibles].sort(orden),
+    recientes: [...conservar(anterior?.recientes), ...recientes].sort(orden),
+  };
   // If this snapshot has no changes, the last detected ones are kept so two refreshes in a row do not wipe them.
-  const anterior = repos?.length ? null : leerJson(rutaInstantanea(p.salida));
   const cambios = await compararFotos(anterior, instantanea, p.owner).catch(() => null);
   instantanea.cambios = hayCambios(cambios) ? cambios : anterior?.cambios ?? null;
   escribirJson(rutaCacheEstados(p.salida), cacheEstados);
   escribirJson(rutaCacheVerificaciones(p.salida), cacheVerif);
   escribirJson(rutaInstantanea(p.salida), instantanea);
+  try {
+    await derivarEntregas(p, instantanea);
+  } catch (e) {
+    console.error(`[seki-review/entregas] ${e.message}`);
+  }
   return instantanea;
 }

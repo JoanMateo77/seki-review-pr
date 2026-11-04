@@ -1,6 +1,6 @@
 # Design
 
-PR review dashboard (`mcp/tablero/plantilla.html`). Operate mode: a daily work tool. References taken from Mobbin (2026-10-27): GitHub (PR list), Linear (collapsible groups, split inbox), Graphite and GitLab (PR detail with fixed sections and a status stack), Vercel (status as a dot plus a word).
+PR review dashboard (`mcp/tablero/partes/`, assembled in the order of `orden.json`). Operate mode: a daily work tool. References taken from Mobbin (2026-10-27): GitHub (PR list), Linear (collapsible groups, split inbox), Graphite and GitLab (PR detail with fixed sections and a status stack), Vercel (status as a dot plus a word).
 
 ## Structure
 

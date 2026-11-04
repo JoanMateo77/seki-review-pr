@@ -18,9 +18,14 @@ import { filtrarPrs } from './filtrar.mjs';
 import { costosDelDia, registrarCosto, resumenCostos } from './ia.mjs';
 import { estadoServidor, pedirCeder, tokenDe } from './acceso.mjs';
 import { limpiarCopias } from './copias.mjs';
+import { ghJson } from './proceso.mjs';
+import { leerJson, rutaInstantanea } from './cache.mjs';
+import { crearSondeo, crearVigia, VENTANA_TABLERO_MS } from './vigia.mjs';
+import { aplicarAjuste, cerrarEntrega, datosEntregas, marcarVisita } from './tablero-entregas.mjs';
 
 const PUERTO = 4317;
 const MAX_CUERPO = 64 * 1024;
+const MAX_CUERPO_ENTREGAS = 16 * 1024;
 
 const servidores = new Map();
 
@@ -32,6 +37,32 @@ function leerCuerpo(req) {
       if (datos.length > MAX_CUERPO) { falla(new Error('Request body too large')); req.destroy(); }
     });
     req.on('end', () => { try { ok(datos ? JSON.parse(datos) : {}); } catch { falla(new Error('Invalid JSON')); } });
+  });
+}
+
+// Stricter reader for the deliveries endpoints: JSON content type, small cap answered with 413, an object body.
+function leerJsonEstricto(req, max = MAX_CUERPO_ENTREGAS) {
+  const error = (codigo, mensaje) => Object.assign(new Error(mensaje), { codigo });
+  if (!/^application\/json\s*(;|$)/i.test(req.headers['content-type'] ?? '')) return Promise.reject(error(415, 'The body must be application/json'));
+  if (Number(req.headers['content-length']) > max) return Promise.reject(error(413, 'Request body too large'));
+  return new Promise((ok, falla) => {
+    const trozos = [];
+    let largo = 0;
+    let excedido = false;
+    req.on('data', (d) => {
+      if (excedido) return;
+      largo += d.length;
+      if (largo > max) { excedido = true; return falla(error(413, 'Request body too large')); }
+      trozos.push(d);
+    });
+    req.on('end', () => {
+      if (excedido) return;
+      let v;
+      try { v = JSON.parse(Buffer.concat(trozos).toString('utf8') || '{}'); } catch { return falla(error(400, 'Invalid JSON')); }
+      if (!v || typeof v !== 'object' || Array.isArray(v)) return falla(error(400, 'The body must be a JSON object'));
+      ok(v);
+    });
+    req.on('error', falla);
   });
 }
 
@@ -65,7 +96,8 @@ function vigilar(proyecto, puerto) {
   vigilantes.set(proyecto, reloj);
 }
 
-export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true, soloPuerto = false } = {}) {
+// intervaloVigiaMs and relojVigia exist for tests only.
+export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true, soloPuerto = false, intervaloVigiaMs = null, relojVigia } = {}) {
   if (servidores.has(proyecto)) {
     const s = servidores.get(proyecto);
     if (abrir) execFile('open', [s.url]);
@@ -93,17 +125,52 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
   let refresco = null;
   let ultimoRefresco = null;
 
-  const refrescar = () => {
-    refresco ??= recolectar({ proyecto }).then(
-      (f) => {
-        ultimoRefresco = { ok: true, fecha: f.generado };
-        // Copies of closed PRs or unused for a week are deleted; traceability stays in the comments.
-        limpiarCopias(p, { abiertas: new Set(f.prs.filter((x) => x.estadoPr === 'OPEN').map((x) => x.id)) }).catch(() => {});
-      },
-      (e) => { ultimoRefresco = { ok: false, fecha: new Date().toISOString(), mensaje: e.message.slice(0, 300) }; },
-    ).finally(() => { refresco = null; });
+  const lanzar = (repos) => recolectar({ proyecto, repos }).then(
+    (f) => {
+      ultimoRefresco = { ok: true, fecha: f.generado };
+      // Copies of closed PRs or unused for a week are deleted; traceability stays in the comments.
+      limpiarCopias(p, { abiertas: new Set(f.prs.filter((x) => x.estadoPr === 'OPEN').map((x) => x.id)) }).catch(() => {});
+    },
+    (e) => { ultimoRefresco = { ok: false, fecha: new Date().toISOString(), mensaje: e.message.slice(0, 300) }; },
+  );
+  // Single-flight. A full refresh requested while a partial one (the watcher's) runs is chained after it, so the
+  // manual click still yields a full refresh.
+  let refrescoParcial = false;
+  const refrescar = (repos) => {
+    const completo = !repos?.length;
+    const fijar = (pr) => { const mio = pr.finally(() => { if (refresco === mio) refresco = null; }); refresco = mio; return mio; };
+    if (refresco && refrescoParcial && completo) {
+      refrescoParcial = false;
+      return fijar(refresco.then(() => lanzar()));
+    }
+    if (!refresco) {
+      refrescoParcial = !completo;
+      return fijar(lanzar(repos));
+    }
     return refresco;
   };
+
+  // Merge watcher. It shares the single-flight refresh: a probe is skipped while a manual refresh runs, and a
+  // refresh that starts between probe and refresh is awaited first. The probe bound moves only after a good refresh.
+  let ultimoTablero = 0;
+  const sondeo = crearSondeo({
+    owner: p.owner,
+    repos: Object.keys(p.repos),
+    instantanea: () => { try { return leerJson(rutaInstantanea(p.salida))?.generado ?? null; } catch { return null; } },
+    gh: ghJson,
+  });
+  const vigia = crearVigia({
+    intervaloMs: intervaloVigiaMs ?? p.vigia.intervaloSeg * 1000,
+    reloj: relojVigia,
+    tableroAbierto: () => Date.now() - ultimoTablero < VENTANA_TABLERO_MS,
+    sondear: async () => (refresco ? [] : sondeo.sondear()),
+    refrescar: async (repos) => {
+      if (refresco) await refresco;
+      await refrescar(repos);
+      if (!ultimoRefresco?.ok) throw new Error(ultimoRefresco?.mensaje ?? 'Refresh failed');
+      sondeo.confirmar();
+    },
+  });
 
   const cola = crearCola();
   recuperarInterrumpidos(p);
@@ -128,6 +195,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
     }
 
     if (!url.pathname.startsWith('/api/')) return responder(res, 404, { error: 'Not found' });
+    if (!req.headers['x-seki-token']) return responder(res, 401, { error: 'Missing token' });
     if (req.headers['x-seki-token'] !== token) return responder(res, 403, { error: 'Invalid token' });
 
     const prDeFoto = (id) => {
@@ -224,6 +292,20 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         }
         return responder(res, 404, { error: 'Not found' });
       }
+      if (req.method === 'GET' && url.pathname === '/api/entregas') {
+        const datos = datosEntregas(p);
+        if (!datos) return responder(res, 503, { error: 'No deliveries yet: refresh the state first.' });
+        return responder(res, 200, datos);
+      }
+      if (req.method === 'POST' && url.pathname === '/api/entregas/ajuste') return responder(res, 200, await aplicarAjuste(p, await leerJsonEstricto(req)));
+      if (req.method === 'POST' && url.pathname === '/api/entregas/cerrar') {
+        const { clave } = await leerJsonEstricto(req);
+        return responder(res, 200, await cerrarEntrega(p, clave));
+      }
+      if (req.method === 'POST' && url.pathname === '/api/visita') {
+        await leerJsonEstricto(req);
+        return responder(res, 200, marcarVisita(p));
+      }
       if (req.method === 'GET' && url.pathname === '/api/foto') return responder(res, 200, fotoConExplicaciones(p));
       if (req.method === 'GET' && url.pathname === '/api/diff') {
         const pr = fotoConExplicaciones(p).prs.find((x) => x.id === url.searchParams.get('id'));
@@ -231,7 +313,8 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         return responder(res, 200, diffParaTablero(await asegurarDiff(p, pr.repo, pr.numero, pr.headSha)));
       }
       if (req.method === 'GET' && url.pathname === '/api/estado') {
-        return responder(res, 200, { refrescando: !!refresco, ultimoRefresco, trabajos: cola.lista(), comentarios: marcasComentarios(), avances: avances(), costoHoy: costosDelDia(p), version: VERSION });
+        if (req.headers['x-seki-tablero'] === '1') ultimoTablero = Date.now();
+        return responder(res, 200, { vigia: vigia.estado(), refrescando: !!refresco, ultimoRefresco, trabajos: cola.lista(), comentarios: marcasComentarios(), avances: avances(), costoHoy: costosDelDia(p), version: VERSION });
       }
       if (req.method === 'POST' && url.pathname === '/api/refrescar') {
         refrescar();
@@ -248,8 +331,9 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
       if (req.method === 'POST' && url.pathname === '/api/cancelar-cola') return responder(res, 200, { cancelados: cola.vaciar() });
       // Another session with another version asks for the port: release it only if no jobs would be cut off.
       if (req.method === 'POST' && url.pathname === '/api/ceder') {
-        if (refresco || cola.lista().some((t) => t.estado === 'en_cola' || t.estado === 'en_curso')) return responder(res, 409, { error: 'Jobs in progress' });
+        if (refresco || vigia.ocupado() || cola.lista().some((t) => t.estado === 'en_cola' || t.estado === 'en_curso')) return responder(res, 409, { error: 'Jobs in progress' });
         responder(res, 200, { ok: true });
+        vigia.detener();
         servidores.delete(proyecto);
         servidor.close();
         servidor.closeAllConnections?.();
@@ -275,6 +359,8 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
   };
   const real = await conReintento(puerto, otro ? 10 : 1).catch((e) => (e.code === 'EADDRINUSE' && !soloPuerto ? escuchar(0) : Promise.reject(e)));
   const url = `http://127.0.0.1:${real}/?t=${token}`;
+  servidor.on('close', () => vigia.detener());
+  vigia.iniciar();
   servidores.set(proyecto, { url, servidor });
   if (abrir && process.platform === 'darwin') execFile('open', [url]);
   return { url, yaEstaba: false };

@@ -3,8 +3,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { leerJson, rutaExplicacion, rutaInstantanea } from './cache.mjs';
 import { diffsDeFoto } from './diffs.mjs';
+import { datosEntregas } from './tablero-entregas.mjs';
 
-const PLANTILLA = join(dirname(fileURLToPath(import.meta.url)), '../tablero/plantilla.html');
+const PARTES = join(dirname(fileURLToPath(import.meta.url)), '../tablero/partes');
 const ANCLAJE = join(dirname(fileURLToPath(import.meta.url)), '../tablero/anclaje.js');
 const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), '../../.claude-plugin/plugin.json');
 
@@ -23,14 +24,30 @@ export function fotoConExplicaciones(p) {
   return foto;
 }
 
-const incrustar = (v) => JSON.stringify(v).replace(/</g, '\\u003c');
+// The template lives in ordered parts (partes/orden.json); read from disk on every call, like the former single file.
+export const leerPlantilla = () =>
+  JSON.parse(readFileSync(join(PARTES, 'orden.json'), 'utf8'))
+    .map((nombre) => readFileSync(join(PARTES, nombre), 'utf8'))
+    .join('');
+
+// Safe inside <script>: no "</script>" or "<!--" can close it, and U+2028/2029 stay escaped for older parsers.
+export const incrustar = (v) => JSON.stringify(v ?? null).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+
+// A damaged entregas.json must not take the PR view down with it.
+function entregasParaPagina(p) {
+  try { return datosEntregas(p); } catch (e) {
+    console.error(`[seki-review/tablero] deliveries not embedded: ${e.message}`);
+    return null;
+  }
+}
 
 // api: null for the static file; { token } when served by the local server with actions.
 // p: project, to embed the saved diffs.
 export const construirHtml = (p, foto, api = null) =>
-  readFileSync(PLANTILLA, 'utf8')
+  leerPlantilla()
     .replace('/*ANCLAJE*/', () => readFileSync(ANCLAJE, 'utf8'))
     .replace('/*DATOS*/null', () => incrustar(foto))
     .replace('/*API*/null', () => incrustar(api))
     .replace('/*VERSION*/null', () => JSON.stringify(versionEnDisco()))
-    .replace('/*DIFFS*/null', () => incrustar(diffsDeFoto(p, foto)));
+    .replace('/*DIFFS*/null', () => incrustar(diffsDeFoto(p, foto)))
+    .replace('/*ENTREGAS*/null', () => incrustar(entregasParaPagina(p)));
