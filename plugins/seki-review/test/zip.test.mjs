@@ -132,6 +132,42 @@ test('acepta descriptores de datos con y sin firma y los valida contra el direct
   }
 });
 
+// Four bytes appended to `datos` that make its CRC-32 equal `objetivo` (CRC is reversible over its last 4 bytes).
+function forzarCrc(datos, objetivo) {
+  const tabla = [];
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    tabla.push(c >>> 0);
+  }
+  const indiceAlto = new Map(tabla.map((t, i) => [t >>> 24, i]));
+  let estado = 0xffffffff;
+  for (const b of datos) estado = (tabla[(estado ^ b) & 0xff] ^ (estado >>> 8)) >>> 0;
+  let fin = (objetivo ^ 0xffffffff) >>> 0;
+  const indices = [];
+  for (let k = 0; k < 4; k++) {
+    const i = indiceAlto.get(fin >>> 24);
+    indices.unshift(i);
+    fin = (((fin ^ tabla[i]) << 8) | i) >>> 0;
+  }
+  const extra = Buffer.alloc(4);
+  for (let k = 0; k < 4; k++) {
+    extra[k] = (indices[k] ^ estado) & 0xff;
+    estado = (tabla[indices[k]] ^ (estado >>> 8)) >>> 0;
+  }
+  return Buffer.concat([Buffer.from(datos), extra]);
+}
+
+test('un descriptor sin firma cuyo crc coincide con la firma se acepta', async () => {
+  const { crc32 } = await import('node:zlib');
+  const datos = forzarCrc(Buffer.from('payload'), 0x08074b50);
+  assert.equal(crc32(datos), 0x08074b50);
+  // A second entry follows, so 16 bytes fit after the data and the signed reading is tried first.
+  const zip = conDescriptores(crearZip([{ nombre: 'a.bin', datos }, { nombre: 'b.txt', datos: 'b' }]), { firma: false });
+  assert.deepEqual(leerZip(zip).get('a.bin'), datos);
+  assert.equal(leerZip(zip).get('b.txt').toString(), 'b');
+});
+
 test('reemplazarEntradas con descriptores: copia las intactas con su descriptor y recodifica sin el bit 3', () => {
   for (const firma of [true, false]) {
     const zip = conDescriptores(base(), { firma });

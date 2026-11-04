@@ -148,12 +148,12 @@ function analizar(buf, opciones = {}) {
     // after the data (optional signature) must repeat them and belongs to the entry's extent.
     let extremo = fin;
     if (flags & FLAG_DESCRIPTOR) {
-      const conFirma = fin + 16 <= offDir && buf.readUInt32LE(fin) === SIG_DESCRIPTOR;
-      const base = conFirma ? fin + 4 : fin;
-      if (base + 12 > offDir) fallar('ZIP_CORRUPTO', 'Entry data out of bounds');
-      if (buf.readUInt32LE(base) !== crc || buf.readUInt32LE(base + 4) !== csize || buf.readUInt32LE(base + 8) !== usize) {
-        fallar('ZIP_CORRUPTO', 'Data descriptor does not match the central directory');
-      }
+      // A descriptor without signature whose crc happens to equal the signature is tried both ways.
+      const coincide = (base) => base + 12 <= offDir
+        && buf.readUInt32LE(base) === crc && buf.readUInt32LE(base + 4) === csize && buf.readUInt32LE(base + 8) === usize;
+      const firmado = fin + 4 <= offDir && buf.readUInt32LE(fin) === SIG_DESCRIPTOR;
+      const base = firmado && coincide(fin + 4) ? fin + 4 : coincide(fin) ? fin : null;
+      if (base === null) fallar('ZIP_CORRUPTO', 'Data descriptor does not match the central directory');
       extremo = base + 12;
     }
     entradas.push({ nombre, nombreBuf, flags, metodo, crc, csize, usize, offset, inicio, fin, extremo, pos, largo });
