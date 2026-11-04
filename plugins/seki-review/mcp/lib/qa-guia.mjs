@@ -67,7 +67,7 @@ function pasosDeCuerpo(cuerpo) {
 export const fusionDePista = (pista, prsPorId) => (
   pista.prs.map((id) => prsPorId.get(id)).filter((pr) => pr?.ambiente === 'pruebas').map((pr) => pr.mergeada).filter(Boolean).sort().at(-1) ?? null
 );
-export const claveFusion = (prs) => [...prs].sort().join(',');
+export const claveFusion = (prs) => JSON.stringify([...prs].sort());
 
 // guias.json `fusiones` of a guide generated from these deliveries: only tracks that get rows.
 export function fusionesDe(entregas, prsPorId) {
@@ -133,7 +133,7 @@ export function firmaFila(secreto, { guia, etiqueta, portal, prs, entrega }) {
 
 // Tracks waiting for QA whose newest testing merge is later than the one every covering guide recorded.
 export function entregasDesdeCorte({ entregas, guias, prsPorId }) {
-  const registros = (guias ?? []).flatMap((g) => Object.entries(g.fusiones ?? {}).map(([k, f]) => ({ ids: new Set(k.split(',')), f })));
+  const registros = (guias ?? []).flatMap((g) => Object.entries(g.fusiones ?? {}).map(([k, f]) => ({ ids: new Set(JSON.parse(k)), f })));
   return entregas.flatMap((e) => {
     const pistas = e.pistas.filter((pista) => {
       if (pista.etapa !== 'esperando_qa') return false;

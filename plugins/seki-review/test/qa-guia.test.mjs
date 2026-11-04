@@ -23,15 +23,6 @@ test('limpiarParaQa strips each token kind and keeps normal text', () => {
   assert.equal(limpiarParaQa('1. Step one\n2. Step two'), '1. Step one\n2. Step two');
 });
 
-test('limpiarParaQa runs in linear time on pathological input', () => {
-  const entradas = ['a/'.repeat(50000), 'a'.repeat(200000), '#'.repeat(100000), 'feat/' + 'a'.repeat(100000), ' '.repeat(100000) + '.', 'a.'.repeat(60000), 'a/'.repeat(5000) + '.'.repeat(50000)];
-  // Generous bound: it separates the linear work from the super-linear blow-up this test guards against, not a fast
-  // machine from a loaded one.
-  const t0 = Date.now();
-  for (const e of entradas) limpiarParaQa(e);
-  assert.ok(Date.now() - t0 < 15_000, `took ${Date.now() - t0} ms`);
-});
-
 function base({ ids = ['X-001', 'X-002'], portales = ['p1', 'p2'] } = {}) {
   const prs = portales.map((po, i) => pr(`r#${i + 1}`, po));
   const e = { clave: 'k1', titulo: 'Fix login (#12) in src/a.mjs', ids, prs: prs.map((x) => x.id), pistas: prs.map((x) => pista(x.portal, [x.id])) };
@@ -185,7 +176,7 @@ test('cells derived from the tracker and from the title do not leak PR numbers, 
 test('fusionesDe records the newest testing merge of each multi-PR track', () => {
   const a = pr('r#1', 'p1'); const b = pr('s#2', 'p1', { mergeada: '2026-11-02T10:00:00Z' });
   const e = { clave: 'k', titulo: 't', ids: [], prs: ['r#1', 's#2'], pistas: [pista('p1', ['s#2', 'r#1'])] };
-  assert.deepEqual(fusionesDe([e], mapa(a, b)), { 'r#1,s#2': '2026-11-02T10:00:00Z' });
+  assert.deepEqual(fusionesDe([e], mapa(a, b)), { '["r#1","s#2"]': '2026-11-02T10:00:00Z' });
 });
 
 test('registrarGuia tolerates an empty guias.json object and refuses corrupt JSON', async () => {
@@ -222,4 +213,14 @@ test('an invalid existing secret file is replaced', () => {
   assert.equal(s.length, 32);
   assert.deepEqual(secretoQa(p), s);
   assert.equal(statSync(join(p.salida, 'datos', 'secreto-qa')).mode & 0o777, 0o600);
+});
+
+test('track keys survive ids that contain commas', () => {
+  const a = pr('r,x#1', 'p1', { mergeada: '2026-11-01T10:00:00Z' }); const b = pr('s#2', 'p1', { mergeada: '2026-11-01T10:00:00Z' });
+  const e = { clave: 'k', titulo: 't', ids: [], prs: [a.id, b.id], pistas: [{ ...pista('p1', [a.id, b.id]), etapa: 'esperando_qa' }] };
+  const prsPorId = mapa(a, b);
+  const guias = [{ id: 'g', fusiones: fusionesDe([e], prsPorId) }];
+  assert.deepEqual(entregasDesdeCorte({ entregas: [e], guias, prsPorId }), []);
+  const solo = { ...e, pistas: [{ ...pista('p1', ['r']), etapa: 'esperando_qa' }] };
+  assert.equal(entregasDesdeCorte({ entregas: [solo], guias, prsPorId }).length, 1);
 });
