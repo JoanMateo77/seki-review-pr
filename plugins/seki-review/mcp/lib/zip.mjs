@@ -7,7 +7,14 @@ const SIG_ZIP64_LOCALIZADOR = 0x07064b50;
 const DOS_FECHA = 0x0021; // 1980-01-01, fixed so output is deterministic
 const DOS_HORA = 0;
 const FLAG_UTF8 = 0x0800;
-const LIMITES = { maxEntradas: 200, maxTotal: 20 * 2 ** 20, maxArchivo: 5 * 2 ** 20 };
+
+function limites({ maxEntradas = 200, maxTotal = 20 * 2 ** 20, maxArchivo = 5 * 2 ** 20 } = {}) {
+  const lim = { maxEntradas, maxTotal, maxArchivo };
+  for (const [clave, valor] of Object.entries(lim)) {
+    if (!Number.isFinite(valor) || valor <= 0) throw new TypeError(`Invalid zip limit: ${clave}`);
+  }
+  return lim;
+}
 
 function fallar(codigo, mensaje) {
   const e = new Error(mensaje);
@@ -19,15 +26,15 @@ function aBuffer(datos) {
   return Buffer.isBuffer(datos) ? datos : Buffer.from(datos, 'utf8');
 }
 
-function codificar(nombre, datos, comprimir) {
-  const nom = Buffer.from(nombre, 'utf8');
+function codificar(nombre, datos, comprimir, original) {
+  const nom = original ? original.nombreBuf : Buffer.from(nombre, 'utf8');
   const crudo = aBuffer(datos);
   const metodo = comprimir === false ? 0 : 8;
   const cuerpo = metodo === 8 ? deflateRawSync(crudo) : crudo;
   const local = Buffer.alloc(30 + nom.length);
   local.writeUInt32LE(SIG_LOCAL, 0);
   local.writeUInt16LE(20, 4);
-  local.writeUInt16LE(FLAG_UTF8, 6);
+  local.writeUInt16LE(original ? original.flags & FLAG_UTF8 : FLAG_UTF8, 6);
   local.writeUInt16LE(metodo, 8);
   local.writeUInt16LE(DOS_HORA, 10);
   local.writeUInt16LE(DOS_FECHA, 12);
@@ -81,14 +88,14 @@ function rutaInvalida(nombre) {
 
 // Structural parse only: no inflation. Trusts the central directory.
 function analizar(buf, opciones = {}) {
-  const lim = { ...LIMITES, ...opciones };
+  const lim = limites(opciones);
   if (!Buffer.isBuffer(buf)) fallar('ZIP_CORRUPTO', 'Archive is not a buffer');
   if (buf.length > lim.maxArchivo) fallar('ZIP_GRANDE', 'Archive exceeds the size limit');
   if (buf.length < 22) fallar('ZIP_CORRUPTO', 'Archive is truncated');
   let eocd = -1;
   const minimo = Math.max(0, buf.length - 22 - 65535);
   for (let i = buf.length - 22; i >= minimo; i--) {
-    if (buf.readUInt32LE(i) === SIG_EOCD && i + 22 + buf.readUInt16LE(i + 20) <= buf.length) {
+    if (buf.readUInt32LE(i) === SIG_EOCD && i + 22 + buf.readUInt16LE(i + 20) === buf.length) {
       eocd = i;
       break;
     }
@@ -147,6 +154,9 @@ function analizar(buf, opciones = {}) {
     const localFlags = buf.readUInt16LE(e.offset + 6);
     if ((localFlags & 0x9) !== 0) fallar(localFlags & 0x1 ? 'ZIP_CIFRADO' : 'ZIP_DESCRIPTOR', 'Local header flags are not supported');
     const nlen = buf.readUInt16LE(e.offset + 26);
+    if (buf.readUInt32LE(e.offset + 14) !== e.crc || buf.readUInt32LE(e.offset + 18) !== e.csize || buf.readUInt32LE(e.offset + 22) !== e.usize) {
+      fallar('ZIP_CORRUPTO', 'Local header does not match the central directory');
+    }
     if (buf.readUInt16LE(e.offset + 8) !== e.metodo || !buf.subarray(e.offset + 30, e.offset + 30 + nlen).equals(e.nombreBuf)) {
       fallar('ZIP_CORRUPTO', 'Local header does not match the central directory');
     }
@@ -155,7 +165,7 @@ function analizar(buf, opciones = {}) {
 }
 
 export function leerZip(buf, opciones = {}) {
-  const lim = { ...LIMITES, ...opciones };
+  const lim = limites(opciones);
   const { entradas } = analizar(buf, lim);
   const salida = new Map();
   let total = 0;
@@ -186,11 +196,11 @@ export function reemplazarEntradas(buf, cambios, opciones = {}) {
   const { entradas } = analizar(buf, opciones);
   const existentes = new Set(entradas.map((e) => e.nombre));
   for (const [nombre, datos] of cambios) {
-    if (!Buffer.isBuffer(datos) && typeof datos !== 'string') fallar('ZIP_CORRUPTO', 'Replacement data must be a buffer or string');
+    if (!Buffer.isBuffer(datos) && typeof datos !== 'string') throw new TypeError('Replacement data must be a buffer or string');
     if (!existentes.has(nombre) && rutaInvalida(nombre)) fallar('ZIP_RUTA', 'Invalid entry path');
   }
   const piezas = entradas.map((e) => {
-    if (cambios.has(e.nombre)) return codificar(e.nombre, cambios.get(e.nombre), e.metodo !== 0);
+    if (cambios.has(e.nombre)) return codificar(e.nombre, cambios.get(e.nombre), e.metodo !== 0, e);
     return {
       local: buf.subarray(e.offset, e.inicio),
       cuerpo: buf.subarray(e.inicio, e.fin),

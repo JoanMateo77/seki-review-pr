@@ -22,6 +22,13 @@ function parchear(buf, indice, campo, valor, bytes = 2) {
   return copia;
 }
 
+// Patches the declared uncompressed size in both the central and the local header.
+function parchearTamano(buf, valor) {
+  const copia = parchear(buf, 0, 24, valor, 4);
+  copia.writeUInt32LE(valor, copia.readUInt32LE(centrales(copia).lista[0] + 42) + 22);
+  return copia;
+}
+
 function codigoDe(fn) {
   try {
     fn();
@@ -112,17 +119,17 @@ test('rechaza descriptores de datos', () => {
 
 test('rechaza tamaño inflado distinto del declarado', () => {
   const zip = crearZip([{ nombre: 'a', datos: 'x'.repeat(100) }]);
-  assert.equal(codigoDe(() => leerZip(parchear(zip, 0, 24, 50, 4))), 'ZIP_TAMANO');
-  assert.equal(codigoDe(() => leerZip(parchear(zip, 0, 24, 500, 4))), 'ZIP_TAMANO');
+  assert.equal(codigoDe(() => leerZip(parchearTamano(zip, 50))), 'ZIP_TAMANO');
+  assert.equal(codigoDe(() => leerZip(parchearTamano(zip, 500))), 'ZIP_TAMANO');
   const almacenado = crearZip([{ nombre: 'a', datos: 'xyz', comprimir: false }]);
-  assert.equal(codigoDe(() => leerZip(parchear(almacenado, 0, 24, 2, 4))), 'ZIP_TAMANO');
+  assert.equal(codigoDe(() => leerZip(parchearTamano(almacenado, 2))), 'ZIP_TAMANO');
 });
 
 test('bomba de descompresión: tamaño declarado enorme o mentira sobre el tamaño real', () => {
   const bomba = crearZip([{ nombre: 'z', datos: Buffer.alloc(50 * 2 ** 20) }]);
   assert.ok(bomba.length < 5 * 2 ** 20);
   assert.equal(codigoDe(() => leerZip(bomba)), 'ZIP_GRANDE');
-  assert.equal(codigoDe(() => leerZip(parchear(bomba, 0, 24, 1000, 4))), 'ZIP_TAMANO');
+  assert.equal(codigoDe(() => leerZip(parchearTamano(bomba, 1000))), 'ZIP_TAMANO');
 });
 
 test('rechaza dos registros centrales con el mismo offset local', () => {
@@ -144,4 +151,60 @@ test('rechaza archivos truncados', () => {
 
 test('rechaza CRC que no coincide', () => {
   assert.equal(codigoDe(() => leerZip(parchear(base(), 1, 16, 0x12345678, 4))), 'ZIP_CORRUPTO');
+});
+
+test('opciones undefined usan los valores por defecto y las inválidas se rechazan', () => {
+  const grande = crearZip([{ nombre: 'z', datos: Buffer.alloc(30 * 2 ** 20) }]);
+  assert.equal(codigoDe(() => leerZip(grande, { maxTotal: undefined, maxArchivo: undefined })), 'ZIP_GRANDE');
+  assert.equal(codigoDe(() => leerZip(grande, { maxTotal: 2 ** 30 })), undefined);
+  for (const malo of [NaN, Infinity, 0, -1, '5']) {
+    assert.throws(() => leerZip(base(), { maxTotal: malo }), TypeError, String(malo));
+    assert.throws(() => reemplazarEntradas(base(), new Map(), { maxArchivo: malo }), TypeError);
+  }
+});
+
+test('rechaza bytes tras el EOCD y no se deja engañar por un EOCD falso dentro del comentario', () => {
+  const zip = base();
+  assert.equal(codigoDe(() => leerZip(Buffer.concat([zip, Buffer.from('xx')]))), 'ZIP_CORRUPTO');
+  const falso = Buffer.alloc(22);
+  falso.writeUInt32LE(0x06054b50, 0);
+  const comentario = Buffer.concat([falso, Buffer.alloc(8)]);
+  const real = Buffer.from(zip);
+  real.writeUInt16LE(comentario.length, real.length - 2);
+  assert.deepEqual([...leerZip(Buffer.concat([real, comentario])).keys()], ['a.xml', 'b.bin']);
+});
+
+function parchearLocal(buf, indice, campo, valor, bytes) {
+  const copia = Buffer.from(buf);
+  const pos = copia.readUInt32LE(centrales(copia).lista[indice] + 42) + campo;
+  if (bytes === 1) copia[pos] = valor;
+  else if (bytes === 2) copia.writeUInt16LE(valor, pos);
+  else copia.writeUInt32LE(valor, pos);
+  return copia;
+}
+
+test('rechaza discrepancias entre cabecera local y directorio central', () => {
+  assert.equal(codigoDe(() => leerZip(parchearLocal(base(), 0, 30, 0x42, 1))), 'ZIP_CORRUPTO'); // name
+  assert.equal(codigoDe(() => leerZip(parchearLocal(base(), 0, 8, 0, 2))), 'ZIP_CORRUPTO'); // method
+  assert.equal(codigoDe(() => leerZip(parchearLocal(base(), 0, 14, 1, 4))), 'ZIP_CORRUPTO'); // crc
+  assert.equal(codigoDe(() => leerZip(parchearLocal(base(), 0, 18, 1, 4))), 'ZIP_CORRUPTO'); // csize
+  assert.equal(codigoDe(() => leerZip(parchearLocal(base(), 0, 22, 1, 4))), 'ZIP_CORRUPTO'); // usize
+  assert.equal(codigoDe(() => leerZip(parchearLocal(base(), 0, 6, 0x0801, 2))), 'ZIP_CIFRADO');
+  assert.equal(codigoDe(() => leerZip(parchearLocal(base(), 0, 6, 0x0808, 2))), 'ZIP_DESCRIPTOR');
+});
+
+test('reemplazarEntradas rechaza datos de tipo inválido con TypeError', () => {
+  assert.throws(() => reemplazarEntradas(base(), new Map([['a.xml', 42]])), TypeError);
+});
+
+test('reemplazarEntradas conserva los bytes del nombre y el indicador de codificación', () => {
+  const zip = crearZip([{ nombre: 'a.txt', datos: 'uno' }]);
+  const cp437 = Buffer.from(zip);
+  cp437.writeUInt16LE(0, 6); // local flags: no UTF-8
+  cp437.writeUInt16LE(0, centrales(cp437).lista[0] + 8);
+  const nuevo = reemplazarEntradas(cp437, new Map([['a.txt', Buffer.from('dos')]]));
+  assert.equal(nuevo.readUInt16LE(6), 0);
+  assert.equal(nuevo.readUInt16LE(centrales(nuevo).lista[0] + 8), 0);
+  assert.equal(leerZip(nuevo).get('a.txt').toString(), 'dos');
+  assert.equal(reemplazarEntradas(zip, new Map([['a.txt', 'x']])).readUInt16LE(6), 0x0800);
 });
