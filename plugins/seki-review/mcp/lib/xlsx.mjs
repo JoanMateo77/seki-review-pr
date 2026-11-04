@@ -4,6 +4,10 @@ const ETIQUETA = '[seki-review/xlsx]';
 const MAX_FILAS = 5000;
 const MAX_COLUMNAS = 100;
 const MAX_CELDA = 32767;
+const MAX_HOJAS = 50;
+const MAX_CELDAS_TOTAL = 500000;
+const MAX_FILA_EXCEL = 1048576;
+const MAX_COL_EXCEL = 16383; // XFD
 
 function fallar(codigo, mensaje) {
   const e = new Error(`${ETIQUETA} ${mensaje}`);
@@ -71,7 +75,15 @@ function validarHoja(h, nombres) {
   return nombre;
 }
 
-function xmlHoja(h, nombreIdx, esActiva) {
+function rangoValido(rango) {
+  const m = /^([A-Z]{1,3})([0-9]{1,7})(?::([A-Z]{1,3})([0-9]{1,7}))?$/.exec(rango);
+  if (!m) return false;
+  const col = (l) => indiceColumna(l) <= MAX_COL_EXCEL;
+  const fil = (n) => Number(n) >= 1 && Number(n) <= MAX_FILA_EXCEL;
+  return col(m[1]) && fil(m[2]) && (m[3] === undefined || (col(m[3]) && fil(m[4])));
+}
+
+function xmlHoja(h, esActiva) {
   const filas = h.filas;
   const encabezado = h.encabezado !== false;
   let maxCol = 0;
@@ -90,6 +102,9 @@ function xmlHoja(h, nombreIdx, esActiva) {
     partes.push(`<sheetViews><sheetView${sel} workbookViewId="0"/></sheetViews>`);
   }
   partes.push('<sheetFormatPr defaultRowHeight="15"/>');
+  if (h.anchos !== undefined && !Array.isArray(h.anchos)) fallar('XLSX_ESTRUCTURA', 'Invalid column widths');
+  if (h.validaciones !== undefined && !Array.isArray(h.validaciones)) fallar('XLSX_ESTRUCTURA', 'Invalid data validations');
+  if (Array.isArray(h.anchos) && h.anchos.length > MAX_COLUMNAS) fallar('XLSX_COLUMNAS', 'Too many column widths');
   if (Array.isArray(h.anchos) && h.anchos.length > 0) {
     partes.push('<cols>');
     h.anchos.forEach((a, i) => {
@@ -116,7 +131,7 @@ function xmlHoja(h, nombreIdx, esActiva) {
   if (vals.length > 0) {
     partes.push(`<dataValidations count="${vals.length}">`);
     for (const v of vals) {
-      if (!v || typeof v.rango !== 'string' || !/^[A-Z]{1,3}[0-9]{1,7}(:[A-Z]{1,3}[0-9]{1,7})?$/.test(v.rango) || !Array.isArray(v.lista) || v.lista.length === 0) {
+      if (!v || typeof v.rango !== 'string' || !Array.isArray(v.lista) || v.lista.length === 0 || !rangoValido(v.rango)) {
         fallar('XLSX_ESTRUCTURA', 'Invalid data validation');
       }
       const items = v.lista.map((x) => limpiar(x));
@@ -128,7 +143,6 @@ function xmlHoja(h, nombreIdx, esActiva) {
     partes.push('</dataValidations>');
   }
   partes.push('</worksheet>');
-  void nombreIdx;
   return partes.join('');
 }
 
@@ -136,8 +150,8 @@ export function escribirXlsx({ hojas } = {}) {
   if (!Array.isArray(hojas) || hojas.length === 0) fallar('XLSX_ESTRUCTURA', 'At least one sheet is required');
   const nombres = new Set();
   const lista = hojas.map((h) => ({ h, nombre: validarHoja(h, nombres) }));
-  let activa = lista.findIndex(({ h }) => h.oculta !== true);
-  if (activa < 0) activa = 0;
+  const activa = lista.findIndex(({ h }) => h.oculta !== true);
+  if (activa < 0) fallar('XLSX_ESTRUCTURA', 'At least one sheet must be visible');
 
   const tipos = [
     `${CABECERA_XML}<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">`,
@@ -168,7 +182,7 @@ export function escribirXlsx({ hojas } = {}) {
     { nombre: 'xl/workbook.xml', datos: libro },
     { nombre: 'xl/_rels/workbook.xml.rels', datos: relsLibro },
     { nombre: 'xl/styles.xml', datos: ESTILOS },
-    ...lista.map(({ h }, i) => ({ nombre: `xl/worksheets/sheet${i + 1}.xml`, datos: xmlHoja(h, i, i === activa) })),
+    ...lista.map(({ h }, i) => ({ nombre: `xl/worksheets/sheet${i + 1}.xml`, datos: xmlHoja(h, i === activa) })),
   ]);
 }
 
@@ -344,17 +358,21 @@ function leerCompartidas(xml) {
       if (t.nombre === 't') enT = false;
       else if (t.nombre === 'rPh') fonetico = Math.max(0, fonetico - 1);
       else if (t.nombre === 'si') {
-        if (actual.length > MAX_CELDA) fallar('XLSX_CELDA', 'Cell text is too long');
+        if (actual === null) fallar('XLSX_XML', 'Unbalanced shared string item');
         lista.push(actual);
         actual = null;
         enT = false;
       }
-    } else if (enT) actual += t.texto;
+    } else if (enT) {
+      actual += t.texto;
+      if (actual.length > MAX_CELDA) fallar('XLSX_CELDA', 'Cell text is too long');
+    }
   }
+  if (actual !== null) fallar('XLSX_XML', 'Unterminated shared string item');
   return lista;
 }
 
-function leerHoja(xml, compartidas) {
+function leerHoja(xml, compartidas, presupuesto) {
   const filas = [];
   let fila = -1;
   let enFila = false;
@@ -399,6 +417,7 @@ function leerHoja(xml, compartidas) {
       else if (nombre === 'rPh') fonetico = Math.max(0, fonetico - 1);
       else if (nombre === 'row') enFila = false;
       else if (nombre === 'c' && celda) {
+        if (++presupuesto.celdas > MAX_CELDAS_TOTAL) fallar('XLSX_FILAS', 'Too many cells in the workbook');
         const valor = valorCelda(celda, compartidas);
         if (valor.length > MAX_CELDA) fallar('XLSX_CELDA', 'Cell text is too long');
         const f = (filas[fila] ??= []);
@@ -424,6 +443,7 @@ function valorCelda(c, compartidas) {
   switch (c.tipo) {
     case 's': {
       const v = c.v.trim();
+      if (v === '') return '';
       if (!/^[0-9]{1,9}$/.test(v)) fallar('XLSX_CELDA', 'Invalid shared string index');
       const s = compartidas[Number(v)];
       if (s === undefined) fallar('XLSX_CELDA', 'Shared string index out of range');
@@ -440,7 +460,7 @@ export function leerXlsx(buf) {
   try {
     partes = leerZip(buf);
   } catch (e) {
-    if (e?.codigo) fallar(e.codigo, e.message);
+    if (e?.codigo) fallar(e.codigo, e.message.replace(/^\[seki-review\/[a-z]+\]\s*/, ''));
     throw e;
   }
   const libro = parte(partes, 'xl/workbook.xml');
@@ -455,6 +475,8 @@ export function leerXlsx(buf) {
     }
   }
   if (declaradas.length === 0) fallar('XLSX_ESTRUCTURA', 'Workbook has no sheets');
+  if (declaradas.length > MAX_HOJAS) fallar('XLSX_ESTRUCTURA', 'Too many sheets');
+  if (new Set(declaradas.map((d) => d.id)).size !== declaradas.length) fallar('XLSX_ESTRUCTURA', 'Duplicate sheet relationship id');
 
   const resolver = (id) => {
     const rel = rels.get(id);
@@ -472,9 +494,13 @@ export function leerXlsx(buf) {
     }
   }
 
+  const presupuesto = { celdas: 0 };
+  const usadas = new Set();
   const hojas = declaradas.map((d) => {
     const ruta = resolver(d.id);
-    return { nombre: d.nombre, oculta: d.oculta, filas: leerHoja(decodificarParte(partes.get(ruta)), compartidas) };
+    if (usadas.has(ruta)) fallar('XLSX_ESTRUCTURA', 'Several sheets share one part');
+    usadas.add(ruta);
+    return { nombre: d.nombre, oculta: d.oculta, filas: leerHoja(decodificarParte(partes.get(ruta)), compartidas, presupuesto) };
   });
   return { hojas };
 }

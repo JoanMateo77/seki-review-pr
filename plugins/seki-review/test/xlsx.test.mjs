@@ -192,3 +192,82 @@ test('tokenizador lineal: entrada patologica termina rapido', () => {
   assert.deepEqual(leerXlsx(libroMinimo({ hoja: tag })).hojas[0].filas, []);
   assert.ok(performance.now() - t1 < 2000);
 });
+
+function libroConHojas(n, { mismaParte = true, hoja, ids } = {}) {
+  const sheets = Array.from({ length: n }, (_, i) => `<sheet name="S${i}" sheetId="${i + 1}" r:id="${ids ? ids(i) : `rId${i + 1}`}"/>`).join('');
+  const rels = Array.from({ length: n }, (_, i) => `<Relationship Id="rId${i + 1}" Type="${REL}/worksheet" Target="worksheets/${mismaParte ? 'sheet1' : `sheet${i + 1}`}.xml"/>`).join('');
+  const cuerpo = hoja ?? hojaCon('<row r="1"><c r="A1" t="inlineStr"><is><t>v</t></is></c></row>');
+  const partes = mismaParte ? [{ nombre: 'xl/worksheets/sheet1.xml', datos: cuerpo }] : Array.from({ length: n }, (_, i) => ({ nombre: `xl/worksheets/sheet${i + 1}.xml`, datos: cuerpo }));
+  return crearZip([
+    { nombre: 'xl/workbook.xml', datos: `<workbook xmlns="${NS}" xmlns:r="${REL}"><sheets>${sheets}</sheets></workbook>` },
+    { nombre: 'xl/_rels/workbook.xml.rels', datos: `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels}</Relationships>` },
+    ...partes,
+  ]);
+}
+
+test('regresion: 200 hojas sobre una misma parte fallan rapido', () => {
+  const fila = `<row r="1">${Array.from({ length: 100 }, (_, c) => `<c r="${columnaLetra(c)}1" t="inlineStr"><is><t>v</t></is></c>`).join('')}</row>`;
+  const t0 = performance.now();
+  rechaza(() => leerXlsx(libroConHojas(200, { hoja: hojaCon(fila.repeat(1)) })), 'XLSX_ESTRUCTURA');
+  assert.ok(performance.now() - t0 < 1000);
+});
+
+test('limite de hojas, ids duplicados y partes compartidas', () => {
+  assert.equal(leerXlsx(libroConHojas(50, { mismaParte: false })).hojas.length, 50);
+  rechaza(() => leerXlsx(libroConHojas(51, { mismaParte: false })), 'XLSX_ESTRUCTURA');
+  rechaza(() => leerXlsx(libroConHojas(2, { mismaParte: false, ids: () => 'rId1' })), 'XLSX_ESTRUCTURA');
+  rechaza(() => leerXlsx(libroConHojas(2, { mismaParte: true })), 'XLSX_ESTRUCTURA');
+});
+
+test('presupuesto global de celdas entre hojas', () => {
+  const filas = Array.from({ length: 2000 }, (_, r) => `<row r="${r + 1}">${Array.from({ length: 100 }, (_, c) => `<c r="${columnaLetra(c)}${r + 1}"/>`).join('')}</row>`).join('');
+  const t0 = performance.now();
+  rechaza(() => leerXlsx(libroConHojas(3, { mismaParte: false, hoja: hojaCon(filas) })), 'XLSX_FILAS');
+  assert.ok(performance.now() - t0 < 5000);
+});
+
+test('cadenas compartidas mal formadas dan error etiquetado', () => {
+  const con = (sst) => libroMinimo({
+    hoja: hojaCon('<row r="1"><c r="A1" t="s"><v>0</v></c></row>'),
+    relsExtra: `<Relationship Id="rId9" Type="${REL}/sharedStrings" Target="sharedStrings.xml"/>`,
+    extras: [{ nombre: 'xl/sharedStrings.xml', datos: sst }],
+  });
+  rechaza(() => leerXlsx(con(`<sst xmlns="${NS}"></si></sst>`)), 'XLSX_XML');
+  rechaza(() => leerXlsx(con(`<sst xmlns="${NS}"><si><t>x</t>`)), 'XLSX_XML');
+  rechaza(() => leerXlsx(con(`<sst xmlns="${NS}"><si><t>${'x'.repeat(32768)}</t></si></sst>`)), 'XLSX_CELDA');
+  const partido = `<sst xmlns="${NS}"><si>${'<r><t>xxxxxxxx</t></r>'.repeat(5000)}</si></sst>`;
+  rechaza(() => leerXlsx(con(partido)), 'XLSX_CELDA');
+});
+
+test('estructuras desbalanceadas en hoja y libro nunca lanzan TypeError', () => {
+  const casos = ['</c></row></is></t></v>', '<row><c></c></c></row></row>', '<is><t>x</t></is><v>1</v><rPh></rPh></rPh>', '<c r="A1"><v>1</v></c>'];
+  for (const c of casos) {
+    try {
+      leerXlsx(libroMinimo({ hoja: hojaCon(c) }));
+    } catch (e) {
+      assert.equal(typeof e.codigo, 'string', e.message);
+      assert.ok(e.message.startsWith('[seki-review/xlsx]'));
+    }
+  }
+});
+
+test('celda t="s" vacia se lee como cadena vacia', () => {
+  assert.deepEqual(leerXlsx(libroMinimo({ hoja: hojaCon('<row r="1"><c r="A1" t="s"/><c r="B1" t="s"><v></v></c></row>') })).hojas[0].filas, [['', '']]);
+});
+
+test('errores del zip llevan una sola etiqueta', () => {
+  assert.throws(() => leerXlsx(Buffer.from('not a zip at all, definitely')), (e) => e.codigo === 'ZIP_CORRUPTO' && e.message.split('[seki-review/xlsx]').length === 2 && !e.message.includes('[seki-review/zip]'));
+});
+
+test('escritor: todas ocultas, rangos fuera de la grilla y argumentos mal tipados', () => {
+  rechaza(() => escribirXlsx({ hojas: [{ nombre: 'A', filas: [['x']], oculta: true }] }), 'XLSX_ESTRUCTURA');
+  const v = (rango) => escribirXlsx({ hojas: [{ nombre: 'A', filas: [['x']], validaciones: [{ rango, lista: ['a'] }] }] });
+  assert.ok(v('XFD1048576'));
+  rechaza(() => v('ZZZ9999999'), 'XLSX_ESTRUCTURA');
+  rechaza(() => v('XFE1'), 'XLSX_ESTRUCTURA');
+  rechaza(() => v('A0'), 'XLSX_ESTRUCTURA');
+  rechaza(() => v('A1:A1048577'), 'XLSX_ESTRUCTURA');
+  rechaza(() => escribirXlsx({ hojas: [{ nombre: 'A', filas: [['x']], validaciones: 'abc' }] }), 'XLSX_ESTRUCTURA');
+  rechaza(() => escribirXlsx({ hojas: [{ nombre: 'A', filas: [['x']], anchos: 'abc' }] }), 'XLSX_ESTRUCTURA');
+  rechaza(() => escribirXlsx({ hojas: [{ nombre: 'A', filas: [['x']], anchos: Array(101).fill(10) }] }), 'XLSX_COLUMNAS');
+});
