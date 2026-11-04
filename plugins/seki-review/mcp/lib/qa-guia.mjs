@@ -4,20 +4,32 @@ import { QA_DEFECTO } from './config.mjs';
 import { conBloqueo, escribirAtomico } from './bloqueo.mjs';
 import { leerJson, rutaGuias } from './cache.mjs';
 
-const EXTENSIONES = 'mjs|cjs|js|jsx|ts|tsx|json|ya?ml|md|ejs|html?|css|scss|sql|sh|py|java|xml|txt|csv|xlsx?|png|jpe?g|svg|lock|env';
-// Every quantifier is bounded and each start is guarded by a lookbehind: input of any shape is scanned in linear time.
-const PATRONES = [
-  /https?:\/\/[^\s)]{1,300}\/pull\/\d{1,9}[^\s)]{0,100}/g,
+const RAMAS = 'feat|feature|fix|bugfix|hotfix|chore|release|refactor|docs|test|ci|perf|build|style';
+const EXT_CODIGO = new Set(['ts', 'tsx', 'js', 'mjs', 'cjs', 'jsx', 'json', 'ejs', 'html', 'css', 'scss', 'sql', 'yml', 'yaml', 'env', 'md', 'py', 'java', 'sh', 'xml', 'lock']);
+const NOMBRE_PRODUCTO = /^[A-Z][a-z]+\.js$/;
+// Every quantifier is bounded, no group is quantified, and each start is guarded by a lookbehind: linear time.
+export const PATRONES_QA = [
+  /https?:\/\/[^\s)]{1,300}/gi,
+  /(?<![\w./-])github\.com\/[^\s)]{1,300}/gi,
+  /(?<![\w./-])[\w./-]{1,300}\/pull\/\d{1,9}[^\s)]{0,100}/gi,
   /(?<![\w./-])[\w.-]{1,100}\/[\w.-]{1,100}#\d{1,9}\b/g,
   /#\d{1,9}\b/g,
-  /(?<![\w./-])(?:feat|fix|hotfix|chore|release)\/[\w./-]{1,100}/g,
-  new RegExp(`(?<![\\w./-])(?:[\\w.-]{1,100}\\/){1,10}[\\w.-]{1,100}\\.(?:${EXTENSIONES})(?![\\w])`, 'g'),
-  new RegExp(`(?<![\\w./-])[\\w-]{1,100}\\.(?:${EXTENSIONES})(?![\\w])`, 'g'),
+  new RegExp(`(?<![\\w./-])(?:origin\\/)?(?:${RAMAS})\\/[\\w./-]{1,100}`, 'gi'),
+  /(?<![\w.-])\.env(?:\.[\w-]{1,30})?(?!\w)/gi,
 ];
+// Paths (with a slash, any extension) and dotted file names (listed extensions only).
+const PATRON_ARCHIVO = /(?<![\w.~-])[~\w./-]{1,300}\.[A-Za-z][A-Za-z0-9]{0,7}(?!\w)/g;
+
+function esArchivo(token) {
+  if (token.includes('/')) return true;
+  if (NOMBRE_PRODUCTO.test(token)) return false;
+  return EXT_CODIGO.has(token.slice(token.lastIndexOf('.') + 1).toLowerCase());
+}
 
 export function limpiarParaQa(texto) {
   let t = String(texto ?? '');
-  for (const re of PATRONES) t = t.replace(re, ' ');
+  for (const re of PATRONES_QA) t = t.replace(re, ' ');
+  t = t.replace(PATRON_ARCHIVO, (m) => (esArchivo(m) ? ' ' : m));
   return t
     .replace(/\(\s{0,10}\)|\[\s{0,10}\]/g, ' ')
     .replace(/[ \t]{1,200}([,.;:])/g, '$1')
@@ -81,28 +93,33 @@ function contenidoDePista({ pista, entrega, prsPorId, explicaciones, filaRastrea
     pasos = limpiarParaQa(numerar(lista.map(limpiarParaQa).filter(Boolean)));
   }
   if (!pasos) {
-    const lista = [...new Set(pruebas.flatMap((pr) => pasosDeCuerpo(pr.descripcion ?? pr.cuerpo ?? pr.body)))];
+    const lista = [...new Set(pruebas.flatMap((pr) => pasosDeCuerpo(pr.descripcion ?? pr.body)))];
     pasos = limpiarParaQa(numerar(lista.map(limpiarParaQa).filter(Boolean)));
   }
   const pendiente = !pasos;
   return { pantalla, prioridad, esperado, pasos: pasos || PENDIENTE, pendiente, hallazgo: limpiarParaQa(filaRastreador?.hallazgo ?? '') };
 }
 
-export function filasDeGuia({ entregas, prsPorId, cfgRepos, explicaciones = new Map(), rastreador = null, columnas = QA_DEFECTO.columnas }) {
-  void cfgRepos;
+export function filasDeGuia({ entregas, prsPorId, explicaciones = new Map(), rastreador = null, columnas = QA_DEFECTO.columnas }) {
   const filas = [];
+  const usadas = new Set();
   entregas.forEach((entrega, i) => {
-    const etiquetas = entrega.ids?.length ? entrega.ids : [`E${i + 1}`];
+    const etiquetas = entrega.ids?.length ? [...new Set(entrega.ids)] : [`E${i + 1}`];
     for (const pista of entrega.pistas ?? []) {
       if (pista.etapa !== 'esperando_qa' && pista.etapa !== 'qa_fallo') continue;
-      for (const etiqueta of etiquetas) {
-        const c = contenidoDePista({ pista, entrega, prsPorId, explicaciones, filaRastreador: rastreador?.get(etiqueta) ?? null });
-        // Cells are keyed by column name: the user's list may reorder or extend the defaults.
+      for (const id of etiquetas) {
+        // The pair (label, portal) is the import key: a repeat in another delivery gets that delivery's position.
+        const etiqueta = usadas.has(`${id}|${pista.portal}`) ? `${id}-E${i + 1}` : id;
+        const llave = `${etiqueta}|${pista.portal}`;
+        if (usadas.has(llave)) throw new Error(`[seki-review/qa] Duplicate guide row key: ${etiqueta} / ${pista.portal}`);
+        usadas.add(llave);
+        const c = contenidoDePista({ pista, entrega, prsPorId, explicaciones, filaRastreador: rastreador?.get(id) ?? null });
+        // Cells are keyed by column name: the user's list may reorder or extend the defaults. ID and Portal are keys: not cleaned.
         const valores = {
-          ID: etiqueta, Portal: pista.portal, 'Screen and access': c.pantalla || c.hallazgo, 'Preconditions and data': '',
+          'Screen and access': c.pantalla, 'Preconditions and data': '', Finding: c.hallazgo,
           Steps: c.pasos, 'Expected result': c.esperado, Priority: c.prioridad,
         };
-        const celdas = columnas.map((nombre) => limpiarParaQa(valores[nombre] ?? ''));
+        const celdas = columnas.map((nombre) => (nombre === 'ID' ? etiqueta : nombre === 'Portal' ? pista.portal : limpiarParaQa(valores[nombre] ?? '')));
         filas.push({ etiqueta, portal: pista.portal, entrega: entrega.clave, prs: [...pista.prs], celdas, pendiente: c.pendiente });
       }
     }
@@ -111,7 +128,7 @@ export function filasDeGuia({ entregas, prsPorId, cfgRepos, explicaciones = new 
 }
 
 export function firmaFila(secreto, { guia, etiqueta, portal, prs, entrega }) {
-  return createHmac('sha256', secreto).update([guia, etiqueta, portal, [...prs].sort().join(','), entrega].join('\n')).digest('hex');
+  return createHmac('sha256', secreto).update(JSON.stringify([guia, etiqueta, portal, [...prs].sort(), entrega])).digest('hex');
 }
 
 // Tracks waiting for QA whose newest testing merge is later than the one every covering guide recorded.
@@ -130,14 +147,17 @@ export function entregasDesdeCorte({ entregas, guias, prsPorId }) {
   });
 }
 
-export const leerGuias = (p) => leerJson(rutaGuias(p.salida), { guias: [] });
+export const leerGuias = (p) => {
+  const g = leerJson(rutaGuias(p.salida), { guias: [] });
+  return { ...g, guias: Array.isArray(g?.guias) ? g.guias : [] };
+};
 
 export async function registrarGuia(p, guia) {
   const ruta = rutaGuias(p.salida);
   return conBloqueo(ruta, () => {
     const actual = leerJson(ruta, { guias: [] });
     const nueva = { id: guia.id, fecha: guia.fecha, entregas: guia.entregas, filas: guia.filas.map(({ etiqueta, portal, entrega, prs }) => ({ etiqueta, portal, entrega, prs })), fusiones: guia.fusiones };
-    escribirAtomico(ruta, JSON.stringify({ guias: [...actual.guias, nueva] }, null, 2) + '\n');
+    escribirAtomico(ruta, JSON.stringify({ guias: [...(Array.isArray(actual?.guias) ? actual.guias : []), nueva] }, null, 2) + '\n');
     return nueva;
   });
 }

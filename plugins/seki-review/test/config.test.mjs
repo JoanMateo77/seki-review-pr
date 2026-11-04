@@ -110,3 +110,22 @@ test('qa columnas without Result fall back with one warning; invalid rastreador.
   assert.equal(avisos.filter((m) => m.includes('qa.columnas')).length, 1);
   assert.equal(avisos.filter((m) => m.includes('qa.rastreador')).length, 1);
 });
+
+test('qa defaults are copies; mapeo values, duplicate columns and tracker path are validated', () => {
+  config({ a: { salida: '/s/a', repos: {} }, b: { salida: '/s/b', repos: {}, qa: { mapeo: { OK: 'bogus' }, columnas: ['ID', 'Portal', 'Result', 'ID'], rastreador: { tipo: 'xlsx', ruta: '~/t.xlsx', hoja: 'S', columnaId: 'ID' } } } });
+  const previo = console.error;
+  console.error = () => {};
+  try {
+    proyecto('a').qa.columnas.push('Mutated');
+    proyecto('a').qa.mapeo.X = 'ok';
+    assert.deepEqual(proyecto('a').qa, QA_DEFECTO);
+    assert.equal(QA_DEFECTO.columnas.includes('Mutated'), false);
+    const qa = proyecto('b').qa;
+    assert.deepEqual(qa.mapeo, QA_DEFECTO.mapeo);
+    assert.deepEqual(qa.columnas, QA_DEFECTO.columnas);
+    assert.ok(qa.rastreador.ruta.startsWith('/'));
+    assert.ok(!qa.rastreador.ruta.startsWith('~'));
+  } finally {
+    console.error = previo;
+  }
+});

@@ -4,6 +4,8 @@ const MAX_FUENTE = 300;
 // The nested-quantifier check is a heuristic; the real bounds are the input length cap and the vm time limit.
 const GRUPO_CUANTIFICADO = /\((?:[^()\\]|\\.)*[+*}]\)[+*{]/;
 
+export const tieneCuantificadoresAnidados = (fuente) => GRUPO_CUANTIFICADO.test(fuente);
+
 export function compilarPatron(fuente, banderas = '') {
   if (typeof fuente !== 'string' || !fuente) throw new Error('Invalid pattern: empty');
   if (fuente.length > MAX_FUENTE) throw new Error(`Invalid pattern: longer than ${MAX_FUENTE} characters`);

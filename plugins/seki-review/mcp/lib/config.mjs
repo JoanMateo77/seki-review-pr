@@ -37,9 +37,9 @@ const VALIDOS = {
   cerrarTrasDias: positivo,
   maxPorSenal: positivo,
   intervaloSeg: positivo,
-  columnas: (v) => textos(v) && ['ID', 'Portal', 'Result'].every((c) => v.includes(c)),
+  columnas: (v) => textos(v) && ['ID', 'Portal', 'Result'].every((c) => v.includes(c)) && new Set(v).size === v.length,
   resultados: textos,
-  mapeo: (v) => v !== null && typeof v === 'object' && !Array.isArray(v) && Object.values(v).every((x) => x === null || typeof x === 'string'),
+  mapeo: (v) => v !== null && typeof v === 'object' && !Array.isArray(v) && Object.values(v).every((x) => x === null || ['ok', 'fallo', 'bloqueado', 'na'].includes(x)),
   chrome: (v) => v === null || typeof v === 'string',
 };
 
@@ -74,7 +74,7 @@ function validarRastreador(r) {
   if (r.filaEncabezado !== undefined && fila !== r.filaEncabezado) avisar('qa.rastreador.filaEncabezado has an invalid value; 1 is used');
   return {
     tipo: 'xlsx',
-    ruta: r.ruta,
+    ruta: expandir(r.ruta),
     hoja: r.hoja,
     filaEncabezado: fila,
     columnaId: r.columnaId,
@@ -95,11 +95,11 @@ function avisar(mensaje) {
 
 // Defaults under the user's values, merged one level deep; a value of the wrong type falls back to its default.
 function conDefectos(defecto, usuario, seccion) {
-  const salida = { ...defecto, ...(usuario && typeof usuario === 'object' && !Array.isArray(usuario) ? usuario : {}) };
+  const salida = { ...structuredClone(defecto), ...(usuario && typeof usuario === 'object' && !Array.isArray(usuario) ? usuario : {}) };
   for (const k of Object.keys(defecto)) {
     if (VALIDOS[k] && !VALIDOS[k](salida[k])) {
       avisar(`${seccion}.${k} has an invalid value; the default ${JSON.stringify(defecto[k])} is used`);
-      salida[k] = defecto[k];
+      salida[k] = structuredClone(defecto[k]);
     }
   }
   return salida;

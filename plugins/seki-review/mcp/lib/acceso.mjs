@@ -1,8 +1,9 @@
 // Token of the served dashboard, fixed per project and machine so the link does not change between sessions.
 import { randomBytes } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { join } from 'node:path';
+import { conBloqueoSync } from './bloqueo.mjs';
 
 export function tokenDe(p) {
   const ruta = join(p.salida, 'datos', 'token');
@@ -18,17 +19,42 @@ export function tokenDe(p) {
 }
 
 // Secret of the QA guide signatures: 32 random bytes, created once per project and machine.
+// The first creation is exclusive ('wx'): concurrent processes agree on the winner's bytes.
+const pausa = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
 export function secretoQa(p) {
   const ruta = join(p.salida, 'datos', 'secreto-qa');
-  if (existsSync(ruta)) {
-    const guardado = readFileSync(ruta);
-    if (guardado.length === 32) return guardado;
-  }
+  const valido = () => {
+    try {
+      const b = readFileSync(ruta);
+      return b.length === 32 ? b : null;
+    } catch { return null; }
+  };
+  const existente = valido();
+  if (existente) return existente;
   mkdirSync(join(p.salida, 'datos'), { recursive: true });
-  const secreto = randomBytes(32);
-  writeFileSync(ruta, secreto, { mode: 0o600 });
-  chmodSync(ruta, 0o600);
-  return secreto;
+  const nuevo = randomBytes(32);
+  try {
+    writeFileSync(ruta, nuevo, { flag: 'wx', mode: 0o600 });
+    return nuevo;
+  } catch (e) {
+    if (e.code !== 'EEXIST') throw e;
+  }
+  // Another process may still be writing it; only a file that stays invalid is replaced.
+  for (let i = 0; i < 10; i++) {
+    const b = valido();
+    if (b) return b;
+    pausa(10);
+  }
+  return conBloqueoSync(ruta, () => {
+    const b = valido();
+    if (b) return b;
+    const tmp = `${ruta}.${process.pid}.tmp`;
+    writeFileSync(tmp, nuevo, { mode: 0o600 });
+    renameSync(tmp, ruta);
+    chmodSync(ruta, 0o600);
+    return nuevo;
+  });
 }
 
 // Another Claude Code session may already be serving the same dashboard on the port.
