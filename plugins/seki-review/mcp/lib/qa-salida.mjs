@@ -7,7 +7,7 @@ import { dirQa, leerJson, rutaEntregas, rutaExplicacion, rutaGuias, rutaInstanta
 import { QA_DEFECTO } from './config.mjs';
 import { htmlAPdf, rutaChrome } from './pdf.mjs';
 import { entregasDesdeCorte, filasDeGuia, firmaFila, fusionesDe, leerGuias, registrarGuia } from './qa-guia.mjs';
-import { contenidoRastreador } from './rastreador-xlsx.mjs';
+import { contenidoRastreador, fechaLocal } from './rastreador-xlsx.mjs';
 import { mapaPrs } from './tablero-entregas.mjs';
 import { columnaLetra, escribirXlsx, limpiar } from './xlsx.mjs';
 
@@ -41,8 +41,6 @@ ${tr}
 </tbody></table></body></html>
 `;
 }
-
-const fechaLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 // Reserves guia-<date>-<n> by creating its xlsx exclusively: two racing calls never take the same n.
 function reservar(dir, dia) {

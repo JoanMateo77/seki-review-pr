@@ -400,14 +400,16 @@ test('a refused tracker write does not undo the recorded events', async () => {
   assert.ok(readFileSync(ruta).equals(trackerFixture()));
 });
 
-test('the guide reads tracker content and survives an unreadable tracker', async () => {
-  const { p, foto } = await escenario();
+test('the guide reads tracker content and survives an unreadable tracker', async (t) => {
+  const { p } = await escenario();
   const ruta = conRastreador(p);
   const g = await generarGuia(p, { ahora: new Date('2026-11-04T13:00:00'), chrome: null });
-  const hoja = leerXlsx(readFileSync(g.archivos.xlsx)).hojas[0].filas;
-  assert.ok(hoja.some((f) => f.includes('Open the page\nClick the button')));
+  const celdas = (guia) => leerXlsx(readFileSync(guia.archivos.xlsx)).hojas[0].filas.flat();
+  assert.ok(celdas(g).includes('Open the page\nClick the button'));
   writeFileSync(ruta, 'not a workbook');
+  const espia = t.mock.method(console, 'error', () => {});
   const g2 = await generarGuia(p, { ahora: new Date('2026-11-04T14:00:00'), chrome: null });
   assert.ok(g2.id);
-  assert.ok(foto);
+  assert.ok(!celdas(g2).includes('Open the page\nClick the button'));
+  assert.ok(espia.mock.calls.some((c) => /\[seki-review\/qa\] Tracker content was not read.*ZIP_CORRUPTO/.test(String(c.arguments[0]))));
 });

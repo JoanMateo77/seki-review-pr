@@ -1,11 +1,11 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { QA_DEFECTO } from '../mcp/lib/config.mjs';
 import { aplicarRastreador, cambiosPendientes, contenidoRastreador, leerRastreador } from '../mcp/lib/rastreador-xlsx.mjs';
-import { leerZip } from '../mcp/lib/zip.mjs';
+import { leerZip, reemplazarEntradas } from '../mcp/lib/zip.mjs';
 import { leerXlsx } from '../mcp/lib/xlsx.mjs';
 import { trackerFixture } from './util/xlsx-fixture.mjs';
 
@@ -61,7 +61,6 @@ for (const variante of ['inline', 'compartidas']) {
     const antes = readFileSync(ruta);
     const cambios = cambiosPendientes(cfg, entregas, prs);
     assert.deepEqual(cambios.map((c) => `${c.id}:${c.columna}`), ['X-001:estado', 'X-001:prPruebas', 'X-001:enPruebas', 'X-003:prPruebas', 'X-003:enPruebas']);
-    // X-003 state: stage without text is skipped; X-003 already has the same testing URL? it has pr/2, so it differs.
     const r = await aplicarRastreador(p, entregas, prs, { ahora: new Date(2026, 10, 4, 9, 8, 7) });
     assert.equal(r.escrito, true);
     assert.equal(r.celdas, 5);
@@ -136,8 +135,7 @@ test('escribir false and a non-file path are refused', async () => {
 });
 
 test('a formula in a target cell is refused, not thrown', async () => {
-  const { dir, ruta, p } = escenario('inline');
-  const { reemplazarEntradas } = await import('../mcp/lib/zip.mjs');
+  const { ruta, p } = escenario('inline');
   const z = leerZip(readFileSync(ruta));
   const xml = z.get('xl/worksheets/sheet1.xml').toString().replace(/<c r="E2" s="0"\/>|<c r="E2"[^>]*>[\s\S]*?<\/c>/, '<c r="E2" s="0"><f>1+1</f><v>2</v></c>');
   writeFileSync(ruta, reemplazarEntradas(readFileSync(ruta), new Map([['xl/worksheets/sheet1.xml', xml]])));
@@ -147,7 +145,6 @@ test('a formula in a target cell is refused, not thrown', async () => {
   assert.match(r.motivo, /formula/);
   assert.ok(readFileSync(ruta).equals(antes));
   assert.equal(existsSync(join(p.salida, 'respaldos')), false);
-  assert.ok(dir);
 });
 
 test('the original file mode is kept', async () => {
@@ -156,4 +153,144 @@ test('the original file mode is kept', async () => {
   const r = await aplicarRastreador(p, entregas, prs);
   assert.equal(r.escrito, true);
   assert.equal(statSync(ruta).mode & 0o777, 0o640);
+});
+
+const HOJA = 'xl/worksheets/sheet1.xml';
+const salidaAparte = (p) => { p.salida = join(tmp(), 's'); };
+const listado = (dir) => readdirSync(dir).sort();
+const sinRespaldos = (p) => assert.equal(existsSync(join(p.salida, 'respaldos')), false);
+
+test('a change between read and rename leaves no backup and no temporary file', async () => {
+  const { dir, ruta, p } = escenario('inline');
+  const antes = readFileSync(ruta);
+  const st = statSync(ruta);
+  const r = await aplicarRastreador(p, entregas, prs, { gancho: () => utimesSync(ruta, new Date(), new Date(st.mtimeMs + 5000)) });
+  assert.equal(r.escrito, false);
+  assert.match(r.motivo, /changed while/);
+  assert.deepEqual(listado(dir), ['salida', 'tracker.xlsx']);
+  assert.ok(readFileSync(ruta).equals(antes));
+  sinRespaldos(p);
+});
+
+test('same-size same-mtime content change is detected by the hash', async () => {
+  const { dir, ruta, p } = escenario('inline');
+  const st = statSync(ruta);
+  const alterado = Buffer.from(readFileSync(ruta));
+  alterado[alterado.length - 30] ^= 0x01;
+  const r = await aplicarRastreador(p, entregas, prs, { gancho: () => { writeFileSync(ruta, alterado); utimesSync(ruta, st.atime, st.mtime); } });
+  assert.equal(r.escrito, false);
+  assert.match(r.motivo, /changed while/);
+  assert.deepEqual(listado(dir), ['salida', 'tracker.xlsx']);
+  sinRespaldos(p);
+});
+
+test('a failing temporary write is reported without backup or leftovers', { skip: process.getuid?.() === 0 }, async (t) => {
+  const { dir, p } = escenario('inline');
+  salidaAparte(p);
+  const espia = t.mock.method(console, 'error', () => {});
+  chmodSync(dir, 0o500);
+  try {
+    const r = await aplicarRastreador(p, entregas, prs);
+    assert.equal(r.escrito, false);
+    assert.match(r.motivo, /could not be updated/);
+    assert.match(String(espia.mock.calls.at(-1).arguments[0]), /\(EACCES\)/);
+  } finally {
+    chmodSync(dir, 0o700);
+  }
+  assert.deepEqual(listado(dir), ['tracker.xlsx']);
+  sinRespaldos(p);
+});
+
+test('a lock file appearing mid-write refuses and cleans up', async () => {
+  const { dir, p } = escenario('inline');
+  const r = await aplicarRastreador(p, entregas, prs, { gancho: () => writeFileSync(join(dir, '~$tracker.xlsx'), '') });
+  assert.equal(r.escrito, false);
+  assert.match(r.motivo, /open in another program/);
+  assert.deepEqual(listado(dir), ['salida', 'tracker.xlsx', '~$tracker.xlsx']);
+  sinRespaldos(p);
+});
+
+test('a path swapped for a symlink after the first check is refused', async () => {
+  const { dir, ruta, p } = escenario('inline');
+  const copia = join(dir, 'copia.xlsx');
+  writeFileSync(copia, readFileSync(ruta));
+  const r = await aplicarRastreador(p, entregas, prs, { gancho: () => { unlinkSync(ruta); symlinkSync(copia, ruta); } });
+  assert.equal(r.escrito, false);
+  assert.match(r.motivo, /symbolic link/);
+  assert.ok(!listado(dir).some((f) => f.endsWith('.tmp')));
+  sinRespaldos(p);
+});
+
+test('a missing configured header through aplicarRastreador is a refusal without backup', async () => {
+  const { p } = escenario('inline');
+  p.qa.rastreador.columnas.estado = 'Nope';
+  const r = await aplicarRastreador(p, entregas, prs);
+  assert.equal(r.escrito, false);
+  assert.match(r.motivo, /Nope/);
+  sinRespaldos(p);
+});
+
+test('a target cell inside a table header is refused', async () => {
+  const { dir, ruta, p } = escenario('inline');
+  const base = reemplazarEntradas(readFileSync(ruta), new Map([[HOJA, leerZip(readFileSync(ruta)).get(HOJA).toString().replace('</worksheet>', '<tableParts count="1"><tablePart r:id="rId1"/></tableParts></worksheet>')]]));
+  const conTabla = reemplazarEntradas(base, new Map([
+    ['xl/worksheets/_rels/sheet1.xml.rels', '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/></Relationships>'],
+    ['xl/tables/table1.xml', '<?xml version="1.0"?><table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="T1" displayName="T1" ref="A2:I4"><tableColumns count="1"><tableColumn id="1" name="ID"/></tableColumns></table>'],
+  ]));
+  writeFileSync(ruta, conTabla);
+  const r = await aplicarRastreador(p, entregas, prs);
+  assert.equal(r.escrito, false);
+  assert.match(r.motivo, /table/);
+  assert.deepEqual(listado(dir), ['salida', 'tracker.xlsx']);
+  sinRespaldos(p);
+});
+
+test('two concurrent calls serialize: one writes, the other finds nothing to update', async () => {
+  const { p } = escenario('inline');
+  const [a, b] = await Promise.all([aplicarRastreador(p, entregas, prs), aplicarRastreador(p, entregas, prs)]);
+  assert.deepEqual([a.escrito, b.escrito].sort(), [false, true]);
+  assert.equal([a, b].find((x) => !x.escrito).motivo, 'Nothing to update');
+  assert.equal(readdirSync(join(p.salida, 'respaldos')).length, 1);
+});
+
+test('every row of a duplicated ID is updated', async () => {
+  const dir = tmp();
+  const ruta = join(dir, 'tracker.xlsx');
+  const fila = (id) => [id, 'F', 'S', 'E', '', '', '', '', ''];
+  writeFileSync(ruta, trackerFixture({ filas: [fila('X-001'), fila('X-002'), fila('X-001')] }));
+  const p = { clave: 't', salida: join(dir, 'salida'), qa: { ...structuredClone(QA_DEFECTO), rastreador: cfgBase(ruta) } };
+  const r = await aplicarRastreador(p, entregas, prs);
+  assert.equal(r.escrito, true);
+  const filas = leerXlsx(readFileSync(ruta)).hojas[0].filas;
+  assert.equal(filas[1][4], 'In progress');
+  assert.equal(filas[3][4], 'In progress');
+  assert.equal(filas[2][4], '');
+});
+
+test('only the newest 20 backups of the tracker are kept', async () => {
+  const { p } = escenario('inline');
+  const dirR = join(p.salida, 'respaldos');
+  mkdirSync(dirR, { recursive: true });
+  for (let i = 0; i < 22; i++) {
+    const f = join(dirR, `tracker-20260101-0000${String(i).padStart(2, '0')}.xlsx`);
+    writeFileSync(f, 'x');
+    utimesSync(f, new Date(2026, 0, 1, 0, 0, i), new Date(2026, 0, 1, 0, 0, i));
+  }
+  writeFileSync(join(dirR, 'otro-20260101-000000.xlsx'), 'x');
+  const r = await aplicarRastreador(p, entregas, prs, { ahora: new Date(2026, 10, 4, 9, 0, 0) });
+  assert.equal(r.escrito, true);
+  const lista = readdirSync(dirR).filter((f) => f.startsWith('tracker-'));
+  assert.equal(lista.length, 20);
+  assert.ok(!lista.includes('tracker-20260101-000000.xlsx'));
+  assert.ok(lista.includes('tracker-20261104-090000.xlsx'));
+  assert.ok(readdirSync(dirR).includes('otro-20260101-000000.xlsx'));
+});
+
+test('a date cell holding the same Excel serial is not rewritten', () => {
+  const { ruta, cfg } = escenario('inline');
+  const xml = leerZip(readFileSync(ruta)).get(HOJA).toString().replace(/<c r="H2"[^>]*\/>/, '<c r="H2" s="0"><v>46082</v></c>');
+  writeFileSync(ruta, reemplazarEntradas(readFileSync(ruta), new Map([[HOJA, xml]])));
+  assert.equal(leerXlsx(readFileSync(ruta)).hojas[0].filas[1][7], '46082');
+  const c = cambiosPendientes(cfg, entregas, prs);
+  assert.ok(!c.some((x) => x.id === 'X-001' && x.columna === 'enPruebas'));
 });
