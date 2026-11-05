@@ -5,11 +5,15 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync } fro
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rutaCostos } from './cache.mjs';
+import { elegirModelo, PERFILES } from './perfiles.mjs';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../..');
 
-export const TOPES = { responder: 0.5, explicar: 2, cambiar: 1.5, investigar: 1, filtrar: 0.5 };
-export const TURNOS = { responder: 4, explicar: 30, cambiar: 40, investigar: 25, filtrar: 3 };
+export { elegirModelo };
+
+const TIPOS = ['responder', 'explicar', 'cambiar', 'investigar', 'filtrar'];
+export const TOPES = Object.fromEntries(TIPOS.map((t) => [t, PERFILES.normal[t].topeUsd]));
+export const TURNOS = Object.fromEntries(TIPOS.map((t) => [t, PERFILES.normal[t].turnos]));
 
 // Files the AI cannot read in any directory opened to it; each project adds its own in `secretos`.
 // Read rules also govern Grep and Glob; they use each directory's absolute path because relative ones only
@@ -22,16 +26,6 @@ export const reglasSecretos = (dirs, extra = []) => dirs.flatMap((d) => {
 });
 
 export const tope = (tipo) => Number(process.env[`SEKI_IA_TOPE_${tipo.toUpperCase()}`]) || TOPES[tipo];
-
-export function elegirModelo({ tipo, pr, lineasSeleccionadas = 0 }) {
-  const forzado = process.env[`SEKI_IA_MODELO_${tipo.toUpperCase()}`] ?? process.env.SEKI_IA_MODELO;
-  if (forzado) return tipo === 'cambiar' && forzado === 'haiku' ? 'sonnet' : forzado;
-  const grande = (pr.adiciones ?? 0) + (pr.eliminaciones ?? 0) > 1500;
-  if (tipo !== 'responder' && (pr.seguridad || grande)) return 'opus';
-  const esfuerzo = pr.explicacion?.esfuerzo ?? pr.esfuerzoTamano ?? 3;
-  if (tipo === 'responder' && lineasSeleccionadas <= 40 && esfuerzo <= 2) return 'haiku';
-  return 'sonnet';
-}
 
 const ESCRITURA = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 
@@ -146,13 +140,22 @@ export const promptSistema = (...nombres) => nombres.map((n) => readFileSync(joi
 // System prompt with the project context (stack, writing and code rules) from proyectos.json.
 export const sistemaDe = (p, ...nombres) => [promptSistema(...nombres), ...(p?.contexto ? [`# Project context\n\n${p.contexto}`] : [])].join('\n\n');
 
+// Failed jobs keep a short safe reason (already sanitised by ejecutarClaude), never prompt text.
 export function registrarCosto(p, { fecha = new Date().toISOString(), ...datos }) {
+  if (datos.motivo !== undefined) datos.motivo = datos.ok === false && datos.motivo ? String(datos.motivo).slice(0, 200) : undefined;
   const ruta = rutaCostos(p.salida);
   mkdirSync(dirname(ruta), { recursive: true });
   appendFileSync(ruta, JSON.stringify({ fecha, ...datos }) + '\n');
 }
 
-export function costosDelDia(p, dia = new Date().toISOString().slice(0, 10)) {
+// Local calendar day (machine time zone) of an ISO date.
+export function diaLocal(fecha) {
+  const d = new Date(fecha);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export function costosDelDia(p, dia = diaLocal(Date.now())) {
   const ruta = rutaCostos(p.salida);
   const r = { total: 0, trabajos: 0 };
   if (!existsSync(ruta)) return r;
@@ -160,7 +163,7 @@ export function costosDelDia(p, dia = new Date().toISOString().slice(0, 10)) {
     if (!linea) continue;
     let x;
     try { x = JSON.parse(linea); } catch { continue; }
-    if (!x.fecha?.startsWith(dia) || x.tipo === 'valoracion') continue;
+    if (diaLocal(x.fecha) !== dia || x.tipo === 'valoracion') continue;
     r.total += x.costo ?? 0;
     r.trabajos++;
   }

@@ -7,7 +7,8 @@ import { escribirJson, leerJson, rutaExplicacion, rutaVerificacion } from './cac
 import { asegurarDiff } from './diffs.mjs';
 import { contarHerramienta, fijarAvance, quitarAvance } from './avance.mjs';
 import { crearCopia } from './copias.mjs';
-import { argsClaude, dirVacio, ejecutarClaude, elegirModelo, reglasSecretos, registrarCosto, sistemaDe, tope, TURNOS } from './ia.mjs';
+import { argsClaude, dirVacio, ejecutarClaude, reglasSecretos, registrarCosto, sistemaDe } from './ia.mjs';
+import { modoDe, perfil } from './perfiles.mjs';
 import { ghJson } from './proceso.mjs';
 
 const MAX_LINEAS = 1500;
@@ -131,11 +132,11 @@ export function promptExplicar({ pr, proyecto, detalle, archivos, verificaciones
 }
 
 // completar: analyzes only the files the current explanation did not review and extends it.
-export async function explicarConIa(p, pr, { completar = false } = {}) {
+export async function explicarConIa(p, pr, { completar = false, modo } = {}) {
   const clave = `pr:${pr.id}`;
   fijarAvance(clave, { fase: 'preparando' });
   try {
-    return await explicar(p, pr, clave, { completar });
+    return await explicar(p, pr, clave, { completar, modo });
   } finally {
     quitarAvance(clave);
   }
@@ -145,7 +146,10 @@ const faltantes = (c) => [...(c?.sinDiff ?? []), ...(c?.recortados ?? [])];
 // A second pass is worth it if something that is not a test or documentation was left unseen.
 const faltaCodigo = (c) => faltantes(c).some((f) => prioridad(f) <= 2);
 
-async function explicar(p, pr, clave, { completar }) {
+// The extension pass runs once, only in a mode that allows it and when code was left unseen.
+export const requiereSegundaPasada = ({ ok, segundaPasada, completar, cobertura }) => ok && segundaPasada && !completar && faltaCodigo(cobertura);
+
+async function explicar(p, pr, clave, { completar, modo }) {
   const [detalle, archivos] = await Promise.all([
     ghJson(['pr', 'view', String(pr.numero), '-R', `${p.owner}/${pr.repo}`, '--json', 'body,commits']).catch(() => null),
     asegurarDiff(p, pr.repo, pr.numero, pr.headSha),
@@ -157,7 +161,7 @@ async function explicar(p, pr, clave, { completar }) {
   const dirParches = join(p.copias ?? join(p.salida, 'copias'), 'diffs', `${pr.repo}-${pr.numero}`);
   const parches = escribirParches(dirParches, archivos);
   const verificaciones = leerJson(rutaVerificacion(p.salida, pr.repo, pr.numero));
-  const modelo = elegirModelo({ tipo: 'explicar', pr });
+  const { modo: modoUsado, modelo, topeUsd, turnos, segundaPasada } = perfil({ tipo: 'explicar', modo: modoDe(p, modo), pr });
   let costo = 0;
   let pasadas = 0;
 
@@ -170,13 +174,13 @@ async function explicar(p, pr, clave, { completar }) {
     const r = await ejecutarClaude(argsClaude({
       modelo, sistema: sistemaDe(p, 'base', 'explicar'),
       prompt: promptExplicar({ pr, proyecto: p.clave, detalle, archivos, verificaciones, parches, copia, previa: previa ? resto : null, foco }),
-      tools: ['Read', 'Grep', 'Glob'], mcp: true, tope: tope('explicar'), turnos: TURNOS.explicar, traza: true,
+      tools: ['Read', 'Grep', 'Glob'], mcp: true, tope: topeUsd, turnos, traza: true,
       dirs: [dirParches], prohibidas: reglasSecretos(copia ? [copia] : [], p.secretos),
     }), { cwd: copia ?? dirVacio(p), alUsar: (h) => contarHerramienta(clave, h, [copia, dirParches].filter(Boolean)) });
     pasadas++;
     costo += r.costo ?? 0;
     const ok = r.ok && /\b(done|listo)\b/i.test(r.texto);
-    registrarCosto(p, { tipo: 'explicar', prId: pr.id, modelo: r.modelo ?? modelo, uso: r.uso, costo: r.costo, ok, ...(previa ? { completar: true } : {}) });
+    registrarCosto(p, { tipo: 'explicar', prId: pr.id, modelo: r.modelo ?? modelo, uso: r.uso, costo: r.costo, ok, modo: modoUsado, motivo: r.motivo, ...(previa ? { completar: true } : {}) });
     if (!ok) return { ok, r };
     const e = vigente();
     if (e) {
@@ -190,7 +194,7 @@ async function explicar(p, pr, clave, { completar }) {
   const previa = completar ? vigente() : null;
   let res = await pasada(previa?.cobertura && !previa.cobertura.completa ? previa : null);
   // If code was left unseen after the first pass, it is extended exactly once.
-  if (res.ok && !completar && faltaCodigo(vigente()?.cobertura)) res = await pasada(vigente());
+  if (requiereSegundaPasada({ ok: res.ok, segundaPasada, completar, cobertura: vigente()?.cobertura })) res = await pasada(vigente());
   const { ok, r } = res;
   return { ok, motivo: ok ? null : r.motivo ?? r.texto.slice(0, 400), costo, modelo: r.modelo ?? modelo, pasadas };
 }
