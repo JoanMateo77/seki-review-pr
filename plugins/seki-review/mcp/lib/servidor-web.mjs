@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process';
 import { createServer } from 'node:http';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
-import { proyecto as cargarProyecto } from './config.mjs';
+import { cargarProyectos, proyecto as cargarProyecto } from './config.mjs';
 import { recolectar } from './recolectar.mjs';
 import { construirHtml, fotoConExplicaciones, versionEnDisco } from './tablero.mjs';
 
@@ -18,6 +18,8 @@ import { explicarConIa } from './explicar.mjs';
 import { avances } from './avance.mjs';
 import { filtrarPrs } from './filtrar.mjs';
 import { costosDelDia, registrarCosto, resumenCostos } from './ia.mjs';
+import { modoDe, perfil } from './perfiles.mjs';
+import { crearPresupuesto, gastoMaquina } from './presupuesto.mjs';
 import { estadoServidor, pedirCeder, tokenDe } from './acceso.mjs';
 import { limpiarCopias } from './copias.mjs';
 import { ghJson } from './proceso.mjs';
@@ -243,7 +245,18 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
     },
   });
 
-  const cola = crearCola();
+  // The limit is the served project's; the spend counts every configured project on this machine.
+  const presupuesto = crearPresupuesto({
+    limite: () => p.ia?.presupuestoDiarioUsd ?? null,
+    gasto: () => { try { return gastoMaquina({ proyectos: cargarProyectos().proyectos }); } catch { return costosDelDia(p).total; } },
+  });
+  const cola = crearCola({ presupuesto });
+  const modo = modoDe(p);
+  // What a job may spend in the worst case: explicar adds its second pass, cambiar its retry.
+  const tope = (tipo, n) => {
+    const f = perfil({ tipo, modo });
+    return f.topeUsd * (n ?? (tipo === 'explicar' ? 1 + Number(f.segundaPasada) : tipo === 'cambiar' ? 2 : 1));
+  };
   // QA guide jobs run outside the AI queue (they wait for a lock and for Chrome, and spend no AI): one at a time,
   // a second request with the same options while one runs gets the same job, with other options it gets 409. The newest few states stay readable by id.
   const trabajosGuia = new Map();
@@ -271,7 +284,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         if (explicarFaltantes && r.pendientes.length) {
           // PRs merged into testing live in `recientes`, not in `prs`.
           const validas = mapaPrs(leerJson(rutaInstantanea(p.salida)));
-          resultado.encolados = cola.encolar(soloPrsConocidos(r.pendientes, validas).map((x) => ({ id: x, tipo: 'explicar', prId: x, ejecutar: () => explicarConIa(p, validas.get(x)) })));
+          resultado.encolados = cola.encolar(soloPrsConocidos(r.pendientes, validas).map((x) => ({ id: x, tipo: 'explicar', prId: x, topeUsd: tope('explicar'), ejecutar: () => explicarConIa(p, validas.get(x), { modo }) })));
         }
         Object.assign(t, { estado: 'terminado', resultado });
       } catch (e) {
@@ -341,9 +354,9 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         if (cambios.length && pr.estadoPr !== 'OPEN') throw new Error('The PR is no longer open: changes cannot be requested');
         for (const cid of [...todas, ...cambios]) actualizarComentario(p, pr.repo, pr.numero, cid, { estado: 'en_cola', motivo: null });
         const ahora = Date.now();
-        if (preguntas.length) cola.encolar([{ id: `${pr.id}:responder:${ahora}`, tipo: 'responder', prId: pr.id, ...conRescate(pr, preguntas, () => responderPreguntas(p, pr, preguntas)) }]);
-        if (cambios.length) cola.encolar([{ id: `${pr.id}:cambiar:${ahora}`, tipo: 'cambiar', prId: pr.id, ...conRescate(pr, cambios, () => proponerCambios(p, pr, cambios)) }]);
-        for (const cid of investigar) cola.encolar([{ id: `${pr.id}:investigar:${cid}:${ahora}`, tipo: 'investigar', prId: pr.id, ...conRescate(pr, [cid], () => investigarPregunta(p, pr, cid)) }]);
+        if (preguntas.length) cola.encolar([{ id: `${pr.id}:responder:${ahora}`, tipo: 'responder', prId: pr.id, topeUsd: tope('responder', preguntas.length), ...conRescate(pr, preguntas, () => responderPreguntas(p, pr, preguntas, { modo })) }]);
+        if (cambios.length) cola.encolar([{ id: `${pr.id}:cambiar:${ahora}`, tipo: 'cambiar', prId: pr.id, topeUsd: tope('cambiar'), ...conRescate(pr, cambios, () => proponerCambios(p, pr, cambios, { modo })) }]);
+        for (const cid of investigar) cola.encolar([{ id: `${pr.id}:investigar:${cid}:${ahora}`, tipo: 'investigar', prId: pr.id, topeUsd: tope('investigar'), ...conRescate(pr, [cid], () => investigarPregunta(p, pr, cid, { modo })) }]);
         return responder(res, 202, { preguntas: todas.length, cambios: cambios.length, desactualizados: desactualizados.length });
       }
       // Was the answer useful? Stored on the question and in the cost log to compare models.
@@ -360,10 +373,10 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
       }
       if (req.method === 'GET' && url.pathname === '/api/costos') return responder(res, 200, resumenCostos(p));
       if (req.method === 'POST' && url.pathname === '/api/filtrar') {
-        const { consulta } = await leerCuerpo(req);
+        const { consulta, forzar } = await leerCuerpo(req);
         const foto = fotoConExplicaciones(p);
         if (!foto) throw Object.assign(new Error('No PR data yet.'), { codigo: 503 });
-        return responder(res, 200, await filtrarPrs(p, foto.prs, consulta));
+        return responder(res, 200, await filtrarPrs(p, foto.prs, consulta, { modo, presupuesto, forzar: forzar === true }));
       }
       if (req.method === 'POST' && url.pathname === '/api/investigar') {
         const { id, comentario } = await leerCuerpo(req);
@@ -373,7 +386,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         if (!['respondido', 'error'].includes(c.estado)) throw new Error('The question is still in progress');
         if (c.headSha && c.headSha !== pr.headSha) throw new Error('The question belongs to an earlier commit of the PR');
         actualizarComentario(p, pr.repo, pr.numero, c.id, { estado: 'en_cola', investigar: true, motivo: null });
-        cola.encolar([{ id: `${pr.id}:investigar:${c.id}:${Date.now()}`, tipo: 'investigar', prId: pr.id, ...conRescate(pr, [c.id], () => investigarPregunta(p, pr, c.id)) }]);
+        cola.encolar([{ id: `${pr.id}:investigar:${c.id}:${Date.now()}`, tipo: 'investigar', prId: pr.id, topeUsd: tope('investigar'), ...conRescate(pr, [c.id], () => investigarPregunta(p, pr, c.id, { modo })) }]);
         return responder(res, 202, { encolado: true });
       }
       if (req.method === 'GET' && url.pathname === '/api/propuesta') {
@@ -387,7 +400,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         const accion = url.pathname.slice('/api/propuesta/'.length);
         if (accion === 'ajustar') {
           if (typeof indicacion !== 'string' || !indicacion.trim() || indicacion.length > 4000) throw new Error('Instruction empty or longer than 4000 characters');
-          cola.encolar([{ id: `${pr.id}:ajustar:${Date.now()}`, tipo: 'cambiar', prId: pr.id, ejecutar: () => ajustarPropuesta(p, pr, id, indicacion.trim()) }]);
+          cola.encolar([{ id: `${pr.id}:ajustar:${Date.now()}`, tipo: 'cambiar', prId: pr.id, topeUsd: tope('cambiar'), ejecutar: () => ajustarPropuesta(p, pr, id, indicacion.trim(), { modo }) }]);
           return responder(res, 202, { encolado: true });
         }
         if (accion === 'aprobar') {
@@ -401,7 +414,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
           if (!['conflicto', 'rechazada'].includes(prop.estado)) throw new Error('Only a conflicting or rejected proposal can be regenerated');
           if (pr.estadoPr !== 'OPEN') throw new Error('The PR is no longer open: changes cannot be requested');
           actualizarComentario(p, pr.repo, pr.numero, prop.comentarioId, { estado: 'en_cola', motivo: null });
-          cola.encolar([{ id: `${pr.id}:cambiar:${Date.now()}`, tipo: 'cambiar', prId: pr.id, ...conRescate(pr, [prop.comentarioId], () => proponerCambios(p, pr, [prop.comentarioId])) }]);
+          cola.encolar([{ id: `${pr.id}:cambiar:${Date.now()}`, tipo: 'cambiar', prId: pr.id, topeUsd: tope('cambiar'), ...conRescate(pr, [prop.comentarioId], () => proponerCambios(p, pr, [prop.comentarioId], { modo })) }]);
           return responder(res, 202, { encolado: true });
         }
         return responder(res, 404, { error: 'Not found' });
@@ -469,7 +482,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
       }
       if (req.method === 'GET' && url.pathname === '/api/estado') {
         if (req.headers['x-seki-tablero'] === '1') ultimoTablero = Date.now();
-        return responder(res, 200, { vigia: vigia.estado(), refrescando: !!refresco, ultimoRefresco, trabajos: [...cola.lista(), ...listaGuias()], comentarios: marcasComentarios(), avances: avances(), costoHoy: costosDelDia(p), version: VERSION });
+        return responder(res, 200, { vigia: vigia.estado(), refrescando: !!refresco, ultimoRefresco, trabajos: [...cola.lista(), ...listaGuias()], comentarios: marcasComentarios(), avances: avances(), costoHoy: costosDelDia(p), presupuesto: presupuesto.estado(), version: VERSION });
       }
       if (req.method === 'POST' && url.pathname === '/api/refrescar') {
         refrescar();
@@ -480,7 +493,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         const validas = fotoConExplicaciones(p).prs;
         const items = validas
           .filter((v) => prs.some((x) => v.repo === x.repo && v.numero === x.numero))
-          .map((pr) => ({ id: pr.id, tipo: 'explicar', prId: pr.id, ejecutar: () => explicarConIa(p, pr, { completar: completar === true }) }));
+          .map((pr) => ({ id: pr.id, tipo: 'explicar', prId: pr.id, topeUsd: tope('explicar'), ejecutar: () => explicarConIa(p, pr, { completar: completar === true, modo }) }));
         return responder(res, 202, { encolados: cola.encolar(items) });
       }
       if (req.method === 'POST' && url.pathname === '/api/cancelar-cola') return responder(res, 200, { cancelados: cola.vaciar() });
@@ -494,7 +507,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
       return responder(res, 404, { error: 'Not found' });
     } catch (e) {
       const c = e.codigo;
-      if (Number.isInteger(c) && c >= 400 && c <= 599) return responder(res, c, { error: e.message });
+      if (Number.isInteger(c) && c >= 400 && c <= 599) return responder(res, c, { error: e.message, ...(e.forzar ? { forzar: true } : {}) });
       if (typeof c === 'string') return responder(res, 400, { error: e.message });
       // An untagged failure on a QA route is internal: its message may carry paths or cell contents.
       if (url.pathname.startsWith('/api/qa/')) {
