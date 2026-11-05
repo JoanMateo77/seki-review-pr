@@ -25,8 +25,6 @@ export const reglasSecretos = (dirs, extra = []) => dirs.flatMap((d) => {
   return [...SECRETOS, ...extra].map((s) => `Read(/${real}/**/${s})`);
 });
 
-export const tope = (tipo) => Number(process.env[`SEKI_IA_TOPE_${tipo.toUpperCase()}`]) || TOPES[tipo];
-
 const ESCRITURA = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 
 const configMcp = () => JSON.stringify({ mcpServers: { 'seki-review': { command: 'sh', args: [join(RAIZ, 'bin/servidor.sh')] } } });
@@ -55,6 +53,16 @@ const MOTIVOS = {
   error_max_budget_usd: 'The job reached its cost cap',
   error_max_turns: 'The job reached its turn limit',
 };
+const MOTIVO_TIEMPO = 'The job exceeded the maximum time';
+const MOTIVO_FORMATO = 'The response did not arrive in the expected format';
+const MOTIVO_SIN_CONFIRMAR = 'The AI did not confirm completion';
+const MOTIVO_GENERICO = 'The job failed';
+const SEGUROS = new Set([...Object.values(MOTIVOS), MOTIVO_TIEMPO, MOTIVO_FORMATO, MOTIVO_SIN_CONFIRMAR, MOTIVO_GENERICO]);
+const SALIDA_CODIGO = /^claude exited with code -?\d+$/;
+
+// Only classified reasons are persisted: model output and stderr can carry code or secrets.
+export const motivoSeguro = (m) => (typeof m === 'string' && (SEGUROS.has(m) || SALIDA_CODIGO.test(m)) ? m : MOTIVO_GENERICO);
+export { MOTIVO_SIN_CONFIRMAR };
 
 function uso(r) {
   const u = { entrada: 0, cacheCreada: 0, cacheLeida: 0, salida: 0 };
@@ -103,11 +111,14 @@ export function ejecutarClaude(args, { cwd, limiteMs = 10 * 60 * 1000, alUsar })
       const conSchema = args.includes('--json-schema');
       const ok = codigo === 0 && !!r && !r.is_error && (!conSchema || r.structured_output !== undefined);
       let motivo = null;
+      let seguro = null;
       if (!ok) {
-        motivo = vencido ? 'The job exceeded the maximum time'
+        seguro = vencido ? MOTIVO_TIEMPO
           : MOTIVOS[r?.subtype]
-          ?? (r && !r.is_error && conSchema ? 'The response did not arrive in the expected format' : null)
-          ?? (r?.errors?.join(' ') || errores.trim() || r?.result || `claude exited with code ${codigo}`).slice(0, 400);
+          ?? (r && !r.is_error && conSchema ? MOTIVO_FORMATO : null)
+          ?? `claude exited with code ${codigo}`;
+        motivo = vencido || MOTIVOS[r?.subtype] || (r && !r.is_error && conSchema) ? seguro
+          : (r?.errors?.join(' ') || errores.trim() || r?.result || seguro).slice(0, 400);
       }
       resolver({
         ok,
@@ -120,6 +131,7 @@ export function ejecutarClaude(args, { cwd, limiteMs = 10 * 60 * 1000, alUsar })
         herramientas: args.includes('stream-json') ? herramientasUsadas(salida) : [],
         denegadas: (r?.permission_denials ?? []).map((d) => ({ nombre: d.tool_name, entrada: d.tool_input ?? {} })),
         motivo,
+        motivoSeguro: seguro,
       });
     };
     hijo.on('close', cerrar);
@@ -142,7 +154,7 @@ export const sistemaDe = (p, ...nombres) => [promptSistema(...nombres), ...(p?.c
 
 // Failed jobs keep a short safe reason (already sanitised by ejecutarClaude), never prompt text.
 export function registrarCosto(p, { fecha = new Date().toISOString(), ...datos }) {
-  if (datos.motivo !== undefined) datos.motivo = datos.ok === false && datos.motivo ? String(datos.motivo).slice(0, 200) : undefined;
+  if (datos.motivo !== undefined) datos.motivo = datos.ok === false && datos.motivo ? motivoSeguro(datos.motivo) : undefined;
   const ruta = rutaCostos(p.salida);
   mkdirSync(dirname(ruta), { recursive: true });
   appendFileSync(ruta, JSON.stringify({ fecha, ...datos }) + '\n');
@@ -160,19 +172,14 @@ export function leerCostos(p) {
   if (!existsSync(ruta)) return [];
   const registros = [];
   for (const linea of readFileSync(ruta, 'utf8').split('\n')) {
-    try { if (linea) registros.push(JSON.parse(linea)); } catch { /* unreadable line */ }
+    try { const x = linea && JSON.parse(linea); if (x && typeof x === 'object') registros.push(x); } catch { /* unreadable line */ }
   }
   return registros;
 }
 
 export function costosDelDia(p, dia = diaLocal(Date.now())) {
-  const ruta = rutaCostos(p.salida);
   const r = { total: 0, trabajos: 0 };
-  if (!existsSync(ruta)) return r;
-  for (const linea of readFileSync(ruta, 'utf8').split('\n')) {
-    if (!linea) continue;
-    let x;
-    try { x = JSON.parse(linea); } catch { continue; }
+  for (const x of leerCostos(p)) {
     if (diaLocal(x.fecha) !== dia || x.tipo === 'valoracion') continue;
     r.total += x.costo ?? 0;
     r.trabajos++;
@@ -185,17 +192,13 @@ const nombreCorto = (m) => (/opus/i.test(m) ? 'opus' : /haiku/i.test(m) ? 'haiku
 // Cost per model over the last days versus what the person marked as useful, to calibrate model choice
 // with our own data. A repeated analysis of the same PR counts as a retry.
 export function resumenCostos(p, { dias = 30, ahora = Date.now() } = {}) {
-  const ruta = rutaCostos(p.salida);
   const desde = new Date(ahora - dias * 86400000).toISOString();
   const modelos = {};
   const modos = {};
   const valoradas = new Map();
   const analizadas = new Set();
   let reintentos = 0;
-  if (!existsSync(ruta)) return { dias, modelos, modos, reintentos };
-  for (const linea of readFileSync(ruta, 'utf8').split('\n')) {
-    let x;
-    try { x = linea && JSON.parse(linea); } catch { continue; }
+  for (const x of leerCostos(p)) {
     if (!x || !(x.fecha >= desde)) continue;
     if (x.tipo === 'valoracion') { valoradas.set(x.comentario, x); continue; }
     const m = (modelos[nombreCorto(x.modelo)] ??= { trabajos: 0, fallidos: 0, costo: 0, utiles: 0, noUtiles: 0 });

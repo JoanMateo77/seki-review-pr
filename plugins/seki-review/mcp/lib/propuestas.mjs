@@ -80,7 +80,7 @@ async function generar(p, pr, c, dir, { sistema, avisos, contexto, cuerpo, previ
   fijarAvance(clave, { fase: 'editando' });
   let r = await correr({ prompt, sesion: previa?.sesion ?? undefined });
   let costo = r.costo ?? 0;
-  registrarCosto(p, { tipo: 'cambiar', prId: pr.id, modelo: r.modelo ?? modelo, uso: r.uso, costo: r.costo, ok: r.ok, motivo: r.motivo, modo: modoUsado });
+  registrarCosto(p, { tipo: 'cambiar', prId: pr.id, modelo: r.modelo ?? modelo, uso: r.uso, costo: r.costo, ok: r.ok, motivo: r.motivoSeguro, modo: modoUsado });
   if (!r.ok) return { error: r.motivo, costo };
   let patch = await diffCopia(dir);
   if (!r.salida.hecho || !patch.trim()) return { error: r.salida.resumen || 'The AI made no changes', costo };
@@ -90,7 +90,7 @@ async function generar(p, pr, c, dir, { sistema, avisos, contexto, cuerpo, previ
     fijarAvance(clave, { fase: 'corrigiendo', corrigio: true });
     const segunda = await correr({ prompt: `The checks failed. Fix them without widening the scope of the request.\n\n${textoFallos(comp)}`, sesion: r.sesion });
     costo += segunda.costo ?? 0;
-    registrarCosto(p, { tipo: 'cambiar', prId: pr.id, modelo: segunda.modelo ?? modelo, uso: segunda.uso, costo: segunda.costo, ok: segunda.ok, motivo: segunda.motivo, modo: modoUsado, reintento: true });
+    registrarCosto(p, { tipo: 'cambiar', prId: pr.id, modelo: segunda.modelo ?? modelo, uso: segunda.uso, costo: segunda.costo, ok: segunda.ok, motivo: segunda.motivoSeguro, modo: modoUsado, reintento: true });
     if (segunda.ok) {
       r = { ...segunda, salida: segunda.salida.hecho ? segunda.salida : r.salida };
       patch = await diffCopia(dir);
@@ -104,7 +104,7 @@ async function generar(p, pr, c, dir, { sistema, avisos, contexto, cuerpo, previ
       id: nuevoId(), comentarioId: c.id, prId: pr.id, headSha: pr.headSha, patch, archivos,
       fueraDelComentario: archivos.filter((a) => a !== c.archivo),
       resumen: r.salida.resumen, comprobaciones: { ...comp, avisos }, conFallos: conFallos(comp),
-      sesion: r.sesion, modelo: r.modelo ?? modelo, costo, estado: 'lista', creada: new Date().toISOString(),
+      sesion: r.sesion, modelo: r.modelo ?? modelo, modo: modoUsado, costo, estado: 'lista', creada: new Date().toISOString(),
     },
     costo,
   };
@@ -150,7 +150,7 @@ async function proponerCambiosSinSerie(p, pr, ids, deps = {}) {
       if (g.error) actualizar(c.id, { estado: 'error', motivo: g.error });
       else {
         guardar(p, pr.repo, pr.numero, g.propuesta);
-        actualizar(c.id, { estado: 'propuesta', propuestaId: g.propuesta.id, motivo: null });
+        actualizar(c.id, { estado: 'propuesta', propuestaId: g.propuesta.id, modo: g.propuesta.modo, motivo: null });
         algunaOk = true;
       }
     } catch (e) {

@@ -73,7 +73,7 @@ async function consultar(p, prs, q, firma, clave, modo) {
   const r = await ejecutarClaude(argsClaude({
     modelo, prompt, sistema: sistemaDe(p, 'filtrar'), schema: SCHEMA, tools: [], tope: topeUsd, turnos,
   }), { cwd: dirVacio(p), limiteMs: 3 * 60 * 1000 });
-  registrarCosto(p, { tipo: 'filtrar', modelo: r.modelo ?? modelo, uso: r.uso, costo: r.costo, ok: r.ok, motivo: r.motivo, modo: modoUsado });
+  registrarCosto(p, { tipo: 'filtrar', modelo: r.modelo ?? modelo, uso: r.uso, costo: r.costo, ok: r.ok, motivo: r.motivoSeguro, modo: modoUsado });
   if (!r.ok) throw Object.assign(new Error(`The AI could not filter: ${String(r.motivo ?? r.texto ?? '').slice(0, 300)}`), { costo: r.costo });
   const ids = new Set(prs.map((x) => x.id));
   const vistos = new Set();

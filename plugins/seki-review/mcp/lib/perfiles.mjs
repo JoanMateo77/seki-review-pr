@@ -20,14 +20,16 @@ const AHORRO = Object.fromEntries(Object.entries(NORMAL).map(([tipo, f]) => [tip
 // An Ultra project default only pre-selects the mode: regular jobs run as in normal.
 export const PERFILES = { ahorro: AHORRO, normal: NORMAL, ultra: structuredClone(NORMAL) };
 
-export const modoValido = (m) => MODOS.includes(m);
+const modoValido = (m) => MODOS.includes(m);
 export const modoDe = (p, override) => (modoValido(override) ? override : modoValido(p?.ia?.modo) ? p.ia.modo : 'normal');
 
 const mayus = (tipo) => tipo.toUpperCase();
 
 // The difficulty rule behind `modelo: null`; the environment variables win over everything.
+const modeloForzado = (tipo) => process.env[`SEKI_IA_MODELO_${mayus(tipo)}`] ?? process.env.SEKI_IA_MODELO;
+
 export function elegirModelo({ tipo, pr = {}, lineasSeleccionadas = 0 }) {
-  const forzado = process.env[`SEKI_IA_MODELO_${mayus(tipo)}`] ?? process.env.SEKI_IA_MODELO;
+  const forzado = modeloForzado(tipo);
   if (forzado) return tipo === 'cambiar' && forzado === 'haiku' ? 'sonnet' : forzado;
   const grande = (pr.adiciones ?? 0) + (pr.eliminaciones ?? 0) > 1500;
   if (tipo !== 'responder' && (pr.seguridad || grande)) return 'opus';
@@ -43,7 +45,7 @@ const VENTANA_DIAS = 30;
 const MIN_MUESTRAS = 3;
 
 // Median cost of the same job type and mode over the last 30 days; with fewer than 3 records the job cap stands in.
-export function estimarCosto(registros, { tipo, modo = 'normal', multiplicador = 1, topeUsd, ahora = Date.now() }) {
+export function estimarCosto(registros, { tipo, modo = 'normal', multiplicador = 1, topeUsd = 0, ahora = Date.now() }) {
   const desde = new Date(ahora - VENTANA_DIAS * 86400000).toISOString();
   const costos = registros
     .filter((x) => x?.tipo === tipo && (x.modo ?? 'normal') === modo && x.fecha >= desde && Number.isFinite(x.costo))
@@ -66,12 +68,19 @@ export function sugerirUltra(p, pr, archivos = []) {
   return { sugerida: motivos.length > 0, motivos };
 }
 
+// Worst case a queued job may spend, for the budget gate: explicar adds its second pass (not when completing),
+// cambiar its retry, responder one cap per question; the caller passes `n` when it knows the count.
+export function topeDeTrabajo({ tipo, modo, n, completar = false }) {
+  const f = perfil({ tipo, modo });
+  const veces = n ?? (tipo === 'explicar' ? 1 + Number(f.segundaPasada && !completar) : tipo === 'cambiar' ? 2 : 1);
+  return f.topeUsd * veces;
+}
+
 export function perfil({ tipo, modo, pr = {}, lineasSeleccionadas = 0 }) {
   const m = modoValido(modo) ? modo : 'normal';
   const fila = PERFILES[m][tipo];
   if (!fila) throw new Error(`Unknown AI job type "${tipo}"`);
-  const forzado = process.env[`SEKI_IA_MODELO_${mayus(tipo)}`] ?? process.env.SEKI_IA_MODELO;
-  const modelo = forzado || !fila.modelo ? elegirModelo({ tipo, pr, lineasSeleccionadas }) : fila.modelo;
+  const modelo = modeloForzado(tipo) || !fila.modelo ? elegirModelo({ tipo, pr, lineasSeleccionadas }) : fila.modelo;
   const topeUsd = Number(process.env[`SEKI_IA_TOPE_${mayus(tipo)}`]) || fila.topeUsd;
   return { modo: m, modelo, topeUsd, turnos: fila.turnos, segundaPasada: fila.segundaPasada };
 }

@@ -58,7 +58,7 @@ async function responder(p, pr, sinCache, { contexto, detalle, modo }) {
     schema: SCHEMA, tools: [], tope: topeUsd * sinCache.length, turnos,
   }), { cwd: dirVacio(p) });
   const usado = r.modelo ?? modelo;
-  registrarCosto(p, { tipo: 'responder', prId: pr.id, comentarios: sinCache.map((c) => c.id), modelo: usado, uso: r.uso, costo: r.costo, ok: r.ok, motivo: r.motivo, modo: modoUsado, preguntas: sinCache.length });
+  registrarCosto(p, { tipo: 'responder', prId: pr.id, comentarios: sinCache.map((c) => c.id), modelo: usado, uso: r.uso, costo: r.costo, ok: r.ok, motivo: r.motivoSeguro, modo: modoUsado, preguntas: sinCache.length });
 
   const respuestas = new Map((r.ok ? r.salida.respuestas : []).map((x) => [x.id, x]));
   for (const c of sinCache) {
@@ -146,7 +146,7 @@ export async function investigarPregunta(p, pr, id, { contexto = contextoPregunt
     const bloqueadas = r.denegadas.map((d) => ({ herramienta: d.nombre, ruta: String(d.entrada.file_path ?? d.entrada.path ?? d.entrada.pattern ?? '').slice(0, 200) }));
     const leido = [{ repo: pr.repo, rama: `PR #${pr.numero}`, sha: pr.headSha }, ...otros.map((o) => ({ repo: o.repo, portal: o.portal, rama: o.rama, sha: o.sha }))];
     const usado = r.modelo ?? modelo;
-    registrarCosto(p, { tipo: 'investigar', prId: pr.id, comentario: id, modelo: usado, uso: r.uso, costo: r.costo, ok: r.ok, motivo: r.motivo, modo: modoUsado, archivos: consultado.archivos.length, bloqueadas: bloqueadas.length });
+    registrarCosto(p, { tipo: 'investigar', prId: pr.id, comentario: id, modelo: usado, uso: r.uso, costo: r.costo, ok: r.ok, motivo: r.motivoSeguro, modo: modoUsado, archivos: consultado.archivos.length, bloqueadas: bloqueadas.length });
     if (r.ok && r.salida?.texto) actualizar({ estado: 'respondido', respuesta: r.salida.texto, investigado: true, leido, consultado, bloqueadas: bloqueadas.length ? bloqueadas : undefined, necesitaCodigo: undefined, modelo: usado, modo: modoUsado, costo: r.costo, lote: 1, desdeCache: false });
     else actualizar({ estado: 'error', motivo: r.ok ? 'The AI returned no answer' : r.motivo });
     return { ok: r.ok, motivo: r.motivo, costo: r.costo, modelo: usado };

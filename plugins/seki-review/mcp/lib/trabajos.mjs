@@ -7,21 +7,42 @@ export const paralelo = () => Math.min(2, Math.max(1, Number(process.env.SEKI_IA
 
 const ESPERANDO = new Set(['en_cola', 'bloqueado_presupuesto']);
 
-export function crearCola({ alTerminar, presupuesto } = {}) {
+const REINTENTO_MS = 30 * 1000;
+
+export function crearCola({ alTerminar, presupuesto, reintentoMs = REINTENTO_MS } = {}) {
   const trabajos = new Map();
   const funciones = new Map();
   const cancelaciones = new Map();
   const reservas = new Map();
   let activos = 0;
   const corriendo = new Set();
+  let reloj = null;
+
+  // Blocked jobs are only re-checked on queue events; while any is blocked a timer re-checks them, so a day
+  // change or a lower spend reading releases them by itself.
+  function vigilarBloqueados() {
+    const hay = [...trabajos.values()].some((t) => t.estado === 'bloqueado_presupuesto');
+    if (hay && !reloj) {
+      reloj = setTimeout(() => { reloj = null; siguiente(); }, reintentoMs);
+      reloj.unref();
+    } else if (!hay && reloj) {
+      clearTimeout(reloj);
+      reloj = null;
+    }
+  }
 
   function siguiente() {
+    try { revisar(); } finally { vigilarBloqueados(); }
+  }
+
+  function revisar() {
     for (const t of [...trabajos.values()]) {
       if (activos >= paralelo()) return;
       if (!ESPERANDO.has(t.estado)) continue;
       if (presupuesto && !t.forzado) {
         if (!presupuesto.cabe(t.topeUsd ?? 0)) {
-          Object.assign(t, { estado: 'bloqueado_presupuesto', mensaje: mensajeBloqueo(presupuesto.estado()) });
+          if (t.estado !== 'bloqueado_presupuesto') console.error(`[seki-review/presupuesto] A ${t.tipo} job is blocked by the daily budget`);
+          Object.assign(t, { estado: 'bloqueado_presupuesto', mensaje: mensajeBloqueo(presupuesto.estado(), t.topeUsd) });
           continue;
         }
         Object.assign(t, { estado: 'en_cola', mensaje: null });
@@ -37,10 +58,11 @@ export function crearCola({ alTerminar, presupuesto } = {}) {
     if (presupuesto) reservas.set(t.id, presupuesto.reservar(t.topeUsd ?? 0));
     Object.assign(t, { estado: 'en_curso', inicio: new Date().toISOString() });
     let r;
-    try { r = await funciones.get(t.id)(); } catch (e) { r = { ok: false, motivo: e.message }; }
+    try { r = await funciones.get(t.id)(); } catch (e) { r = { ok: false, motivo: e.message, costo: e?.costo }; }
     funciones.delete(t.id);
     cancelaciones.delete(t.id);
-    reservas.get(t.id)?.liberar(r?.costo ?? 0);
+    // A failure that does not report its cost is released at the reserved cap, so the spend is never undercounted.
+    reservas.get(t.id)?.liberar(r?.costo ?? (r?.ok === false ? t.topeUsd : 0));
     reservas.delete(t.id);
     activos--;
     Object.assign(t, {
@@ -50,6 +72,7 @@ export function crearCola({ alTerminar, presupuesto } = {}) {
       costo: r?.costo ?? null,
       modelo: r?.modelo ?? null,
     });
+    delete t.forzado;
     alTerminar?.(t);
     siguiente();
   }
@@ -79,12 +102,14 @@ export function crearCola({ alTerminar, presupuesto } = {}) {
         cancelaciones.delete(t.id);
         n++;
       }
+      vigilarBloqueados();
       return n;
     },
     // Lets one blocked job run once; later jobs are gated again.
     forzar(id) {
       const t = trabajos.get(id);
       if (t?.estado !== 'bloqueado_presupuesto') return false;
+      console.error(`[seki-review/presupuesto] A blocked ${t.tipo} job was forced to run`);
       Object.assign(t, { estado: 'en_cola', forzado: true, mensaje: null });
       siguiente();
       return true;

@@ -1,22 +1,24 @@
-import { test, beforeEach } from 'node:test';
+import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MODOS, PERFILES, estimarCosto, modoDe, perfil, sugerirUltra, topeRevisarUltra } from '../mcp/lib/perfiles.mjs';
+import { MODOS, PERFILES, estimarCosto, modoDe, perfil, sugerirUltra, topeDeTrabajo, topeRevisarUltra } from '../mcp/lib/perfiles.mjs';
 import { TOPES, TURNOS, costosDelDia, registrarCosto, resumenCostos } from '../mcp/lib/ia.mjs';
 import { requiereSegundaPasada } from '../mcp/lib/explicar.mjs';
 import { filtrarPrs } from '../mcp/lib/filtrar.mjs';
 import { responderPreguntas } from '../mcp/lib/preguntas.mjs';
 import { guardarComentarios, leerComentarios } from '../mcp/lib/comentarios.mjs';
 import { falsoClaude } from './util/claude.mjs';
+import { fijarEnv, fijarTz } from './util/tz.mjs';
 
+const ahora = Date.parse('2026-11-05T12:00:00Z');
 const chica = { seguridad: false, adiciones: 20, eliminaciones: 5, esfuerzoTamano: 1 };
 const sensible = { ...chica, seguridad: true };
 
-beforeEach(() => {
-  for (const k of Object.keys(process.env)) if (k.startsWith('SEKI_IA_MODELO') || k.startsWith('SEKI_IA_TOPE')) delete process.env[k];
-});
+const limpiarEnv = () => { for (const k of Object.keys(process.env)) if (k.startsWith('SEKI_IA_MODELO') || k.startsWith('SEKI_IA_TOPE')) delete process.env[k]; };
+beforeEach(limpiarEnv);
+afterEach(limpiarEnv);
 
 test('modes are the three known values', () => {
   assert.deepEqual(MODOS, ['ahorro', 'normal', 'ultra']);
@@ -53,22 +55,22 @@ test('ultra equals normal for regular jobs; lens and verification have their own
   assert.deepEqual(perfil({ tipo: 'ultra_verificar', modo: 'normal' }), { modo: 'normal', modelo: 'sonnet', topeUsd: 1, turnos: 30, segundaPasada: false });
 });
 
-test('cambiar never runs on haiku, whatever the source', () => {
+test('cambiar never runs on haiku, whatever the source', (t) => {
   for (const modo of MODOS) assert.notEqual(perfil({ tipo: 'cambiar', modo, pr: chica }).modelo, 'haiku');
-  process.env.SEKI_IA_MODELO = 'haiku';
+  fijarEnv(t, 'SEKI_IA_MODELO', 'haiku');
   assert.equal(perfil({ tipo: 'cambiar', modo: 'normal', pr: chica }).modelo, 'sonnet');
 });
 
-test('precedence: per-type env > general env > mode row > default', () => {
+test('precedence: per-type env > general env > mode row > default', (t) => {
   assert.equal(perfil({ tipo: 'explicar', modo: 'ahorro', pr: chica }).modelo, 'sonnet');
-  process.env.SEKI_IA_MODELO = 'opus';
+  fijarEnv(t, 'SEKI_IA_MODELO', 'opus');
   assert.equal(perfil({ tipo: 'explicar', modo: 'ahorro', pr: chica }).modelo, 'opus');
-  process.env.SEKI_IA_MODELO_EXPLICAR = 'haiku';
+  fijarEnv(t, 'SEKI_IA_MODELO_EXPLICAR', 'haiku');
   assert.equal(perfil({ tipo: 'explicar', modo: 'ahorro', pr: chica }).modelo, 'haiku');
 });
 
-test('cap env override applies per type', () => {
-  process.env.SEKI_IA_TOPE_EXPLICAR = '3.5';
+test('cap env override applies per type', (t) => {
+  fijarEnv(t, 'SEKI_IA_TOPE_EXPLICAR', '3.5');
   assert.equal(perfil({ tipo: 'explicar', modo: 'normal' }).topeUsd, 3.5);
   assert.equal(perfil({ tipo: 'responder', modo: 'normal' }).topeUsd, 0.5);
 });
@@ -86,21 +88,21 @@ test('perfil rejects unknown job types and falls back to normal for an invalid m
   assert.equal(perfil({ tipo: 'explicar', modo: 'raro' }).modo, 'normal');
 });
 
-test('cost records carry the mode and, when failed, a reason capped at 200 characters', () => {
+test('cost records carry the mode and, when failed, only a classified reason', () => {
   const p = { salida: mkdtempSync(join(tmpdir(), 'seki-perf-')) };
   registrarCosto(p, { tipo: 'filtrar', modo: 'ahorro', costo: 0.1, ok: true, motivo: 'ignored when ok' });
   registrarCosto(p, { tipo: 'filtrar', modo: 'ahorro', costo: 0.1, ok: false, motivo: 'x'.repeat(500) });
   const lineas = readFileSync(join(p.salida, 'datos', 'costos.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
   assert.equal(lineas[0].modo, 'ahorro');
   assert.equal(lineas[0].motivo, undefined);
-  assert.equal(lineas[1].motivo.length, 200);
+  assert.equal(lineas[1].motivo, 'The job failed');
 });
 
-test('filtrar and responder run with the mode profile and record mode and reason', async () => {
+test('filtrar and responder run with the mode profile and record mode and reason', async (t) => {
   const p = { salida: mkdtempSync(join(tmpdir(), 'seki-perf-')), ia: { modo: 'ahorro' } };
   const dirClaude = (ruta) => join(ruta, '..');
   const salida = { type: 'result', is_error: false, subtype: 'success', structured_output: { coincidencias: [] }, total_cost_usd: 0.01, modelUsage: { 'claude-haiku-5-5': {} } };
-  process.env.SEKI_CLAUDE = falsoClaude(salida, 0, 'echo "$@" > "$(dirname "$0")/args"');
+  fijarEnv(t, 'SEKI_CLAUDE', falsoClaude(salida, 0, 'echo "$@" > "$(dirname "$0")/args"'));
   await filtrarPrs(p, [{ id: 'a#1', repo: 'a', numero: 1, titulo: 'T', rama: 'r', headSha: 'h' }], 'algo');
   const args = readFileSync(join(dirClaude(process.env.SEKI_CLAUDE), 'args'), 'utf8');
   assert.match(args, /--model haiku/);
@@ -109,7 +111,7 @@ test('filtrar and responder run with the mode profile and record mode and reason
 
   const q = { salida: mkdtempSync(join(tmpdir(), 'seki-perf-')) };
   guardarComentarios(q, 'r', 1, [{ id: 'c-0001', tipo: 'pregunta', estado: 'borrador', archivo: 'a.ts', lado: 'nuevo', desde: 1, hasta: 2, textoOriginal: 'x', texto: '¿Qué?', headSha: 'abc' }]);
-  process.env.SEKI_CLAUDE = falsoClaude({ type: 'result', is_error: true, subtype: 'error_max_turns', total_cost_usd: 0.02, modelUsage: { 'claude-sonnet-5-5': {} } }, 1);
+  fijarEnv(t, 'SEKI_CLAUDE', falsoClaude({ type: 'result', is_error: true, subtype: 'error_max_turns', total_cost_usd: 0.02, modelUsage: { 'claude-sonnet-5-5': {} } }, 1));
   await responderPreguntas(q, { id: 'r#1', repo: 'r', numero: 1, titulo: 'T', headSha: 'abc', adiciones: 500, eliminaciones: 0 }, ['c-0001'], { contexto: async () => 'C', detalle: async () => null, modo: 'normal' });
   const f = JSON.parse(readFileSync(join(q.salida, 'datos', 'costos.jsonl'), 'utf8').trim());
   assert.equal(f.modo, 'normal');
@@ -118,18 +120,13 @@ test('filtrar and responder run with the mode profile and record mode and reason
   assert.ok(leerComentarios(q, 'r', 1)[0]);
 });
 
-test('costosDelDia uses the local day: 03:00Z in Bogota belongs to the previous day', () => {
-  const previo = process.env.TZ;
-  process.env.TZ = 'America/Bogota';
-  try {
-    const p = { salida: mkdtempSync(join(tmpdir(), 'seki-perf-')) };
-    registrarCosto(p, { tipo: 'responder', costo: 1, ok: true, fecha: '2026-10-27T03:00:00Z' });
-    registrarCosto(p, { tipo: 'responder', costo: 2, ok: true, fecha: '2026-10-27T15:00:00Z' });
-    assert.equal(costosDelDia(p, '2026-10-26').total, 1);
-    assert.equal(costosDelDia(p, '2026-10-27').total, 2);
-  } finally {
-    previo === undefined ? delete process.env.TZ : (process.env.TZ = previo);
-  }
+test('costosDelDia uses the local day: 03:00Z in Bogota belongs to the previous day', (t) => {
+  fijarTz(t, 'America/Bogota');
+  const p = { salida: mkdtempSync(join(tmpdir(), 'seki-perf-')) };
+  registrarCosto(p, { tipo: 'responder', costo: 1, ok: true, fecha: '2026-10-27T03:00:00Z' });
+  registrarCosto(p, { tipo: 'responder', costo: 2, ok: true, fecha: '2026-10-27T15:00:00Z' });
+  assert.equal(costosDelDia(p, '2026-10-26').total, 1);
+  assert.equal(costosDelDia(p, '2026-10-27').total, 2);
 });
 
 test('resumenCostos still groups by model with the mode data present', () => {
@@ -138,7 +135,6 @@ test('resumenCostos still groups by model with the mode data present', () => {
   assert.equal(resumenCostos(p).modelos.sonnet.trabajos, 1);
 });
 
-const ahora = Date.parse('2026-11-05T12:00:00Z');
 const reg = (costo, extra = {}) => ({ tipo: 'explicar', modo: 'normal', costo, fecha: '2026-11-01T10:00:00Z', ok: true, ...extra });
 
 test('estimarCosto: median of the last 30 days for the same type and mode, times the multiplier', () => {
@@ -173,15 +169,41 @@ test('sugerirUltra: sensitive path or security flag, reasons name the pattern an
 
 test('resumenCostos: per-mode table, no mode counts as normal, ratings follow the rated mode', () => {
   const p = { salida: mkdtempSync(join(tmpdir(), 'seki-perf-')) };
-  const f = new Date().toISOString();
+  const f = '2026-11-01T10:00:00.000Z';
   registrarCosto(p, { fecha: f, tipo: 'responder', prId: 'a#1', modelo: 'claude-haiku-5-5', costo: 0.1, ok: true, modo: 'ahorro' });
   registrarCosto(p, { fecha: f, tipo: 'responder', prId: 'a#1', modelo: 'claude-haiku-5-5', costo: 0.3, ok: false, modo: 'ahorro' });
   registrarCosto(p, { fecha: f, tipo: 'explicar', prId: 'a#1', modelo: 'claude-sonnet-5-5', costo: 1, ok: true });
   registrarCosto(p, { fecha: f, tipo: 'valoracion', comentario: 'c-1', modelo: 'claude-haiku-5-5', modo: 'ahorro', util: true, costo: 0 });
   registrarCosto(p, { fecha: f, tipo: 'valoracion', comentario: 'c-2', modelo: 'claude-sonnet-5-5', util: false, costo: 0 });
-  const { modos } = resumenCostos(p);
+  const { modos } = resumenCostos(p, { ahora });
   assert.deepEqual(modos.ahorro, { trabajos: 2, fallidos: 1, costo: 0.4, utiles: 1, noUtiles: 0, costoPorUtil: 0.4 });
   assert.equal(modos.normal.trabajos, 1);
   assert.equal(modos.normal.noUtiles, 1);
   assert.equal(modos.normal.costoPorUtil, null);
+});
+
+test('topeDeTrabajo: explicar adds its second pass only when the mode has one and not when completing', () => {
+  assert.equal(topeDeTrabajo({ tipo: 'explicar', modo: 'normal' }), 4);
+  assert.equal(topeDeTrabajo({ tipo: 'explicar', modo: 'normal', completar: true }), 2);
+  assert.equal(topeDeTrabajo({ tipo: 'explicar', modo: 'ahorro' }), 2);
+});
+
+test('topeDeTrabajo: cambiar counts its retry, responder one cap per question, investigar one cap', () => {
+  assert.equal(topeDeTrabajo({ tipo: 'cambiar', modo: 'ahorro' }), 3);
+  assert.equal(topeDeTrabajo({ tipo: 'responder', modo: 'normal', n: 3 }), 1.5);
+  assert.equal(topeDeTrabajo({ tipo: 'investigar', modo: 'ahorro' }), 1);
+});
+
+test('estimarCosto without a cap falls back to zero', () => {
+  assert.deepEqual(estimarCosto([], { tipo: 'explicar', modo: 'normal', ahora }), { usd: 0, base: 'topes', muestras: 0 });
+});
+
+test('answered, investigated and proposed items store the mode the rating will carry', async (t) => {
+  const prId = { id: 'r#1', repo: 'r', numero: 1, titulo: 'T', headSha: 'abc', adiciones: 5, eliminaciones: 0, estadoPr: 'OPEN' };
+  const q = { salida: mkdtempSync(join(tmpdir(), 'seki-perf-')) };
+  const pregunta = (id) => ({ id, tipo: 'pregunta', estado: 'borrador', archivo: 'a.ts', lado: 'nuevo', desde: 1, hasta: 2, textoOriginal: 'x', texto: '¿Qué?', headSha: 'abc' });
+  guardarComentarios(q, 'r', 1, [pregunta('c-0001')]);
+  fijarEnv(t, 'SEKI_CLAUDE', falsoClaude({ type: 'result', is_error: false, subtype: 'success', structured_output: { respuestas: [{ id: 'c-0001', texto: 'A.' }] }, total_cost_usd: 0.01, modelUsage: { 'claude-haiku-5-5': {} } }));
+  await responderPreguntas(q, prId, ['c-0001'], { contexto: async () => 'C', detalle: async () => null, modo: 'ahorro' });
+  assert.equal(leerComentarios(q, 'r', 1)[0].modo, 'ahorro');
 });

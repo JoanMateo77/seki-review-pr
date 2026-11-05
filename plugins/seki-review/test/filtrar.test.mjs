@@ -61,10 +61,11 @@ test('each PR line carries the stored diff files only if it is from the current 
 });
 
 import { crearPresupuesto } from '../mcp/lib/presupuesto.mjs';
+import { fijarEnv } from './util/tz.mjs';
 
-test('budget: an over-budget filter answers 429 with the budget message and forzar lets it run once', async () => {
+test('budget: an over-budget filter answers 429 with the budget message and forzar lets it run once', async (t) => {
   const p = preparar();
-  process.env.SEKI_CLAUDE = falsoClaude(exito([{ id: 'api#1', relacion: 'directa', motivo: 'm' }]));
+  fijarEnv(t, 'SEKI_CLAUDE', falsoClaude(exito([{ id: 'api#1', relacion: 'directa', motivo: 'm' }])));
   const presupuesto = crearPresupuesto({ limite: () => 1, gasto: () => 0.9 });
   await assert.rejects(filtrarPrs(p, prs, 'presupuesto', { presupuesto }), (e) => e.codigo === 429 && e.forzar === true && /^Blocked by the daily budget \(\$0\.90 of \$1\.00 spent\)$/.test(e.message));
   assert.equal(llamadas(process.env.SEKI_CLAUDE), 0);
@@ -74,9 +75,9 @@ test('budget: an over-budget filter answers 429 with the budget message and forz
   assert.equal(presupuesto.estado().reservado, 0);
 });
 
-test('budget: a stored filter never touches the gate', async () => {
+test('budget: a stored filter never touches the gate', async (t) => {
   const p = preparar();
-  process.env.SEKI_CLAUDE = falsoClaude(exito([]));
+  fijarEnv(t, 'SEKI_CLAUDE', falsoClaude(exito([])));
   await filtrarPrs(p, prs, 'guardado');
   const r = await filtrarPrs(p, prs, 'guardado', { presupuesto: crearPresupuesto({ limite: () => 0.01, gasto: () => 5 }) });
   assert.equal(r.desdeCache, true);

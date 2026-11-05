@@ -7,7 +7,7 @@ import { escribirJson, leerJson, rutaExplicacion, rutaVerificacion } from './cac
 import { asegurarDiff } from './diffs.mjs';
 import { contarHerramienta, fijarAvance, quitarAvance } from './avance.mjs';
 import { crearCopia } from './copias.mjs';
-import { argsClaude, dirVacio, ejecutarClaude, reglasSecretos, registrarCosto, sistemaDe } from './ia.mjs';
+import { argsClaude, dirVacio, ejecutarClaude, MOTIVO_SIN_CONFIRMAR, reglasSecretos, registrarCosto, sistemaDe } from './ia.mjs';
 import { modoDe, perfil } from './perfiles.mjs';
 import { ghJson } from './proceso.mjs';
 
@@ -180,7 +180,7 @@ async function explicar(p, pr, clave, { completar, modo }) {
     pasadas++;
     costo += r.costo ?? 0;
     const ok = r.ok && /\b(done|listo)\b/i.test(r.texto);
-    registrarCosto(p, { tipo: 'explicar', prId: pr.id, modelo: r.modelo ?? modelo, uso: r.uso, costo: r.costo, ok, modo: modoUsado, motivo: r.motivo, ...(previa ? { completar: true } : {}) });
+    registrarCosto(p, { tipo: 'explicar', prId: pr.id, modelo: r.modelo ?? modelo, uso: r.uso, costo: r.costo, ok, modo: modoUsado, motivo: ok ? undefined : r.ok ? MOTIVO_SIN_CONFIRMAR : r.motivoSeguro, ...(previa ? { completar: true } : {}) });
     if (!ok) return { ok, r };
     const e = vigente();
     if (e) {

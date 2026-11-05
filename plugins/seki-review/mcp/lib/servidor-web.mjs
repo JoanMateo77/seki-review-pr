@@ -18,7 +18,7 @@ import { explicarConIa } from './explicar.mjs';
 import { avances } from './avance.mjs';
 import { filtrarPrs } from './filtrar.mjs';
 import { costosDelDia, registrarCosto, resumenCostos } from './ia.mjs';
-import { modoDe, perfil } from './perfiles.mjs';
+import { modoDe, topeDeTrabajo } from './perfiles.mjs';
 import { crearPresupuesto, gastoMaquina } from './presupuesto.mjs';
 import { estadoServidor, pedirCeder, tokenDe } from './acceso.mjs';
 import { limpiarCopias } from './copias.mjs';
@@ -246,17 +246,19 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
   });
 
   // The limit is the served project's; the spend counts every configured project on this machine.
+  let gastoAvisado = false;
   const presupuesto = crearPresupuesto({
     limite: () => p.ia?.presupuestoDiarioUsd ?? null,
-    gasto: () => { try { return gastoMaquina({ proyectos: cargarProyectos().proyectos }); } catch { return costosDelDia(p).total; } },
+    gasto: () => {
+      try { return gastoMaquina({ proyectos: cargarProyectos().proyectos }); } catch {
+        if (!gastoAvisado) console.error('[seki-review/presupuesto] The project list could not be read: the budget counts only this project');
+        gastoAvisado = true;
+        return costosDelDia(p).total;
+      }
+    },
   });
   const cola = crearCola({ presupuesto });
   const modo = modoDe(p);
-  // What a job may spend in the worst case: explicar adds its second pass, cambiar its retry.
-  const tope = (tipo, n) => {
-    const f = perfil({ tipo, modo });
-    return f.topeUsd * (n ?? (tipo === 'explicar' ? 1 + Number(f.segundaPasada) : tipo === 'cambiar' ? 2 : 1));
-  };
   // QA guide jobs run outside the AI queue (they wait for a lock and for Chrome, and spend no AI): one at a time,
   // a second request with the same options while one runs gets the same job, with other options it gets 409. The newest few states stay readable by id.
   const trabajosGuia = new Map();
@@ -284,7 +286,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         if (explicarFaltantes && r.pendientes.length) {
           // PRs merged into testing live in `recientes`, not in `prs`.
           const validas = mapaPrs(leerJson(rutaInstantanea(p.salida)));
-          resultado.encolados = cola.encolar(soloPrsConocidos(r.pendientes, validas).map((x) => ({ id: x, tipo: 'explicar', prId: x, topeUsd: tope('explicar'), ejecutar: () => explicarConIa(p, validas.get(x), { modo }) })));
+          resultado.encolados = cola.encolar(soloPrsConocidos(r.pendientes, validas).map((x) => ({ id: x, tipo: 'explicar', prId: x, topeUsd: topeDeTrabajo({ tipo: 'explicar', modo }), ejecutar: () => explicarConIa(p, validas.get(x), { modo }) })));
         }
         Object.assign(t, { estado: 'terminado', resultado });
       } catch (e) {
@@ -354,9 +356,10 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         if (cambios.length && pr.estadoPr !== 'OPEN') throw new Error('The PR is no longer open: changes cannot be requested');
         for (const cid of [...todas, ...cambios]) actualizarComentario(p, pr.repo, pr.numero, cid, { estado: 'en_cola', motivo: null });
         const ahora = Date.now();
-        if (preguntas.length) cola.encolar([{ id: `${pr.id}:responder:${ahora}`, tipo: 'responder', prId: pr.id, topeUsd: tope('responder', preguntas.length), ...conRescate(pr, preguntas, () => responderPreguntas(p, pr, preguntas, { modo })) }]);
-        if (cambios.length) cola.encolar([{ id: `${pr.id}:cambiar:${ahora}`, tipo: 'cambiar', prId: pr.id, topeUsd: tope('cambiar'), ...conRescate(pr, cambios, () => proponerCambios(p, pr, cambios, { modo })) }]);
-        for (const cid of investigar) cola.encolar([{ id: `${pr.id}:investigar:${cid}:${ahora}`, tipo: 'investigar', prId: pr.id, topeUsd: tope('investigar'), ...conRescate(pr, [cid], () => investigarPregunta(p, pr, cid, { modo })) }]);
+        if (preguntas.length) cola.encolar([{ id: `${pr.id}:responder:${ahora}`, tipo: 'responder', prId: pr.id, // The number of uncached questions is not known here: the cap counts every question sent.
+          topeUsd: topeDeTrabajo({ tipo: 'responder', modo, n: preguntas.length }), ...conRescate(pr, preguntas, () => responderPreguntas(p, pr, preguntas, { modo })) }]);
+        if (cambios.length) cola.encolar([{ id: `${pr.id}:cambiar:${ahora}`, tipo: 'cambiar', prId: pr.id, topeUsd: topeDeTrabajo({ tipo: 'cambiar', modo }), ...conRescate(pr, cambios, () => proponerCambios(p, pr, cambios, { modo })) }]);
+        for (const cid of investigar) cola.encolar([{ id: `${pr.id}:investigar:${cid}:${ahora}`, tipo: 'investigar', prId: pr.id, topeUsd: topeDeTrabajo({ tipo: 'investigar', modo }), ...conRescate(pr, [cid], () => investigarPregunta(p, pr, cid, { modo })) }]);
         return responder(res, 202, { preguntas: todas.length, cambios: cambios.length, desactualizados: desactualizados.length });
       }
       // Was the answer useful? Stored on the question and in the cost log to compare models.
@@ -386,7 +389,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         if (!['respondido', 'error'].includes(c.estado)) throw new Error('The question is still in progress');
         if (c.headSha && c.headSha !== pr.headSha) throw new Error('The question belongs to an earlier commit of the PR');
         actualizarComentario(p, pr.repo, pr.numero, c.id, { estado: 'en_cola', investigar: true, motivo: null });
-        cola.encolar([{ id: `${pr.id}:investigar:${c.id}:${Date.now()}`, tipo: 'investigar', prId: pr.id, topeUsd: tope('investigar'), ...conRescate(pr, [c.id], () => investigarPregunta(p, pr, c.id, { modo })) }]);
+        cola.encolar([{ id: `${pr.id}:investigar:${c.id}:${Date.now()}`, tipo: 'investigar', prId: pr.id, topeUsd: topeDeTrabajo({ tipo: 'investigar', modo }), ...conRescate(pr, [c.id], () => investigarPregunta(p, pr, c.id, { modo })) }]);
         return responder(res, 202, { encolado: true });
       }
       if (req.method === 'GET' && url.pathname === '/api/propuesta') {
@@ -400,7 +403,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         const accion = url.pathname.slice('/api/propuesta/'.length);
         if (accion === 'ajustar') {
           if (typeof indicacion !== 'string' || !indicacion.trim() || indicacion.length > 4000) throw new Error('Instruction empty or longer than 4000 characters');
-          cola.encolar([{ id: `${pr.id}:ajustar:${Date.now()}`, tipo: 'cambiar', prId: pr.id, topeUsd: tope('cambiar'), ejecutar: () => ajustarPropuesta(p, pr, id, indicacion.trim(), { modo }) }]);
+          cola.encolar([{ id: `${pr.id}:ajustar:${Date.now()}`, tipo: 'cambiar', prId: pr.id, topeUsd: topeDeTrabajo({ tipo: 'cambiar', modo }), ejecutar: () => ajustarPropuesta(p, pr, id, indicacion.trim(), { modo }) }]);
           return responder(res, 202, { encolado: true });
         }
         if (accion === 'aprobar') {
@@ -414,7 +417,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
           if (!['conflicto', 'rechazada'].includes(prop.estado)) throw new Error('Only a conflicting or rejected proposal can be regenerated');
           if (pr.estadoPr !== 'OPEN') throw new Error('The PR is no longer open: changes cannot be requested');
           actualizarComentario(p, pr.repo, pr.numero, prop.comentarioId, { estado: 'en_cola', motivo: null });
-          cola.encolar([{ id: `${pr.id}:cambiar:${Date.now()}`, tipo: 'cambiar', prId: pr.id, topeUsd: tope('cambiar'), ...conRescate(pr, [prop.comentarioId], () => proponerCambios(p, pr, [prop.comentarioId], { modo })) }]);
+          cola.encolar([{ id: `${pr.id}:cambiar:${Date.now()}`, tipo: 'cambiar', prId: pr.id, topeUsd: topeDeTrabajo({ tipo: 'cambiar', modo }), ...conRescate(pr, [prop.comentarioId], () => proponerCambios(p, pr, [prop.comentarioId], { modo })) }]);
           return responder(res, 202, { encolado: true });
         }
         return responder(res, 404, { error: 'Not found' });
@@ -493,7 +496,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         const validas = fotoConExplicaciones(p).prs;
         const items = validas
           .filter((v) => prs.some((x) => v.repo === x.repo && v.numero === x.numero))
-          .map((pr) => ({ id: pr.id, tipo: 'explicar', prId: pr.id, topeUsd: tope('explicar'), ejecutar: () => explicarConIa(p, pr, { completar: completar === true, modo }) }));
+          .map((pr) => ({ id: pr.id, tipo: 'explicar', prId: pr.id, topeUsd: topeDeTrabajo({ tipo: 'explicar', modo, completar: completar === true }), ejecutar: () => explicarConIa(p, pr, { completar: completar === true, modo }) }));
         return responder(res, 202, { encolados: cola.encolar(items) });
       }
       if (req.method === 'POST' && url.pathname === '/api/cancelar-cola') return responder(res, 200, { cancelados: cola.vaciar() });

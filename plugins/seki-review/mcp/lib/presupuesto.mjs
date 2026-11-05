@@ -16,13 +16,17 @@ export function gastoMaquina({ proyectos, dia, ahora = Date.now() }) {
 
 const usd = (n) => `$${n.toFixed(2)}`;
 
-export const mensajeBloqueo = ({ limite, gastado, reservado }) => `Blocked by the daily budget (${usd(gastado + reservado)} of ${usd(limite)} spent)`;
+export function mensajeBloqueo({ limite, gastado, reservado }, topeUsd = 0) {
+  if (topeUsd > limite) return `Blocked by the daily budget (the job cap of ${usd(topeUsd)} exceeds the daily limit of ${usd(limite)} on its own)`;
+  return `Blocked by the daily budget (${usd(gastado + reservado)} of ${usd(limite)} spent)`;
+}
 
 export function crearPresupuesto({ limite, gasto, ahora = Date.now }) {
   let gastado = 0;
   let leidoEn = null;
   let diaLeido = null;
   let extra = 0;
+  let lecturas = 0;
   let reservado = 0;
 
   // The spend is re-read at most every 30 s and whenever the local day changes.
@@ -33,6 +37,7 @@ export function crearPresupuesto({ limite, gasto, ahora = Date.now }) {
       gastado = Number(gasto()) || 0;
       extra = 0;
       leidoEn = t;
+      lecturas++;
       diaLeido = dia;
     }
   }
@@ -48,16 +53,20 @@ export function crearPresupuesto({ limite, gasto, ahora = Date.now }) {
       const e = estado();
       return e.limite === null || e.gastado + e.reservado + topeUsd <= e.limite;
     },
-    // The reservation counts as spent until the job ends; then its real cost replaces it.
+    // The reservation counts as spent until the job ends; then its real cost replaces it. If the spend was re-read
+    // while the job ran, that read may already hold part of its cost: adding it again would count it twice, so the
+    // next call re-reads the disk instead.
     reservar(topeUsd = 0) {
       reservado += topeUsd;
+      const lecturaAlReservar = lecturas;
       let liberada = false;
       return {
         liberar(costoReal = 0) {
           if (liberada) return;
           liberada = true;
           reservado = Math.max(0, reservado - topeUsd);
-          extra += Number(costoReal) || 0;
+          if (lecturas === lecturaAlReservar) extra += Number(costoReal) || 0;
+          else leidoEn = null;
         },
       };
     },

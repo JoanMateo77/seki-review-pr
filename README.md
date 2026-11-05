@@ -75,6 +75,11 @@ Optional: `contexto` (stack and text or code rules the AI follows in everything 
 `SKILL.md` and `destilado/*.md`, used for change requests) and `copias`. When no project is given, `SEKI_PROYECTO` or
 the first one in the file is used.
 
+`ia` (optional): `modo` (`ahorro`, `normal` or `ultra`, default `normal`), `presupuestoDiarioUsd` (positive number, or
+`null` for no limit; the spend counts every project on the machine) and `rutasSensibles` (regular expressions, as
+strings, matched against changed file paths to suggest an Ultra review). The patterns are trusted owner
+configuration, like `reglas`: each is limited to 200 characters and an invalid one is ignored with a warning.
+
 ### Other MCP clients
 
 The server does not depend on Claude Code. For Claude Desktop, Cursor or another client:
