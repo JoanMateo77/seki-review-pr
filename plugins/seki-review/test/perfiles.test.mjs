@@ -207,3 +207,28 @@ test('answered, investigated and proposed items store the mode the rating will c
   await responderPreguntas(q, prId, ['c-0001'], { contexto: async () => 'C', detalle: async () => null, modo: 'ahorro' });
   assert.equal(leerComentarios(q, 'r', 1)[0].modo, 'ahorro');
 });
+
+test('topeDeTrabajo: cambiar reserves two calls for each change request of the job', () => {
+  assert.equal(topeDeTrabajo({ tipo: 'cambiar', modo: 'normal', n: 3 }), 9);
+  assert.equal(topeDeTrabajo({ tipo: 'cambiar', modo: 'normal', n: 1 }), 3);
+  assert.equal(topeDeTrabajo({ tipo: 'cambiar', modo: 'normal' }), 3);
+});
+
+test('topeRevisarUltra honours the cap variables of the Ultra steps', () => {
+  const antes = [process.env.SEKI_IA_TOPE_ULTRA_LENTE, process.env.SEKI_IA_TOPE_ULTRA_VERIFICAR];
+  try {
+    process.env.SEKI_IA_TOPE_ULTRA_LENTE = '2';
+    process.env.SEKI_IA_TOPE_ULTRA_VERIFICAR = '0.5';
+    assert.equal(topeRevisarUltra(), 6.5);
+  } finally {
+    for (const [k, v] of [['SEKI_IA_TOPE_ULTRA_LENTE', antes[0]], ['SEKI_IA_TOPE_ULTRA_VERIFICAR', antes[1]]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+  assert.equal(topeRevisarUltra(), 5.5);
+});
+
+test('sugerirUltra matches under a time limit: a catastrophic pattern cannot hang it', () => {
+  const p = { ia: { patronesSensibles: [/(a+)+$/] } };
+  const t0 = Date.now();
+  assert.equal(sugerirUltra(p, {}, [`${'a'.repeat(40)}!`]).sugerida, false);
+  assert.ok(Date.now() - t0 < 2000);
+});

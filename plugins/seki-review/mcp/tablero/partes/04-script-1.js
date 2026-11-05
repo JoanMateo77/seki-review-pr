@@ -136,7 +136,7 @@ function pintarLateral() {
       ${estado.confirmarPendientes
         ? nav('data-accion="analizarPendientes"', `${icono('chispa')} Confirm: ${plural(pendientesDeAnalisis().length, 'PR', 'PRs')}`, '', true)
         : nav('data-accion="pedirConfirmacion"', `${icono('chispa')} Analyze those without an explanation`, pendientesDeAnalisis().length, false)}
-      ${[...estado.trabajos.values()].some((t) => t.estado === 'en_cola') ? nav('data-accion="cancelarCola"', `${icono('bloqueo')} Cancel queued ones`, [...estado.trabajos.values()].filter((t) => t.estado === 'en_cola').length, false) : ''}
+      ${(() => { const esperando = [...estado.trabajos.values()].filter((t) => t.estado === 'en_cola' || t.estado === 'bloqueado_presupuesto').length; return esperando ? nav('data-accion="cancelarCola"', `${icono('bloqueo')} Cancel queued ones`, esperando, false) : ''; })()}
       ${trabajosIaHtml()}` : ''}
     <div class="solo-escritorio">
       <h2>Review</h2>

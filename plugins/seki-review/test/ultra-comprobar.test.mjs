@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rutaCopia } from '../mcp/lib/cache.mjs';
@@ -53,4 +53,26 @@ test('without a merge-base the checks run on the PR commit and are marked as not
   assert.equal(c.tipos.nuevosFallos.length, 1);
   assert.equal(sh(rutaCopia(p, 'api', 7, '-ultra'), 'rev-parse', 'HEAD'), r.head);
   assert.equal(sh(rutaCopia(p, 'api', 7, '-lectura'), 'rev-parse', 'HEAD'), r.head);
+});
+
+test('a second run with repetir resets the dedicated copy and still compares with the base', async () => {
+  const { p, pr, deps } = preparar(SOLO_PR);
+  for (let i = 0; i < 3; i++) {
+    const c = (await revisarUltra(p, pr, { ...deps, repetir: true })).resultado.comprobacion;
+    assert.equal(c.sinBaseline, undefined, `run ${i + 1}`);
+    assert.equal(c.tipos.nuevosFallos.length, 1, `run ${i + 1}`);
+  }
+});
+
+test('the patch comes from git: binary files of the PR are applied on the dedicated copy', async () => {
+  const { r, p, pr, deps } = preparar(SOLO_PR);
+  const trabajo = join(r.raiz, 'trabajo');
+  writeFileSync(join(trabajo, 'b.bin'), Buffer.from([0, 1, 2, 255, 254, 0, 7]));
+  sh(trabajo, 'add', 'b.bin');
+  sh(trabajo, 'commit', '-qm', 'binary');
+  sh(trabajo, 'push', '-q', '-f', 'origin', `${r.rama}:refs/pull/7/head`);
+  pr.headSha = sh(trabajo, 'rev-parse', 'HEAD');
+  const c = (await revisarUltra(p, pr, deps)).resultado.comprobacion;
+  assert.equal(c.sinBaseline, undefined);
+  assert.deepEqual([...readFileSync(join(rutaCopia(p, 'api', 7, '-ultra'), 'b.bin'))], [0, 1, 2, 255, 254, 0, 7]);
 });

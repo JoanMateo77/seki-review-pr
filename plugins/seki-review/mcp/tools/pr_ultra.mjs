@@ -1,7 +1,8 @@
 import { proyecto as cargarProyecto, cargarProyectos } from '../lib/config.mjs';
-import { leerJson, rutaDiff, rutaInstantanea } from '../lib/cache.mjs';
+import { leerJson, rutaInstantanea } from '../lib/cache.mjs';
 import { modoDe } from '../lib/perfiles.mjs';
 import { gastoMaquina } from '../lib/presupuesto.mjs';
+import { nombresDeArchivos } from '../lib/tablero.mjs';
 import { datosUltra } from '../lib/ultra.mjs';
 
 export default {
@@ -25,7 +26,6 @@ export default {
     const p = cargarProyecto(proyecto);
     const pr = leerJson(rutaInstantanea(p.salida))?.prs.find((x) => x.repo === repo && x.numero === numero);
     if (!pr) throw new Error(`${repo}#${numero} is not in the last snapshot of open PRs: refresh the dashboard status first.`);
-    const archivos = leerJson(rutaDiff(p.salida, repo, numero))?.archivos ?? [];
     const modo = modoDe(p);
     const limite = p.ia.presupuestoDiarioUsd;
     let presupuesto = null;
@@ -38,7 +38,7 @@ export default {
       repo, numero, headSha: pr.headSha, modo,
       disponible: pr.estadoPr === 'OPEN' && modo !== 'ahorro',
       presupuesto,
-      ...datosUltra(p, pr, archivos),
+      ...datosUltra(p, pr, nombresDeArchivos(p, pr)),
       enlace: `#/pr/${repo}/${numero}?ultra=1`,
     };
   },

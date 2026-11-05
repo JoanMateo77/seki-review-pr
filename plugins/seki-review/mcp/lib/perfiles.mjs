@@ -1,3 +1,5 @@
+import { probarSeguro } from './patrones.mjs';
+
 // One table decides model, cost cap, turn limit and second pass for every AI call, per mode.
 export const MODOS = ['ahorro', 'normal', 'ultra'];
 
@@ -39,7 +41,7 @@ export function elegirModelo({ tipo, pr = {}, lineasSeleccionadas = 0 }) {
 }
 
 // Worst case of one Ultra review: three lenses and one verification.
-export const topeRevisarUltra = () => 3 * PERFILES.ultra.ultra_lente.topeUsd + PERFILES.ultra.ultra_verificar.topeUsd;
+export const topeRevisarUltra = () => 3 * perfil({ tipo: 'ultra_lente', modo: 'ultra' }).topeUsd + perfil({ tipo: 'ultra_verificar', modo: 'ultra' }).topeUsd;
 
 const VENTANA_DIAS = 30;
 const MIN_MUESTRAS = 3;
@@ -63,16 +65,16 @@ export function sugerirUltra(p, pr, archivos = []) {
   const motivos = [];
   if (pr?.seguridad) motivos.push('The PR is flagged as security-related');
   for (const patron of p?.ia?.patronesSensibles ?? []) {
-    if (rutas.some((r) => patron.test(r))) motivos.push(`A changed file matches the sensitive path pattern "${patron.source}"`);
+    if (rutas.some((r) => probarSeguro(patron, r) === true)) motivos.push(`A changed file matches the sensitive path pattern "${patron.source}"`);
   }
   return { sugerida: motivos.length > 0, motivos };
 }
 
 // Worst case a queued job may spend, for the budget gate: explicar adds its second pass (not when completing),
-// cambiar its retry, responder one cap per question; the caller passes `n` when it knows the count.
+// cambiar its retry for each change request (`n`), responder one cap per question; the caller passes `n` when it knows the count.
 export function topeDeTrabajo({ tipo, modo, n, completar = false }) {
   const f = perfil({ tipo, modo });
-  const veces = n ?? (tipo === 'explicar' ? 1 + Number(f.segundaPasada && !completar) : tipo === 'cambiar' ? 2 : 1);
+  const veces = tipo === 'cambiar' ? 2 * (n ?? 1) : n ?? (tipo === 'explicar' ? 1 + Number(f.segundaPasada && !completar) : 1);
   return f.topeUsd * veces;
 }
 

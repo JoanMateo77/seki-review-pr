@@ -78,7 +78,7 @@ the first one in the file is used.
 `ia` (optional): `modo` (`ahorro`, `normal` or `ultra`, default `normal`), `presupuestoDiarioUsd` (positive number, or
 `null` for no limit; the spend counts every project on the machine) and `rutasSensibles` (regular expressions, as
 strings, matched against changed file paths to suggest an Ultra review). The patterns are trusted owner
-configuration, like `reglas`: each is limited to 200 characters and an invalid one is ignored with a warning.
+configuration, like `reglas`: each is limited to 200 characters, nested quantifiers are rejected, matching runs under a time limit, and an invalid one is ignored with a warning.
 
 ### Other MCP clients
 
@@ -117,7 +117,7 @@ lines and text, and are not requested again.
 no second explanation pass, and no repeated analysis of a PR whose explanation already covers the current commit), `normal` (the table above) or
 `ultra`. The default is `ia.modo` of the project and the top bar selector overrides it for the session; environment variables still win over the mode.
 `ia.presupuestoDiarioUsd` limits the day's spend on the machine (every project, local time zone): a job whose cost cap does not fit stays queued as
-"Blocked by the daily budget" until the person picks "Run anyway", and the AI filter answers with the same message and offers the same choice.
+"Blocked by the daily budget"; it starts by itself when spend allows it or after local midnight (re-checked every 30 seconds), or at once when the person picks "Run anyway", and the AI filter answers with the same message and offers the same choice.
 An **Ultra review** is an explicit, confirmed job on one PR: three read-only lenses (correctness, security, guidelines), code that drops findings
 citing files or lines that do not exist, one verification call and the project checks, over a copy of the branch. The confirmation shows the
 estimate (median of earlier reviews, or the cost caps when there are fewer than three). The result is stored per commit and shown in the

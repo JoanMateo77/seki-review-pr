@@ -202,8 +202,8 @@ test('ia section: defaults, valid values and fallbacks', () => {
   assert.deepEqual(c.rutasSensibles, []);
 });
 
-test('ia.rutasSensibles drops invalid and oversized patterns', () => {
-  config({ a: { salida: '/s/a', repos: {}, ia: { rutasSensibles: ['ok', '(sin cerrar', 'x'.repeat(201)] } } });
+test('ia.rutasSensibles drops invalid, oversized and nested-quantifier patterns', () => {
+  config({ a: { salida: '/s/a', repos: {}, ia: { rutasSensibles: ['ok', '(sin cerrar', 'x'.repeat(201), '(a+)+$'] } } });
   const ia = proyecto('a').ia;
   assert.deepEqual(ia.rutasSensibles, ['ok']);
   assert.equal(ia.patronesSensibles.length, 1);

@@ -6,7 +6,7 @@ import { join, isAbsolute, resolve, sep } from 'node:path';
 import { escribirJson, leerJson, rutaUltra } from './cache.mjs';
 import { comprobar } from './calidad.mjs';
 import { expandir } from './config.mjs';
-import { crearCopia, ramasEquivalentes } from './copias.mjs';
+import { crearCopia, mergeBaseFresca, ramasEquivalentes, reiniciarCopia } from './copias.mjs';
 import { asegurarDiff } from './diffs.mjs';
 import { prioridad } from './explicar.mjs';
 import { argsClaude, ejecutarClaude, leerCostos, MOTIVO_FORMATO, reglasSecretos, registrarCosto, sistemaDe } from './ia.mjs';
@@ -55,7 +55,7 @@ export function leerUltra(p, repo, numero, headSha) {
 // What the board and the chat show before an Ultra review: estimate and its base, whether it is suggested and the stored result.
 export function datosUltra(p, pr, archivos = []) {
   const { usd, base, muestras } = estimarCosto(leerCostos(p), { tipo: 'revisar_ultra', modo: 'ultra', topeUsd: topeRevisarUltra() });
-  return { estimacion: { usd, base, muestras }, ...sugerirUltra(p, pr, archivos), resultado: leerUltra(p, pr.repo, pr.numero, pr.headSha) };
+  return { estimacion: { usd, base, muestras }, topeUsd: topeRevisarUltra(), ...sugerirUltra(p, pr, archivos), resultado: leerUltra(p, pr.repo, pr.numero, pr.headSha) };
 }
 
 // The cached diff holds GitHub patches without headers or final newline; the checks parse and `git apply` a git diff.
@@ -123,20 +123,25 @@ function existeCita(raices, cuentas, h) {
 }
 
 // Checks run on a dedicated copy at the merge-base with the PR patch applied, so the baseline works as in change
-// proposals. Without a merge-base (or if the patch does not apply) they run on the PR commit and are not compared.
-async function copiaDeComprobacion(p, pr, patch, dirLectura) {
+// proposals. The patch comes from git itself (binary files, renames and large files included). Without a merge-base
+// (or if the patch does not apply) they run on the PR commit and are not compared.
+async function copiaDeComprobacion(p, pr, patchCache, dirLectura) {
   if (!p.repos[pr.repo]?.comprobar) return { dir: dirLectura, baseSha: pr.headSha };
-  const checkout = expandir(p.repos[pr.repo].checkout);
   let base = null;
-  try { base = (await git(checkout, ['merge-base', pr.headSha, `origin/${pr.base}`])).trim() || null; } catch { /* no merge-base */ }
-  if (base && patch.trim()) {
+  try { base = await mergeBaseFresca(p, pr.repo, pr.numero, pr.headSha, pr.base); } catch { /* no merge-base */ }
+  if (base) {
     const tmp = mkdtempSync(join(tmpdir(), 'seki-ultra-'));
     try {
       const dir = await crearCopia(p, pr.repo, pr.numero, base, { sufijo: '-ultra' });
-      const archivo = join(tmp, 'cambio.diff');
-      writeFileSync(archivo, patch);
-      await git(dir, ['apply', '--whitespace=nowarn', archivo]);
-      return { dir, baseSha: base };
+      // A copy kept from a previous run still has that run's patch applied.
+      await reiniciarCopia(dir, base);
+      const patch = await git(dir, ['diff', '--binary', '--no-color', '--no-ext-diff', base, pr.headSha]);
+      if (patch.trim()) {
+        const archivo = join(tmp, 'cambio.diff');
+        writeFileSync(archivo, patch);
+        await git(dir, ['apply', '--whitespace=nowarn', archivo]);
+        return { dir, baseSha: base, patch };
+      }
     } catch { /* falls back to the PR commit */ } finally { rmSync(tmp, { recursive: true, force: true }); }
   }
   return { dir: await crearCopia(p, pr.repo, pr.numero, pr.headSha, { sufijo: '-ultra' }), baseSha: null };
@@ -240,7 +245,7 @@ export async function revisarUltra(p, pr, {
       let comprobacion;
       try {
         const c = await copiarComprobacion(p, pr, patch, dir);
-        comprobacion = await comprobarFn(p, pr.repo, c.dir, patch, c.baseSha ?? pr.headSha, c.baseSha ? {} : { sinBaseline: true });
+        comprobacion = await comprobarFn(p, pr.repo, c.dir, c.patch ?? patch, c.baseSha ?? pr.headSha, c.baseSha ? {} : { sinBaseline: true });
         if (!c.baseSha) comprobacion = { ...comprobacion, sinBaseline: true };
       } catch { comprobacion = { error: 'The project checks could not run' }; }
       resultado = {

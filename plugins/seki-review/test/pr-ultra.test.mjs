@@ -60,3 +60,11 @@ test('pr_ultra uses earlier reviews for the estimate, flags sensitive paths and 
   assert.equal(r.resultado.desactualizada, true);
   assert.equal(r.resultado.hallazgos.length, 1);
 });
+
+test('pr_ultra ignores a cached diff of another commit when it looks for sensitive paths', async () => {
+  const e = entorno({ rutasSensibles: ['auth/'] });
+  escribirJson(rutaDiff(e.salida, 'r', 1), { headSha: 'c'.repeat(40), archivos: [{ filename: 'src/auth/x.ts', status: 'modified' }] });
+  const r = await herramienta.handler({ proyecto: e.clave, repo: 'r', numero: 1 });
+  assert.equal(r.sugerida, false);
+  assert.equal(r.topeUsd, 5.5);
+});

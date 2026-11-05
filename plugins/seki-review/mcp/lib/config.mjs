@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { compilarPatron } from './patrones.mjs';
 import { MODOS } from './perfiles.mjs';
 
 const EJEMPLO = join(dirname(fileURLToPath(import.meta.url)), '../../config/proyectos.ejemplo.json');
@@ -57,10 +58,10 @@ function rutasSensibles(lista) {
   for (const t of lista) {
     try {
       if (t.length > MAX_RUTA_SENSIBLE) throw new Error('too long');
-      patrones.push(new RegExp(t));
+      patrones.push(compilarPatron(t));
       validas.push(t);
     } catch {
-      avisar(`ia.rutasSensibles has an invalid pattern (it must be a regular expression of at most ${MAX_RUTA_SENSIBLE} characters); it is ignored`);
+      avisar(`ia.rutasSensibles has an invalid pattern (it must be a regular expression of at most ${MAX_RUTA_SENSIBLE} characters without nested quantifiers); it is ignored`);
     }
   }
   return { validas, patrones };

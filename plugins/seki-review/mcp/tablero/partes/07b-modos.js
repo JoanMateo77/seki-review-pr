@@ -109,7 +109,7 @@ async function abrirUltra(prId) {
   if (pedido !== estado.pedidoUltra || !$('modalIa')) return;
   const b = estado.presupuesto;
   const actual = d.resultado && !d.resultado.desactualizada;
-  const cabe = !b?.limite || b.gastado + b.reservado + d.estimacion.usd <= b.limite;
+  const cabe = !b?.limite || b.gastado + b.reservado + d.topeUsd <= b.limite;
   abrirModal(`<h3 id="modalIaTitulo">Ultra review of ${esc(pr.repo)} #${pr.numero}</h3>
     <p>Three read-only lenses (correctness, security and guidelines), a verification pass over their findings and the project checks on a copy of the branch.</p>
     <p><strong>Estimated cost: ${usd(d.estimacion.usd)}</strong> <span class="tenue">(${textoBase(d.estimacion)})</span></p>

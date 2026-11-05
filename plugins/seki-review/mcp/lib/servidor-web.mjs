@@ -6,7 +6,7 @@ import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { cargarProyectos, proyecto as cargarProyecto } from './config.mjs';
 import { recolectar } from './recolectar.mjs';
-import { construirHtml, fotoConExplicaciones, versionEnDisco } from './tablero.mjs';
+import { construirHtml, fotoConExplicaciones, nombresDeArchivos, versionEnDisco } from './tablero.mjs';
 
 const VERSION = versionEnDisco();
 import { crearCola } from './trabajos.mjs';
@@ -20,11 +20,11 @@ import { filtrarPrs } from './filtrar.mjs';
 import { costosDelDia, registrarCosto, resumenCostos } from './ia.mjs';
 import { modoDe, topeDeTrabajo, topeRevisarUltra } from './perfiles.mjs';
 import { datosUltra, leerUltra, revisarUltra } from './ultra.mjs';
-import { crearPresupuesto, gastoMaquina } from './presupuesto.mjs';
+import { crearPresupuesto, crearReservas, gastoMaquina } from './presupuesto.mjs';
 import { estadoServidor, pedirCeder, tokenDe } from './acceso.mjs';
 import { limpiarCopias } from './copias.mjs';
 import { ghJson } from './proceso.mjs';
-import { dirQa, leerJson, rutaDiff, rutaEntregas, rutaInstantanea } from './cache.mjs';
+import { dirQa, leerJson, rutaEntregas, rutaInstantanea } from './cache.mjs';
 import { crearSondeo, crearVigia, VENTANA_TABLERO_MS } from './vigia.mjs';
 import { aplicarAjuste, cerrarEntrega, datosEntregas, mapaPrs, marcarVisita } from './tablero-entregas.mjs';
 import { MAX_ARCHIVO } from './archivos.mjs';
@@ -32,6 +32,9 @@ import { importarQa } from './qa-importar.mjs';
 import { generarGuia } from './qa-salida.mjs';
 import { aplicarRastreador, cambiosPendientes } from './rastreador-xlsx.mjs';
 import { enSerieEntregas } from './recolectar.mjs';
+
+// Reservations of running AI jobs are shared by every project served by this process.
+const RESERVAS_PROCESO = crearReservas();
 
 const PUERTO = 4317;
 const MAX_CUERPO = 64 * 1024;
@@ -249,6 +252,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
   // The limit is the served project's; the spend counts every configured project on this machine.
   let gastoAvisado = false;
   const presupuesto = crearPresupuesto({
+    compartido: RESERVAS_PROCESO,
     limite: () => p.ia?.presupuestoDiarioUsd ?? null,
     gasto: () => {
       try { return gastoMaquina({ proyectos: cargarProyectos().proyectos }); } catch {
@@ -360,7 +364,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         const ahora = Date.now();
         if (preguntas.length) cola.encolar([{ id: `${pr.id}:responder:${ahora}`, tipo: 'responder', prId: pr.id, // The number of uncached questions is not known here: the cap counts every question sent.
           topeUsd: topeDeTrabajo({ tipo: 'responder', modo, n: preguntas.length }), ...conRescate(pr, preguntas, () => responderPreguntas(p, pr, preguntas, { modo })) }]);
-        if (cambios.length) cola.encolar([{ id: `${pr.id}:cambiar:${ahora}`, tipo: 'cambiar', prId: pr.id, topeUsd: topeDeTrabajo({ tipo: 'cambiar', modo }), ...conRescate(pr, cambios, () => proponerCambios(p, pr, cambios, { modo })) }]);
+        if (cambios.length) cola.encolar([{ id: `${pr.id}:cambiar:${ahora}`, tipo: 'cambiar', prId: pr.id, topeUsd: topeDeTrabajo({ tipo: 'cambiar', modo, n: cambios.length }), ...conRescate(pr, cambios, () => proponerCambios(p, pr, cambios, { modo })) }]);
         for (const cid of investigar) cola.encolar([{ id: `${pr.id}:investigar:${cid}:${ahora}`, tipo: 'investigar', prId: pr.id, topeUsd: topeDeTrabajo({ tipo: 'investigar', modo }), ...conRescate(pr, [cid], () => investigarPregunta(p, pr, cid, { modo })) }]);
         return responder(res, 202, { preguntas: todas.length, cambios: cambios.length, desactualizados: desactualizados.length });
       }
@@ -510,7 +514,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
       }
       if (req.method === 'GET' && url.pathname === '/api/ultra') {
         const pr = prDeFoto(`${url.searchParams.get('repo')}#${url.searchParams.get('numero')}`);
-        return responder(res, 200, datosUltra(p, pr, leerJson(rutaDiff(p.salida, pr.repo, pr.numero))?.archivos ?? []));
+        return responder(res, 200, datosUltra(p, pr, nombresDeArchivos(p, pr)));
       }
       if (req.method === 'POST' && url.pathname === '/api/ultra') {
         const { repo, numero, repetir, modo: modoPedido, confirmar } = await leerJsonEstricto(req);
@@ -534,7 +538,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
       if (req.method === 'POST' && url.pathname === '/api/cancelar-cola') return responder(res, 200, { cancelados: cola.vaciar() });
       // Another session with another version asks for the port: release it only if no jobs would be cut off.
       if (req.method === 'POST' && url.pathname === '/api/ceder') {
-        if (refresco || vigia.ocupado() || guiaEnCurso() || cola.lista().some((t) => t.estado === 'en_cola' || t.estado === 'en_curso')) return responder(res, 409, { error: 'Jobs in progress' });
+        if (refresco || vigia.ocupado() || guiaEnCurso() || cola.lista().some((t) => ['en_cola', 'bloqueado_presupuesto', 'en_curso'].includes(t.estado))) return responder(res, 409, { error: 'Jobs in progress' });
         responder(res, 200, { ok: true });
         cerrar();
         return;
@@ -563,6 +567,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
     await Promise.all([cerrado, ciclo, cola.detener(), guiaActiva?.promesa]);
     while (refresco) await refresco;
     await limpieza;
+    presupuesto.soltar();
   };
   const escuchar = (n) => new Promise((ok, falla) => {
     servidor.once('error', falla);

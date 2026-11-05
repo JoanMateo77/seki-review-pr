@@ -54,6 +54,7 @@ test('GET /api/ultra returns the estimate, the suggestion and the stored result'
   const d = await (await e.llamar('/api/ultra?repo=r&numero=1')).json();
   assert.equal(d.estimacion.base, 'topes');
   assert.equal(d.estimacion.usd, 5.5);
+  assert.equal(d.topeUsd, 5.5);
   assert.equal(d.sugerida, true);
   assert.equal(d.resultado.desactualizada, true);
   const otra = await (await e.llamar('/api/ultra?repo=r&numero=2')).json();
@@ -91,6 +92,14 @@ test('POST /api/trabajos/forzar runs a blocked job once and answers 404 for anyt
   assert.equal((await e.llamar('/api/trabajos/forzar', { id: 'r#1:ultra' })).status, 200);
   const t1 = (await (await e.llamar('/api/estado')).json()).trabajos.find((x) => x.id === 'r#1:ultra');
   assert.notEqual(t1.estado, 'bloqueado_presupuesto');
+});
+
+test('a job blocked by the budget counts as work in progress: the port is not handed over', async () => {
+  const e = await entorno({ ia: { presupuestoDiarioUsd: 1 } });
+  assert.equal((await e.llamar('/api/ultra', { repo: 'r', numero: 1, confirmar: true })).status, 202);
+  assert.equal((await e.llamar('/api/ceder', {})).status, 409);
+  assert.equal((await e.llamar('/api/cancelar-cola', {})).status, 200);
+  assert.equal((await e.llamar('/api/ceder', {})).status, 200);
 });
 
 test('saving mode does not enqueue an explanation that already covers the current commit, unless completing', async (t) => {

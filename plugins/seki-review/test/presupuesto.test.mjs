@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { appendFileSync, mkdtempSync } from 'node:fs';
-import { crearPresupuesto, gastoMaquina, mensajeBloqueo } from '../mcp/lib/presupuesto.mjs';
+import { crearPresupuesto, crearReservas, gastoMaquina, mensajeBloqueo } from '../mcp/lib/presupuesto.mjs';
 import { diaLocal, registrarCosto } from '../mcp/lib/ia.mjs';
 import { fijarTz } from './util/tz.mjs';
 
@@ -93,4 +93,30 @@ test('gate: a release without a re-read adds the cost to the cached spend', () =
 test('blocked message names the spent amount and the limit', () => {
   assert.equal(mensajeBloqueo({ limite: 5, gastado: 4.2, reservado: 0.3 }, 0.6), 'Blocked by the daily budget ($4.50 of $5.00 spent)');
   assert.match(mensajeBloqueo({ limite: 1, gastado: 0, reservado: 0 }, 4), /exceeds the daily limit of \$1\.00 on its own/);
+});
+
+test('gastoMaquina counts a costs file once when two projects share the output folder', () => {
+  const salida = mkdtempSync(join(tmpdir(), 'seki-pres-'));
+  const ahora = Date.parse('2026-10-27T17:00:00Z');
+  registrarCosto({ salida }, { tipo: 'explicar', costo: 1, ok: true, fecha: '2026-10-27T17:00:00Z' });
+  assert.equal(gastoMaquina({ proyectos: { a: { salida }, b: { salida: `${salida}/` }, c: { salida: join(salida, 'datos', '..') } }, ahora }), 1);
+});
+
+test('reservations shared by two projects count against each limit, and a release makes the other one re-read', () => {
+  const compartido = crearReservas();
+  let disco = 0;
+  const a = crearPresupuesto({ limite: () => 1, gasto: () => disco, ahora: () => 1000, compartido });
+  const b = crearPresupuesto({ limite: () => 5, gasto: () => disco, ahora: () => 1000, compartido });
+  assert.equal(b.cabe(4), true);
+  const r = a.reservar(0.9);
+  assert.equal(b.cabe(4.5), false);
+  assert.equal(b.estado().reservado, 0.9);
+  assert.equal(a.cabe(0.2), false);
+  disco = 0.4;
+  r.liberar(0.4);
+  assert.equal(b.estado().reservado, 0);
+  assert.equal(b.estado().gastado, 0.4);
+  a.soltar();
+  b.soltar();
+  assert.equal(compartido.instancias.size, 0);
 });

@@ -114,3 +114,14 @@ test('limpiarCopias deletes copies of closed PRs and stale ones, and leaves fore
   assert.ok(existsSync(ajeno));
   assert.ok(!existsSync(cerrada));
 });
+
+test('limpiarCopias also removes the Ultra checks copy of a closed PR', async () => {
+  const { limpiarCopias } = await import('../mcp/lib/copias.mjs');
+  const { r, p } = preparar();
+  const abierta = await crearCopia(p, 'x', 7, r.head, { sufijo: '-ultra' });
+  const cerrada = await crearCopia(p, 'x', 8, r.head, { sufijo: '-ultra' });
+  const borradas = await limpiarCopias(p, { abiertas: new Set(['x#7']), ahora: Date.now(), usos: {} });
+  assert.deepEqual(borradas, [cerrada]);
+  assert.ok(existsSync(abierta));
+  assert.ok(!existsSync(cerrada));
+});
