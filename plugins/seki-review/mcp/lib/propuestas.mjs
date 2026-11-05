@@ -61,7 +61,7 @@ function textoFallos(c) {
   return partes.join('\n\n');
 }
 
-function lineamientos(p) {
+export function lineamientos(p) {
   const dir = p.lineamientos ? expandir(p.lineamientos) : null;
   if (!dir || !existsSync(join(dir, 'SKILL.md'))) return null;
   const destilado = join(dir, 'destilado');

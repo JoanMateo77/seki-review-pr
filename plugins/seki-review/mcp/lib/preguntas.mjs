@@ -77,7 +77,7 @@ async function responder(p, pr, sinCache, { contexto, detalle, modo }) {
 const SCHEMA_INVESTIGAR = { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] };
 
 // Read-only copies of the other repos on the equivalent branch; a branch that could not be fetched is reported.
-async function otrasRamas(p, pr) {
+export async function otrasRamas(p, pr) {
   const { ambiente, ramas } = ramasEquivalentes(p, pr);
   const lista = [];
   for (const r of ramas) {
