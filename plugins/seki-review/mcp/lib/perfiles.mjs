@@ -36,6 +36,36 @@ export function elegirModelo({ tipo, pr = {}, lineasSeleccionadas = 0 }) {
   return 'sonnet';
 }
 
+// Worst case of one Ultra review: three lenses and one verification.
+export const topeRevisarUltra = () => 3 * PERFILES.ultra.ultra_lente.topeUsd + PERFILES.ultra.ultra_verificar.topeUsd;
+
+const VENTANA_DIAS = 30;
+const MIN_MUESTRAS = 3;
+
+// Median cost of the same job type and mode over the last 30 days; with fewer than 3 records the job cap stands in.
+export function estimarCosto(registros, { tipo, modo = 'normal', multiplicador = 1, topeUsd, ahora = Date.now() }) {
+  const desde = new Date(ahora - VENTANA_DIAS * 86400000).toISOString();
+  const costos = registros
+    .filter((x) => x?.tipo === tipo && (x.modo ?? 'normal') === modo && x.fecha >= desde && Number.isFinite(x.costo))
+    .map((x) => x.costo)
+    .sort((a, b) => a - b);
+  if (costos.length < MIN_MUESTRAS) return { usd: topeUsd, base: 'topes', muestras: costos.length };
+  const m = costos.length >> 1;
+  const mediana = costos.length % 2 ? costos[m] : (costos[m - 1] + costos[m]) / 2;
+  return { usd: mediana * multiplicador, base: 'historial', muestras: costos.length };
+}
+
+// Ultra is suggested when a changed path matches a sensitive pattern or the PR is already flagged as security.
+export function sugerirUltra(p, pr, archivos = []) {
+  const rutas = archivos.map((a) => (typeof a === 'string' ? a : a?.filename)).filter(Boolean);
+  const motivos = [];
+  if (pr?.seguridad) motivos.push('The PR is flagged as security-related');
+  for (const patron of p?.ia?.patronesSensibles ?? []) {
+    if (rutas.some((r) => patron.test(r))) motivos.push(`A changed file matches the sensitive path pattern "${patron.source}"`);
+  }
+  return { sugerida: motivos.length > 0, motivos };
+}
+
 export function perfil({ tipo, modo, pr = {}, lineasSeleccionadas = 0 }) {
   const m = modoValido(modo) ? modo : 'normal';
   const fila = PERFILES[m][tipo];

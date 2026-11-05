@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MODOS, PERFILES, modoDe, perfil } from '../mcp/lib/perfiles.mjs';
+import { MODOS, PERFILES, estimarCosto, modoDe, perfil, sugerirUltra, topeRevisarUltra } from '../mcp/lib/perfiles.mjs';
 import { TOPES, TURNOS, costosDelDia, registrarCosto, resumenCostos } from '../mcp/lib/ia.mjs';
 import { requiereSegundaPasada } from '../mcp/lib/explicar.mjs';
 import { filtrarPrs } from '../mcp/lib/filtrar.mjs';
@@ -136,4 +136,52 @@ test('resumenCostos still groups by model with the mode data present', () => {
   const p = { salida: mkdtempSync(join(tmpdir(), 'seki-perf-')) };
   registrarCosto(p, { tipo: 'explicar', prId: 'a#1', modelo: 'claude-sonnet-5-5', costo: 1, ok: true, modo: 'ahorro' });
   assert.equal(resumenCostos(p).modelos.sonnet.trabajos, 1);
+});
+
+const ahora = Date.parse('2026-11-05T12:00:00Z');
+const reg = (costo, extra = {}) => ({ tipo: 'explicar', modo: 'normal', costo, fecha: '2026-11-01T10:00:00Z', ok: true, ...extra });
+
+test('estimarCosto: median of the last 30 days for the same type and mode, times the multiplier', () => {
+  const r = estimarCosto([reg(1), reg(9), reg(3), reg(100, { modo: 'ahorro' }), reg(100, { tipo: 'responder' }), reg(100, { fecha: '2026-09-01T00:00:00Z' })], { tipo: 'explicar', modo: 'normal', multiplicador: 2, topeUsd: 4, ahora });
+  assert.deepEqual(r, { usd: 6, base: 'historial', muestras: 3 });
+  assert.equal(estimarCosto([reg(1), reg(2), reg(3), reg(10)], { tipo: 'explicar', modo: 'normal', topeUsd: 4, ahora }).usd, 2.5);
+});
+
+test('estimarCosto: records without mode count as normal; fewer than 3 samples fall back to the cap', () => {
+  const sinModo = { tipo: 'explicar', costo: 1, fecha: '2026-11-01T10:00:00Z' };
+  assert.equal(estimarCosto([sinModo, sinModo, sinModo], { tipo: 'explicar', modo: 'normal', topeUsd: 4, ahora }).base, 'historial');
+  assert.deepEqual(estimarCosto([reg(1), reg(2)], { tipo: 'explicar', modo: 'normal', multiplicador: 3, topeUsd: 4, ahora }), { usd: 4, base: 'topes', muestras: 2 });
+  assert.deepEqual(estimarCosto([], { tipo: 'revisar_ultra', modo: 'ultra', topeUsd: topeRevisarUltra(), ahora }), { usd: 5.5, base: 'topes', muestras: 0 });
+});
+
+test('estimarCosto: Ultra uses revisar_ultra records', () => {
+  const u = (c) => reg(c, { tipo: 'revisar_ultra', modo: 'ultra' });
+  assert.deepEqual(estimarCosto([u(2), u(3), u(4), reg(50)], { tipo: 'revisar_ultra', modo: 'ultra', topeUsd: 5.5, ahora }), { usd: 3, base: 'historial', muestras: 3 });
+});
+
+test('sugerirUltra: sensitive path or security flag, reasons name the pattern and never the file', () => {
+  const p = { ia: { patronesSensibles: [/(^|\/)auth\//, /pagos?\.ts$/] } };
+  const r = sugerirUltra(p, { seguridad: false }, ['src/auth/login.ts', { filename: 'docs/a.md' }, 'x/pago.ts']);
+  assert.equal(r.sugerida, true);
+  assert.equal(r.motivos.length, 2);
+  assert.ok(r.motivos.every((m) => !m.includes('login.ts') && !m.includes('pago.ts')));
+  assert.ok(r.motivos[0].includes('auth'));
+  assert.deepEqual(sugerirUltra(p, { seguridad: false }, ['docs/a.md']), { sugerida: false, motivos: [] });
+  assert.equal(sugerirUltra({}, { seguridad: true }, []).sugerida, true);
+  assert.equal(sugerirUltra(null, {}, undefined).sugerida, false);
+});
+
+test('resumenCostos: per-mode table, no mode counts as normal, ratings follow the rated mode', () => {
+  const p = { salida: mkdtempSync(join(tmpdir(), 'seki-perf-')) };
+  const f = new Date().toISOString();
+  registrarCosto(p, { fecha: f, tipo: 'responder', prId: 'a#1', modelo: 'claude-haiku-5-5', costo: 0.1, ok: true, modo: 'ahorro' });
+  registrarCosto(p, { fecha: f, tipo: 'responder', prId: 'a#1', modelo: 'claude-haiku-5-5', costo: 0.3, ok: false, modo: 'ahorro' });
+  registrarCosto(p, { fecha: f, tipo: 'explicar', prId: 'a#1', modelo: 'claude-sonnet-5-5', costo: 1, ok: true });
+  registrarCosto(p, { fecha: f, tipo: 'valoracion', comentario: 'c-1', modelo: 'claude-haiku-5-5', modo: 'ahorro', util: true, costo: 0 });
+  registrarCosto(p, { fecha: f, tipo: 'valoracion', comentario: 'c-2', modelo: 'claude-sonnet-5-5', util: false, costo: 0 });
+  const { modos } = resumenCostos(p);
+  assert.deepEqual(modos.ahorro, { trabajos: 2, fallidos: 1, costo: 0.4, utiles: 1, noUtiles: 0, costoPorUtil: 0.4 });
+  assert.equal(modos.normal.trabajos, 1);
+  assert.equal(modos.normal.noUtiles, 1);
+  assert.equal(modos.normal.costoPorUtil, null);
 });

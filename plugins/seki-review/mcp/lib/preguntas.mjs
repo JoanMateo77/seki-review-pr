@@ -66,7 +66,7 @@ async function responder(p, pr, sinCache, { contexto, detalle, modo }) {
     if (texto) {
       const falta = necesitaCodigo === true ? true : undefined;
       escribirJson(rutaRespuesta(p.salida, clave(pr, c)), { texto, modelo: usado, necesitaCodigo: falta, fecha: new Date().toISOString() });
-      actualizar(c.id, { estado: 'respondido', respuesta: texto, necesitaCodigo: falta, modelo: usado, costo: r.costo, lote: sinCache.length, desdeCache: false });
+      actualizar(c.id, { estado: 'respondido', respuesta: texto, necesitaCodigo: falta, modelo: usado, modo: modoUsado, costo: r.costo, lote: sinCache.length, desdeCache: false });
     } else {
       actualizar(c.id, { estado: 'error', motivo: r.ok ? 'The AI returned no answer for this question' : r.motivo });
     }
@@ -147,7 +147,7 @@ export async function investigarPregunta(p, pr, id, { contexto = contextoPregunt
     const leido = [{ repo: pr.repo, rama: `PR #${pr.numero}`, sha: pr.headSha }, ...otros.map((o) => ({ repo: o.repo, portal: o.portal, rama: o.rama, sha: o.sha }))];
     const usado = r.modelo ?? modelo;
     registrarCosto(p, { tipo: 'investigar', prId: pr.id, comentario: id, modelo: usado, uso: r.uso, costo: r.costo, ok: r.ok, motivo: r.motivo, modo: modoUsado, archivos: consultado.archivos.length, bloqueadas: bloqueadas.length });
-    if (r.ok && r.salida?.texto) actualizar({ estado: 'respondido', respuesta: r.salida.texto, investigado: true, leido, consultado, bloqueadas: bloqueadas.length ? bloqueadas : undefined, necesitaCodigo: undefined, modelo: usado, costo: r.costo, lote: 1, desdeCache: false });
+    if (r.ok && r.salida?.texto) actualizar({ estado: 'respondido', respuesta: r.salida.texto, investigado: true, leido, consultado, bloqueadas: bloqueadas.length ? bloqueadas : undefined, necesitaCodigo: undefined, modelo: usado, modo: modoUsado, costo: r.costo, lote: 1, desdeCache: false });
     else actualizar({ estado: 'error', motivo: r.ok ? 'The AI returned no answer' : r.motivo });
     return { ok: r.ok, motivo: r.motivo, costo: r.costo, modelo: usado };
   } catch (e) {

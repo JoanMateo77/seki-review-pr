@@ -155,6 +155,16 @@ export function diaLocal(fecha) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+export function leerCostos(p) {
+  const ruta = rutaCostos(p.salida);
+  if (!existsSync(ruta)) return [];
+  const registros = [];
+  for (const linea of readFileSync(ruta, 'utf8').split('\n')) {
+    try { if (linea) registros.push(JSON.parse(linea)); } catch { /* unreadable line */ }
+  }
+  return registros;
+}
+
 export function costosDelDia(p, dia = diaLocal(Date.now())) {
   const ruta = rutaCostos(p.salida);
   const r = { total: 0, trabajos: 0 };
@@ -178,19 +188,23 @@ export function resumenCostos(p, { dias = 30, ahora = Date.now() } = {}) {
   const ruta = rutaCostos(p.salida);
   const desde = new Date(ahora - dias * 86400000).toISOString();
   const modelos = {};
+  const modos = {};
   const valoradas = new Map();
   const analizadas = new Set();
   let reintentos = 0;
-  if (!existsSync(ruta)) return { dias, modelos, reintentos };
+  if (!existsSync(ruta)) return { dias, modelos, modos, reintentos };
   for (const linea of readFileSync(ruta, 'utf8').split('\n')) {
     let x;
     try { x = linea && JSON.parse(linea); } catch { continue; }
     if (!x || !(x.fecha >= desde)) continue;
     if (x.tipo === 'valoracion') { valoradas.set(x.comentario, x); continue; }
     const m = (modelos[nombreCorto(x.modelo)] ??= { trabajos: 0, fallidos: 0, costo: 0, utiles: 0, noUtiles: 0 });
-    m.trabajos++;
-    if (x.ok === false) m.fallidos++;
-    m.costo += x.costo ?? 0;
+    const mm = (modos[x.modo ?? 'normal'] ??= { trabajos: 0, fallidos: 0, costo: 0, utiles: 0, noUtiles: 0 });
+    for (const t of [m, mm]) {
+      t.trabajos++;
+      if (x.ok === false) t.fallidos++;
+      t.costo += x.costo ?? 0;
+    }
     if (x.tipo === 'explicar') { if (analizadas.has(x.prId)) reintentos++; analizadas.add(x.prId); }
     if (x.reintento) reintentos++;
   }
@@ -198,7 +212,9 @@ export function resumenCostos(p, { dias = 30, ahora = Date.now() } = {}) {
     if (v.util === null) continue;
     const m = (modelos[nombreCorto(v.modelo)] ??= { trabajos: 0, fallidos: 0, costo: 0, utiles: 0, noUtiles: 0 });
     m[v.util ? 'utiles' : 'noUtiles']++;
+    const mm = (modos[v.modo ?? 'normal'] ??= { trabajos: 0, fallidos: 0, costo: 0, utiles: 0, noUtiles: 0 });
+    mm[v.util ? 'utiles' : 'noUtiles']++;
   }
-  for (const m of Object.values(modelos)) m.costoPorUtil = m.utiles ? m.costo / m.utiles : null;
-  return { dias, modelos, reintentos };
+  for (const m of [...Object.values(modelos), ...Object.values(modos)]) m.costoPorUtil = m.utiles ? m.costo / m.utiles : null;
+  return { dias, modelos, modos, reintentos };
 }

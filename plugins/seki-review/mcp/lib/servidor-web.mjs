@@ -368,7 +368,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         if (!c) throw Object.assign(new Error('The question does not exist'), { codigo: 404 });
         if (c.estado !== 'respondido') throw new Error('Only an answered question can be rated');
         actualizarComentario(p, pr.repo, pr.numero, c.id, { valoracion: util ?? undefined });
-        registrarCosto(p, { tipo: 'valoracion', prId: pr.id, comentario: c.id, modelo: c.modelo, investigado: !!c.investigado, util, costo: 0 });
+        registrarCosto(p, { tipo: 'valoracion', prId: pr.id, comentario: c.id, modelo: c.modelo, modo: c.modo, investigado: !!c.investigado, util, costo: 0 });
         return responder(res, 200, { ok: true });
       }
       if (req.method === 'GET' && url.pathname === '/api/costos') return responder(res, 200, resumenCostos(p));
