@@ -2,10 +2,13 @@ async function api(ruta, cuerpo, cabeceras = {}) {
   const r = await fetch(ruta, {
     method: cuerpo === undefined ? 'GET' : 'POST',
     headers: { 'X-Seki-Token': API.token, 'Content-Type': 'application/json', ...cabeceras },
-    body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo),
+    body: cuerpo === undefined ? undefined : JSON.stringify(conModo(ruta, cuerpo)),
   });
   if (r.status === 404 && servidorDesfasado()) throw new Error('The dashboard server is from an older version and doesn’t have this feature: restart Claude Code.');
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`);
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    throw Object.assign(new Error(e.error ?? `HTTP ${r.status}`), { estado: r.status, forzar: e.forzar === true });
+  }
   return r.json();
 }
 
@@ -29,6 +32,8 @@ async function sondear() {
     estado.vigia = e.vigia ?? null;
     if (e.costoHoy?.trabajos !== estado.costoHoy?.trabajos) api('/api/costos').then((r) => { estado.resumenCostos = r; pintarBarra(); }).catch(() => {});
     estado.costoHoy = e.costoHoy;
+    estado.presupuesto = e.presupuesto ?? null;
+    estado.modoProyecto = e.modo ?? 'normal';
     const marcas = e.comentarios ?? {};
     for (const [id, marca] of Object.entries(marcas)) {
       const pr = FOTO.prs.find((x) => x.id === id);
@@ -41,7 +46,7 @@ async function sondear() {
     if (termino) { FOTO = await api('/api/foto'); recargarEntregas(); }
     // If the user is typing in the detail, do not repaint: they would lose focus and half-written text.
     pintarTodo({ detalle: !$('detalle').contains(document.activeElement) });
-    const activo = e.refrescando || e.trabajos.some((t) => t.estado === 'en_cola' || t.estado === 'en_curso');
+    const activo = e.refrescando || e.trabajos.some((t) => ['en_cola', 'en_curso', 'bloqueado_presupuesto'].includes(t.estado));
     // While idle it keeps asking once a minute: that tells the server the dashboard is open (merge watcher).
     espera = activo ? 3000 : 60000;
   } catch (err) {
@@ -105,6 +110,7 @@ document.addEventListener('click', (ev) => {
   if (d.copiar) return copiar(t, d.copiar);
   if (d.accion === 'limpiar') { estado.filtros.clear(); estado.portal = null; estado.filtroIa = null; $('buscar').value = ''; return pintarTodo(); }
   if (d.accion === 'filtrarIa') return filtrarConIa();
+  if (d.accion === 'forzarFiltroIa') { const q = estado.filtroIa?.consulta; estado.filtroIa = null; return filtrarConIa(q, { forzar: true }); }
   if (d.accion === 'reintentarFiltroIa') { const q = estado.filtroIa?.consulta; estado.filtroIa = null; return filtrarConIa(q); }
   if (d.accion === 'relacionadasFiltroIa' && estado.filtroIa?.estado === 'listo') { estado.filtroIa.conRelacionadas = !estado.filtroIa.conRelacionadas; return pintarTodo({ detalle: false }); }
   if (d.accion === 'quitarFiltroIa') { estado.filtroIa = null; return pintarTodo({ detalle: false }); }

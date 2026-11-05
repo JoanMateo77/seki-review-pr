@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { leerJson, rutaExplicacion, rutaInstantanea } from './cache.mjs';
+import { leerJson, rutaDiff, rutaExplicacion, rutaInstantanea } from './cache.mjs';
+import { sugerirUltra } from './perfiles.mjs';
 import { diffsDeFoto } from './diffs.mjs';
 import { datosEntregas } from './tablero-entregas.mjs';
 
@@ -20,6 +21,9 @@ export function fotoConExplicaciones(p) {
   for (const pr of foto.prs) {
     const e = leerJson(rutaExplicacion(p.salida, pr.repo, pr.numero));
     pr.explicacion = e ? { ...e, desactualizada: e.headSha !== pr.headSha } : undefined;
+    // The cached diff is only read when the project has sensitive path patterns.
+    const archivos = p.ia?.patronesSensibles?.length ? leerJson(rutaDiff(p.salida, pr.repo, pr.numero))?.archivos : [];
+    pr.ultraSugerida = sugerirUltra(p, pr, archivos ?? []).sugerida;
   }
   return foto;
 }

@@ -18,12 +18,13 @@ import { explicarConIa } from './explicar.mjs';
 import { avances } from './avance.mjs';
 import { filtrarPrs } from './filtrar.mjs';
 import { costosDelDia, registrarCosto, resumenCostos } from './ia.mjs';
-import { modoDe, topeDeTrabajo } from './perfiles.mjs';
+import { modoDe, topeDeTrabajo, topeRevisarUltra } from './perfiles.mjs';
+import { datosUltra, revisarUltra } from './ultra.mjs';
 import { crearPresupuesto, gastoMaquina } from './presupuesto.mjs';
 import { estadoServidor, pedirCeder, tokenDe } from './acceso.mjs';
 import { limpiarCopias } from './copias.mjs';
 import { ghJson } from './proceso.mjs';
-import { dirQa, leerJson, rutaEntregas, rutaInstantanea } from './cache.mjs';
+import { dirQa, leerJson, rutaDiff, rutaEntregas, rutaInstantanea } from './cache.mjs';
 import { crearSondeo, crearVigia, VENTANA_TABLERO_MS } from './vigia.mjs';
 import { aplicarAjuste, cerrarEntrega, datosEntregas, mapaPrs, marcarVisita } from './tablero-entregas.mjs';
 import { MAX_ARCHIVO } from './archivos.mjs';
@@ -345,7 +346,8 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         return responder(res, 200, guardarComentarios(p, pr.repo, pr.numero, comentarios, borrados));
       }
       if (req.method === 'POST' && url.pathname === '/api/enviar-revision') {
-        const { id, ids = [] } = await leerCuerpo(req);
+        const { id, ids = [], modo: modoPedido } = await leerCuerpo(req);
+        const modo = modoDe(p, modoPedido);
         const pr = prDeFoto(id);
         if (!Array.isArray(ids)) throw new Error('ids must be an array');
         const lista = leerComentarios(p, pr.repo, pr.numero);
@@ -376,13 +378,15 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
       }
       if (req.method === 'GET' && url.pathname === '/api/costos') return responder(res, 200, resumenCostos(p));
       if (req.method === 'POST' && url.pathname === '/api/filtrar') {
-        const { consulta, forzar } = await leerCuerpo(req);
+        const { consulta, forzar, modo: modoPedido } = await leerCuerpo(req);
+        const modo = modoDe(p, modoPedido);
         const foto = fotoConExplicaciones(p);
         if (!foto) throw Object.assign(new Error('No PR data yet.'), { codigo: 503 });
         return responder(res, 200, await filtrarPrs(p, foto.prs, consulta, { modo, presupuesto, forzar: forzar === true }));
       }
       if (req.method === 'POST' && url.pathname === '/api/investigar') {
-        const { id, comentario } = await leerCuerpo(req);
+        const { id, comentario, modo: modoPedido } = await leerCuerpo(req);
+        const modo = modoDe(p, modoPedido);
         const pr = prDeFoto(id);
         const c = leerComentarios(p, pr.repo, pr.numero).find((x) => x.id === comentario && x.tipo === 'pregunta');
         if (!c) throw Object.assign(new Error('The question does not exist'), { codigo: 404 });
@@ -397,7 +401,8 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         return responder(res, 200, leerPropuesta(p, pr.repo, pr.numero, url.searchParams.get('id')));
       }
       if (req.method === 'POST' && url.pathname.startsWith('/api/propuesta/')) {
-        const { pr: prId, id, indicacion, confirmarFallos } = await leerCuerpo(req);
+        const { pr: prId, id, indicacion, confirmarFallos, modo: modoPedido } = await leerCuerpo(req);
+        const modo = modoDe(p, modoPedido);
         const pr = prDeFoto(prId);
         leerPropuesta(p, pr.repo, pr.numero, id);
         const accion = url.pathname.slice('/api/propuesta/'.length);
@@ -485,19 +490,42 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
       }
       if (req.method === 'GET' && url.pathname === '/api/estado') {
         if (req.headers['x-seki-tablero'] === '1') ultimoTablero = Date.now();
-        return responder(res, 200, { vigia: vigia.estado(), refrescando: !!refresco, ultimoRefresco, trabajos: [...cola.lista(), ...listaGuias()], comentarios: marcasComentarios(), avances: avances(), costoHoy: costosDelDia(p), presupuesto: presupuesto.estado(), version: VERSION });
+        return responder(res, 200, { vigia: vigia.estado(), refrescando: !!refresco, ultimoRefresco, trabajos: [...cola.lista(), ...listaGuias()], comentarios: marcasComentarios(), avances: avances(), costoHoy: costosDelDia(p), presupuesto: presupuesto.estado(), modo, version: VERSION });
       }
       if (req.method === 'POST' && url.pathname === '/api/refrescar') {
         refrescar();
         return responder(res, 202, { refrescando: true });
       }
       if (req.method === 'POST' && url.pathname === '/api/analizar') {
-        const { prs = [], completar = false } = await leerCuerpo(req);
+        const { prs = [], completar = false, modo: modoPedido } = await leerCuerpo(req);
+        const modo = modoDe(p, modoPedido);
         const validas = fotoConExplicaciones(p).prs;
-        const items = validas
-          .filter((v) => prs.some((x) => v.repo === x.repo && v.numero === x.numero))
+        const pedidas = validas.filter((v) => prs.some((x) => v.repo === x.repo && v.numero === x.numero));
+        // Saving mode reuses an explanation that already covers the current commit.
+        const reutilizadas = modo === 'ahorro' && completar !== true ? pedidas.filter((v) => v.explicacion && !v.explicacion.desactualizada) : [];
+        const items = pedidas
+          .filter((v) => !reutilizadas.includes(v))
           .map((pr) => ({ id: pr.id, tipo: 'explicar', prId: pr.id, topeUsd: topeDeTrabajo({ tipo: 'explicar', modo, completar: completar === true }), ejecutar: () => explicarConIa(p, pr, { completar: completar === true, modo }) }));
-        return responder(res, 202, { encolados: cola.encolar(items) });
+        return responder(res, 202, { encolados: cola.encolar(items), reutilizados: reutilizadas.length });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/ultra') {
+        const pr = prDeFoto(`${url.searchParams.get('repo')}#${url.searchParams.get('numero')}`);
+        return responder(res, 200, datosUltra(p, pr, leerJson(rutaDiff(p.salida, pr.repo, pr.numero))?.archivos ?? []));
+      }
+      if (req.method === 'POST' && url.pathname === '/api/ultra') {
+        const { repo, numero, repetir, modo: modoPedido } = await leerCuerpo(req);
+        let pr;
+        try { pr = prDeFoto(`${repo}#${numero}`); } catch { throw Object.assign(new Error('The PR is not in the snapshot'), { codigo: 409 }); }
+        if (modoDe(p, modoPedido) === 'ahorro') throw Object.assign(new Error('Ultra review is not available in saving mode'), { codigo: 409 });
+        if (pr.estadoPr !== 'OPEN') throw Object.assign(new Error('The PR is no longer open'), { codigo: 409 });
+        const n = cola.encolar([{ id: `${pr.id}:ultra`, tipo: 'revisar_ultra', prId: pr.id, topeUsd: topeRevisarUltra(), ejecutar: () => revisarUltra(p, pr, { repetir: repetir === true }) }]);
+        if (!n) throw Object.assign(new Error('An Ultra review of this PR is already queued'), { codigo: 409 });
+        return responder(res, 202, { encolado: `${pr.id}:ultra` });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/trabajos/forzar') {
+        const { id } = await leerCuerpo(req);
+        if (typeof id !== 'string' || !cola.forzar(id)) throw Object.assign(new Error('No blocked job with that id'), { codigo: 404 });
+        return responder(res, 200, { ok: true });
       }
       if (req.method === 'POST' && url.pathname === '/api/cancelar-cola') return responder(res, 200, { cancelados: cola.vaciar() });
       // Another session with another version asks for the port: release it only if no jobs would be cut off.

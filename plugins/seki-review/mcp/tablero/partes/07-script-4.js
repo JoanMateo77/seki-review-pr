@@ -99,8 +99,9 @@ const TABS = [
   ['verificaciones', 'Checks', (pr) => pr.verificaciones?.hallazgos.length || null],
   ['probar', 'How to test', (pr) => pr.explicacion?.como_probar?.length || null],
   ['revision', 'Review', () => null],
+  ['ultra', 'Ultra review', (pr) => (API ? estado.ultra?.get(pr.id)?.resultado?.hallazgos?.length || null : null)],
 ];
-const CUERPOS = { resumen: tabResumen, descripcion: tabDescripcion, archivos: tabArchivos, verificaciones: tabVerificaciones, probar: tabProbar, revision: tabRevision };
+const CUERPOS = { resumen: tabResumen, descripcion: tabDescripcion, archivos: tabArchivos, verificaciones: tabVerificaciones, probar: tabProbar, revision: tabRevision, ultra: tabUltra };
 
 function pintarDetalle() {
   leerCaja();
@@ -127,7 +128,7 @@ function pintarDetalle() {
       <a class="btn primario" href="${esc(pr.url)}" target="_blank" rel="noopener">Open in GitHub ${icono('externo')}</a>
       <button class="btn" data-copiar="/plannotator-review ${esc(pr.url)}">${icono('copiar')} Review line by line</button>
       ${API
-        ? `<button class="btn" data-accion="analizar" ${trabajoActivo(pr) ? 'disabled' : ''}>${trabajoActivo(pr) ? `${icono('actualizar', 'girando')} Analyzing` : `${icono('chispa')} ${pr.explicacion ? 'Analyze again with AI' : 'Analyze with AI'}`}</button>`
+        ? `<button class="btn" data-accion="analizar" ${trabajoActivo(pr) ? 'disabled' : ''}>${trabajoActivo(pr) ? `${icono('actualizar', 'girando')} Analyzing` : `${icono('chispa')} ${pr.explicacion ? 'Analyze again with AI' : 'Analyze with AI'}`}</button>${botonUltra(pr)}`
         : `<button class="btn" data-copiar="/seki-review:review-prs explain ${esc(pr.repo)}#${pr.numero}">${icono('copiar')} ${pr.explicacion ? 'Regenerate explanation' : 'Explain'}</button>`}
     </div>
     ${pilaEstados(pr)}
@@ -169,7 +170,7 @@ function textoResumenCostos(r) {
   const filas = Object.entries(r?.modelos ?? {}).filter(([, m]) => m.trabajos);
   if (!filas.length) return '';
   return [`Last ${r.dias} days`, ...filas.map(([n, m]) => `${n}: ${plural(m.trabajos, 'job', 'jobs')}${m.fallidos ? ` (${m.fallidos} failed)` : ''} · ${usd(m.costo)}${m.utiles || m.noUtiles ? ` · helpful ${m.utiles} of ${m.utiles + m.noUtiles}` : ''}${m.costoPorUtil ? ` · ${usd(m.costoPorUtil)} per helpful answer` : ''}`),
-    ...(r.reintentos ? [`Retries and repeated analyses: ${r.reintentos}`] : [])].join('\n');
+    ...textoModos(r), ...(r.reintentos ? [`Retries and repeated analyses: ${r.reintentos}`] : [])].join('\n');
 }
 
 function textoVigia() {
@@ -183,12 +184,15 @@ function textoVigia() {
 
 function pintarBarra() {
   if (!API) return;
+  // Repainting would close an open dropdown.
+  if (document.activeElement?.id === 'selModo') return;
   $('filtrarIa').hidden = false;
   const r = estado.ultimoRefresco;
-  const gasto = estado.costoHoy?.trabajos ? `AI spend today: ${usd(estado.costoHoy.total)} · ${plural(estado.costoHoy.trabajos, 'job', 'jobs')}` : '';
+  const gasto = textoGasto();
   const texto = estado.refrescando ? 'Querying GitHub and git' : r?.sinConexion ? 'Offline: retrying' : r && !r.ok ? 'The last refresh failed' : gasto;
   $('accionesBarra').innerHTML = `<span class="estado-texto" title="${esc(textoResumenCostos(estado.resumenCostos))}">${texto}</span>
     <span class="estado-texto" id="vigiaTexto" title="${esc(estado.vigia?.error ?? '')}"></span>
+    ${selectorModo()}
     <button class="btn chico" data-accion="refrescar" ${estado.refrescando ? 'disabled' : ''} title="${esc(r && !r.ok ? r.mensaje : 'Queries GitHub and git again: what was merged, what is new and where each PR is')}">${icono('actualizar', estado.refrescando ? 'girando' : '')} ${estado.refrescando ? 'Refreshing' : 'Refresh status'}</button>`;
   $('vigiaTexto').textContent = textoVigia();
 }

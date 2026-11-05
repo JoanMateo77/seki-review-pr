@@ -75,7 +75,7 @@ const trabajo = (pr) => estado.trabajos.get(pr.id);
 const usd = (x) => { const n = Number(x) || 0; return `USD ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: n < 0.01 ? 4 : 2 })}`; };
 const nombreModelo = (m) => (m ?? '').replace(/^claude-/, '').replace(/-\d.*$/, '').replace(/^./, (c) => c.toUpperCase());
 const costoTexto = (t) => `${t.modelo ? ` · ${nombreModelo(t.modelo)}` : ''}${t.costo ? ` · ${usd(t.costo)}` : ''}`;
-const trabajoActivo = (pr) => ['en_cola', 'en_curso'].includes(trabajo(pr)?.estado);
+const trabajoActivo = (pr) => ['en_cola', 'en_curso', 'bloqueado_presupuesto'].includes(trabajo(pr)?.estado);
 const pendientesDeAnalisis = () => FOTO.prs.filter((p) => p.ambiente !== 'inactiva' && (!p.explicacion || p.explicacion.desactualizada) && !trabajoActivo(p));
 
 // One tone per PR, the most severe that applies: red blocks, amber needs a look, green ready, violet merged.
@@ -136,7 +136,8 @@ function pintarLateral() {
       ${estado.confirmarPendientes
         ? nav('data-accion="analizarPendientes"', `${icono('chispa')} Confirm: ${plural(pendientesDeAnalisis().length, 'PR', 'PRs')}`, '', true)
         : nav('data-accion="pedirConfirmacion"', `${icono('chispa')} Analyze those without an explanation`, pendientesDeAnalisis().length, false)}
-      ${[...estado.trabajos.values()].some((t) => t.estado === 'en_cola') ? nav('data-accion="cancelarCola"', `${icono('bloqueo')} Cancel queued ones`, [...estado.trabajos.values()].filter((t) => t.estado === 'en_cola').length, false) : ''}` : ''}
+      ${[...estado.trabajos.values()].some((t) => t.estado === 'en_cola') ? nav('data-accion="cancelarCola"', `${icono('bloqueo')} Cancel queued ones`, [...estado.trabajos.values()].filter((t) => t.estado === 'en_cola').length, false) : ''}
+      ${trabajosIaHtml()}` : ''}
     <div class="solo-escritorio">
       <h2>Review</h2>
       <button class="nav" data-accion="exportar">${icono('descargar')} Export review</button>
@@ -158,10 +159,12 @@ function senales(pr) {
   const t = trabajo(pr);
   if (t?.estado === 'en_curso') s.push(`<span class="senal azul" title="Analyzing with AI">${icono('actualizar', 'girando')}</span>`);
   else if (t?.estado === 'en_cola') s.push(`<span class="senal azul" title="Queued for analysis">${icono('reloj')}</span>`);
+  else if (t?.estado === 'bloqueado_presupuesto') s.push(`<span class="senal ambar" title="Blocked by the daily budget">${icono('alerta')}</span>`);
   else if (t?.estado === 'error') s.push(`<span class="senal rojo" title="The analysis failed">${icono('bloqueo')}</span>`);
   const cs = vivos(pr).length;
   if (cs) s.push(`<span class="senal" title="${plural(cs, 'comment', 'comments')} on the diff">${icono('comentario')}${cs}</span>`);
   if (pr.seguridad) s.push(`<span class="senal" title="Security">${icono('escudo')}</span>`);
+  if (pr.ultraSugerida && modoActual() !== 'ahorro') s.push(`<span class="senal violeta" title="Ultra review suggested">${icono('chispa')}Ultra</span>`);
   const esfuerzo = pr.explicacion?.esfuerzo ?? pr.esfuerzoTamano;
   if (esfuerzo) s.push(`<span title="Review effort, 1 to 5">E${esfuerzo}</span>`);
   s.push(`<span title="Days since it was opened">${pr.dias} d</span>`);
@@ -214,7 +217,7 @@ const cuentaFiltro = (f) => {
 const motivoHtml = (m) => (m ? `<span class="motivo-ia">${m.relacion === 'relacionada' ? '<span class="etiqueta-relacionada">Related</span> ' : ''}${esc(m.motivo)}</span>` : '');
 const firmaFoto = () => FOTO.prs.map((x) => `${x.id}@${x.headSha}`).sort().join('|');
 
-async function filtrarConIa(consulta) {
+async function filtrarConIa(consulta, { forzar = false } = {}) {
   const q = (consulta ?? $('buscar').value).replace(/\s+/g, ' ').trim();
   if (!q) { avisar('Type in the search box which PRs you are looking for, for example “cybersecurity PRs”.'); return $('buscar').focus(); }
   if (servidorDesfasado()) return avisar('Restart Claude Code: the dashboard server is from an older version and does not have Filter with AI yet.');
@@ -225,10 +228,10 @@ async function filtrarConIa(consulta) {
   pintarTodo({ detalle: false });
   let siguiente;
   try {
-    const r = await api('/api/filtrar', { consulta: q });
+    const r = await api('/api/filtrar', forzar ? { consulta: q, forzar: true } : { consulta: q });
     siguiente = { ...pedido, estado: 'listo', motivos: new Map(r.coincidencias.map((c) => [c.id, c])), conRelacionadas: false, costo: r.costo, desdeCache: r.desdeCache };
   } catch (err) {
-    siguiente = { ...pedido, estado: 'error', mensaje: err.message };
+    siguiente = { ...pedido, estado: 'error', mensaje: err.message, forzar: err.estado === 429 && err.forzar };
   }
   // If the filter was removed or another one requested meanwhile, this response no longer applies.
   if (estado.filtroIa !== pedido) return;
@@ -254,7 +257,7 @@ function bannerFiltroIa() {
   }
   if (f.estado === 'error') {
     return `<div class="filtro-ia error" role="alert"><p>${icono('alerta')} ${esc(f.mensaje)}</p>
-      <p><button type="button" class="btn chico" data-accion="reintentarFiltroIa">Retry</button> ${quitar}</p></div>`;
+      <p>${f.forzar ? '<button type="button" class="btn chico" data-accion="forzarFiltroIa">Run anyway</button>' : '<button type="button" class="btn chico" data-accion="reintentarFiltroIa">Retry</button>'} ${quitar}</p></div>`;
   }
   const visibles = FOTO.prs.filter(pasaFiltros).length;
   const { directas, relacionadas } = cuentaFiltro(f);
@@ -342,6 +345,7 @@ function pilaEstados(pr) {
       en_curso: ['actualizar', '', 'Analyzing the PR', `${transcurrido(tr.inicio)} · since ${hora(tr.inicio)} · usually takes one to three minutes<div class="progreso" role="progressbar" aria-label="Analysis in progress"></div>`],
       terminado: ['ok', 'verde', 'Explanation generated', `At ${hora(tr.fin)}${costoTexto(tr)}`],
       error: ['bloqueo', 'rojo', 'The analysis did not complete', esc(tr.mensaje ?? '')],
+      bloqueado_presupuesto: ['alerta', 'ambar', 'Blocked by the daily budget', `${esc(tr.mensaje ?? '')} <button type="button" class="btn chico" data-forzar="${esc(tr.id)}">Run anyway</button>`],
       cancelado: ['circulo', '', 'Analysis canceled', ''],
     };
     const [i, c, txt, det] = mapa[tr.estado] ?? ['circulo', '', tr.estado, ''];

@@ -9,8 +9,8 @@ import { expandir } from './config.mjs';
 import { crearCopia, ramasEquivalentes } from './copias.mjs';
 import { asegurarDiff } from './diffs.mjs';
 import { prioridad } from './explicar.mjs';
-import { argsClaude, ejecutarClaude, MOTIVO_FORMATO, reglasSecretos, registrarCosto, sistemaDe } from './ia.mjs';
-import { perfil } from './perfiles.mjs';
+import { argsClaude, ejecutarClaude, leerCostos, MOTIVO_FORMATO, reglasSecretos, registrarCosto, sistemaDe } from './ia.mjs';
+import { estimarCosto, perfil, sugerirUltra, topeRevisarUltra } from './perfiles.mjs';
 import { otrasRamas } from './preguntas.mjs';
 import { enParalelo, git } from './proceso.mjs';
 import { lineamientos } from './propuestas.mjs';
@@ -50,6 +50,12 @@ export function leerUltra(p, repo, numero, headSha) {
   const guardado = leerJson(rutaUltra(p.salida, repo, numero));
   if (!guardado) return null;
   return headSha && guardado.headSha !== headSha ? { ...guardado, desactualizada: true } : guardado;
+}
+
+// What the board and the chat show before an Ultra review: estimate and its base, whether it is suggested and the stored result.
+export function datosUltra(p, pr, archivos = []) {
+  const { usd, base, muestras } = estimarCosto(leerCostos(p), { tipo: 'revisar_ultra', modo: 'ultra', topeUsd: topeRevisarUltra() });
+  return { estimacion: { usd, base, muestras }, ...sugerirUltra(p, pr, archivos), resultado: leerUltra(p, pr.repo, pr.numero, pr.headSha) };
 }
 
 // The cached diff holds GitHub patches without headers or final newline; the checks parse and `git apply` a git diff.
