@@ -50,6 +50,20 @@ export async function crearCopia(p, repo, numero, headSha, { sufijo = '' } = {})
   return dir;
 }
 
+// Merge-base of a commit with the freshly fetched base branch; the branch goes through a private ref deleted right away.
+export async function mergeBaseFresca(p, repo, numero, headSha, rama) {
+  const checkout = checkoutDe(p, repo);
+  const ref = `refs/seki-review/${numero}/ultra-base`;
+  return enCola(checkout, async () => {
+    try {
+      await git(checkout, ['fetch', '-q', '--no-write-fetch-head', 'origin', `+refs/heads/${rama}:${ref}`]);
+      return (await git(checkout, ['merge-base', headSha, ref])).trim() || null;
+    } finally {
+      await git(checkout, ['update-ref', '-d', ref]).catch(() => {});
+    }
+  });
+}
+
 export async function diffCopia(dir) {
   await git(dir, ['add', '-A', '-N']);
   return git(dir, ['diff', '--binary', '--no-color', '--no-ext-diff']);
@@ -133,7 +147,7 @@ export async function limpiarCopias(p, { abiertas, ahora = Date.now(), usos = le
       if (!listado.startsWith(`${raizReal}/`) && !listado.startsWith(`${raiz}/`)) continue;
       const dir = listado.startsWith(`${raizReal}/`) ? raiz + listado.slice(raizReal.length) : listado;
       const nombre = dir.split('/').pop();
-      const pr = new RegExp(`^${repo}-(\\d+)(?:-lectura)?$`).exec(nombre);
+      const pr = new RegExp(`^${repo}-(\\d+)(?:-lectura|-ultra)?$`).exec(nombre);
       const uso = usos[dir] ?? usos[listado];
       const cerrada = pr && !abiertas.has(`${repo}#${pr[1]}`);
       const vieja = uso !== undefined && ahora - uso > dias * 24 * 3600 * 1000;

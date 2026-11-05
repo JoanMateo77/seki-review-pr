@@ -183,3 +183,28 @@ test('the example project that reads the finding column also lists Finding in th
   assert.ok(qa.columnas.includes('Finding'));
   assert.ok(['ID', 'Portal', 'Result'].every((c) => qa.columnas.includes(c)));
 });
+
+test('ia section: defaults, valid values and fallbacks', () => {
+  config({ a: { salida: '/s/a', repos: {} }, b: { salida: '/s/b', repos: {}, ia: { modo: 'ahorro', presupuestoDiarioUsd: 12.5, rutasSensibles: ['auth', '(^|/)pagos/'] } }, c: { salida: '/s/c', repos: {}, ia: { modo: 'turbo', presupuestoDiarioUsd: -3, rutasSensibles: 'x' } } });
+  const a = proyecto('a').ia;
+  assert.equal(a.modo, 'normal');
+  assert.equal(a.presupuestoDiarioUsd, null);
+  assert.deepEqual(a.rutasSensibles, []);
+  assert.deepEqual(a.patronesSensibles, []);
+  const b = proyecto('b').ia;
+  assert.equal(b.modo, 'ahorro');
+  assert.equal(b.presupuestoDiarioUsd, 12.5);
+  assert.ok(b.patronesSensibles.every((r) => r instanceof RegExp));
+  assert.ok(b.patronesSensibles[1].test('src/pagos/x.ts'));
+  const c = proyecto('c').ia;
+  assert.equal(c.modo, 'normal');
+  assert.equal(c.presupuestoDiarioUsd, null);
+  assert.deepEqual(c.rutasSensibles, []);
+});
+
+test('ia.rutasSensibles drops invalid, oversized and nested-quantifier patterns', () => {
+  config({ a: { salida: '/s/a', repos: {}, ia: { rutasSensibles: ['ok', '(sin cerrar', 'x'.repeat(201), '(a+)+$'] } } });
+  const ia = proyecto('a').ia;
+  assert.deepEqual(ia.rutasSensibles, ['ok']);
+  assert.equal(ia.patronesSensibles.length, 1);
+});

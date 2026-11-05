@@ -1,6 +1,6 @@
 {
   "name": "seki-review",
-  "version": "0.22.0",
+  "version": "0.23.0",
   "license": "MIT",
   "description": "Seki Review: AI-assisted PR review. Pending PRs per environment, status against testing, change explanations, questions about the code and a local dashboard",
   "author": {

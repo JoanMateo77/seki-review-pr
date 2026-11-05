@@ -103,9 +103,10 @@ test('investigar reads the repository in a copy of the PR, never the user checko
   guardarComentarios(p, 'x', 7, [{ id: 'c-0001', tipo: 'pregunta', estado: 'borrador', ambito: 'pr', texto: '¿Quién llama esta ruta?', headSha: r.head }]);
   const rastro = join(salida, 'rastro');
   process.env.SEKI_CLAUDE = falsoClaude({ ...exito([]), structured_output: { texto: 'La llama X en y/z.ts L4.' } }, 0, `pwd > "${rastro}.cwd"; git rev-parse HEAD > "${rastro}.head"; printf '%s\\n' "$@" > "${rastro}.args"`);
-  const res = await investigarPregunta(p, prx, 'c-0001', deps);
+  const res = await investigarPregunta(p, prx, 'c-0001', { ...deps, modo: 'ahorro' });
   assert.equal(res.ok, true);
   const [c] = leerComentarios(p, 'x', 7);
+  assert.equal(c.modo, 'ahorro');
   assert.deepEqual([c.estado, c.respuesta, c.investigado], ['respondido', 'La llama X en y/z.ts L4.', true]);
   assert.equal(readFileSync(`${rastro}.head`, 'utf8').trim(), r.head);
   assert.notEqual(readFileSync(`${rastro}.cwd`, 'utf8').trim(), r.checkout);

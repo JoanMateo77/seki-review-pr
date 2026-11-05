@@ -75,6 +75,11 @@ Optional: `contexto` (stack and text or code rules the AI follows in everything 
 `SKILL.md` and `destilado/*.md`, used for change requests) and `copias`. When no project is given, `SEKI_PROYECTO` or
 the first one in the file is used.
 
+`ia` (optional): `modo` (`ahorro`, `normal` or `ultra`, default `normal`), `presupuestoDiarioUsd` (positive number, or
+`null` for no limit; the spend counts every project on the machine) and `rutasSensibles` (regular expressions, as
+strings, matched against changed file paths to suggest an Ultra review). The patterns are trusted owner
+configuration, like `reglas`: each is limited to 200 characters, nested quantifiers are rejected, matching runs under a time limit, and an invalid one is ignored with a warning.
+
 ### Other MCP clients
 
 The server does not depend on Claude Code. For Claude Desktop, Cursor or another client:
@@ -107,6 +112,17 @@ Variables: `SEKI_IA_MODELO` (everything) or `SEKI_IA_MODELO_RESPONDER`, `SEKI_IA
 `SEKI_IA_TOPE_<TIPO>` in dollars; `SEKI_IA_PARALELO` (1 or 2); `SEKI_CLAUDE` for a different executable. Each job is logged in
 `revision-prs/datos/costos.jsonl` and the dashboard shows the day's spend. Answers are cached by commit, file,
 lines and text, and are not requested again.
+
+**AI modes, budget and Ultra review.** Each job runs under a mode: `ahorro` (Haiku for answers and the filter, Sonnet for the rest, never Opus,
+no second explanation pass, and no repeated analysis of a PR whose explanation already covers the current commit), `normal` (the table above) or
+`ultra`. The default is `ia.modo` of the project and the top bar selector overrides it for the session; environment variables still win over the mode.
+`ia.presupuestoDiarioUsd` limits the day's spend on the machine (every project, local time zone): a job whose cost cap does not fit stays queued as
+"Blocked by the daily budget"; it starts by itself when spend allows it or after local midnight (re-checked every 30 seconds), or at once when the person picks "Run anyway", and the AI filter answers with the same message and offers the same choice.
+An **Ultra review** is an explicit, confirmed job on one PR: three read-only lenses (correctness, security, guidelines), code that drops findings
+citing files or lines that do not exist, one verification call and the project checks, over a copy of the branch. The confirmation shows the
+estimate (median of earlier reviews, or the cost caps when there are fewer than three). The result is stored per commit and shown in the
+"Ultra review" tab; the tool `pr_ultra` reads it without spending AI, and the link `#/pr/<repo>/<n>?ultra=1` opens the confirmation.
+Ultra is suggested when a changed path matches `ia.rutasSensibles` or the PR is flagged as security.
 
 **Change requests.** The AI works in a separate copy: a detached worktree at the PR's commit, located in
 `copias` from `proyectos.json` (by default `~/.cache/seki-review/copias/<proyecto>`, outside the workspace so it does not

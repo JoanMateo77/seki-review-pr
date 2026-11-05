@@ -30,15 +30,17 @@ beforeEach(() => { delete process.env.SEKI_IA_MODELO; });
 
 test('propose creates a proposal with a patch and marks the comment', async () => {
   const { p, pr } = preparar();
-  await proponerCambios(p, pr, ['c-0001'], deps);
+  await proponerCambios(p, pr, ['c-0001'], { ...deps, modo: 'ahorro' });
   const [c] = leerComentarios(p, 'x', 7);
   assert.equal(c.estado, 'propuesta');
+  assert.equal(c.modo, 'ahorro');
   const [prop] = leerPropuestas(p, 'x', 7);
   assert.equal(prop.id, c.propuestaId);
   assert.equal(prop.estado, 'lista');
   assert.match(prop.patch, /-b\n\+cambio 1/);
   assert.deepEqual(prop.fueraDelComentario, []);
   assert.equal(prop.sesion, 'ses-1');
+  assert.equal(prop.modo, 'ahorro');
   assert.match(prop.comprobaciones.avisos.join(' '), /Project guidelines are not available/);
 });
 

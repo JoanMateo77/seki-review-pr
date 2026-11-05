@@ -22,3 +22,20 @@ test('the built page keeps no data marker', () => {
   assert.ok(!html.includes('/*DATOS*/'));
   assert.ok(!html.includes('/*ANCLAJE*/'));
 });
+
+const scripts = (html) => [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+
+test('the built page scripts compile and include the AI mode parts', async () => {
+  const { Script } = await import('node:vm');
+  const html = construirHtml({ salida: '/nonexistent' }, { prs: [] }, { token: 't' });
+  for (const s of scripts(html)) assert.doesNotThrow(() => new Script(s));
+  for (const marca of ['id="selModo"', 'data-ultra-abrir', 'data-forzar', 'Blocked by the daily budget', 'Not compared with the base branch', 'Other repositories were not available', '?ultra=1']) {
+    assert.ok(html.includes(marca), `the built page lacks ${marca}`);
+  }
+});
+
+test('the AI mode part is evaluated before the script that paints for the first time', () => {
+  const orden = JSON.parse(readFileSync(new URL('orden.json', PARTES), 'utf8'));
+  assert.ok(orden.indexOf('07b-modos.js') > orden.indexOf('07-script-4.js'));
+  assert.ok(orden.indexOf('07b-modos.js') < orden.indexOf('08-script-5.js'));
+});

@@ -5,11 +5,15 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync } fro
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rutaCostos } from './cache.mjs';
+import { elegirModelo, PERFILES } from './perfiles.mjs';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '../..');
 
-export const TOPES = { responder: 0.5, explicar: 2, cambiar: 1.5, investigar: 1, filtrar: 0.5 };
-export const TURNOS = { responder: 4, explicar: 30, cambiar: 40, investigar: 25, filtrar: 3 };
+export { elegirModelo };
+
+const TIPOS = ['responder', 'explicar', 'cambiar', 'investigar', 'filtrar'];
+export const TOPES = Object.fromEntries(TIPOS.map((t) => [t, PERFILES.normal[t].topeUsd]));
+export const TURNOS = Object.fromEntries(TIPOS.map((t) => [t, PERFILES.normal[t].turnos]));
 
 // Files the AI cannot read in any directory opened to it; each project adds its own in `secretos`.
 // Read rules also govern Grep and Glob; they use each directory's absolute path because relative ones only
@@ -20,18 +24,6 @@ export const reglasSecretos = (dirs, extra = []) => dirs.flatMap((d) => {
   try { real = realpathSync(d); } catch { /* does not exist yet */ }
   return [...SECRETOS, ...extra].map((s) => `Read(/${real}/**/${s})`);
 });
-
-export const tope = (tipo) => Number(process.env[`SEKI_IA_TOPE_${tipo.toUpperCase()}`]) || TOPES[tipo];
-
-export function elegirModelo({ tipo, pr, lineasSeleccionadas = 0 }) {
-  const forzado = process.env[`SEKI_IA_MODELO_${tipo.toUpperCase()}`] ?? process.env.SEKI_IA_MODELO;
-  if (forzado) return tipo === 'cambiar' && forzado === 'haiku' ? 'sonnet' : forzado;
-  const grande = (pr.adiciones ?? 0) + (pr.eliminaciones ?? 0) > 1500;
-  if (tipo !== 'responder' && (pr.seguridad || grande)) return 'opus';
-  const esfuerzo = pr.explicacion?.esfuerzo ?? pr.esfuerzoTamano ?? 3;
-  if (tipo === 'responder' && lineasSeleccionadas <= 40 && esfuerzo <= 2) return 'haiku';
-  return 'sonnet';
-}
 
 const ESCRITURA = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 
@@ -61,6 +53,16 @@ const MOTIVOS = {
   error_max_budget_usd: 'The job reached its cost cap',
   error_max_turns: 'The job reached its turn limit',
 };
+const MOTIVO_TIEMPO = 'The job exceeded the maximum time';
+const MOTIVO_FORMATO = 'The response did not arrive in the expected format';
+const MOTIVO_SIN_CONFIRMAR = 'The AI did not confirm completion';
+const MOTIVO_GENERICO = 'The job failed';
+const SEGUROS = new Set([...Object.values(MOTIVOS), MOTIVO_TIEMPO, MOTIVO_FORMATO, MOTIVO_SIN_CONFIRMAR, MOTIVO_GENERICO]);
+const SALIDA_CODIGO = /^claude exited with code -?\d+$/;
+
+// Only classified reasons are persisted: model output and stderr can carry code or secrets.
+export const motivoSeguro = (m) => (typeof m === 'string' && (SEGUROS.has(m) || SALIDA_CODIGO.test(m)) ? m : MOTIVO_GENERICO);
+export { MOTIVO_FORMATO, MOTIVO_SIN_CONFIRMAR };
 
 function uso(r) {
   const u = { entrada: 0, cacheCreada: 0, cacheLeida: 0, salida: 0 };
@@ -109,11 +111,14 @@ export function ejecutarClaude(args, { cwd, limiteMs = 10 * 60 * 1000, alUsar })
       const conSchema = args.includes('--json-schema');
       const ok = codigo === 0 && !!r && !r.is_error && (!conSchema || r.structured_output !== undefined);
       let motivo = null;
+      let seguro = null;
       if (!ok) {
-        motivo = vencido ? 'The job exceeded the maximum time'
+        seguro = vencido ? MOTIVO_TIEMPO
           : MOTIVOS[r?.subtype]
-          ?? (r && !r.is_error && conSchema ? 'The response did not arrive in the expected format' : null)
-          ?? (r?.errors?.join(' ') || errores.trim() || r?.result || `claude exited with code ${codigo}`).slice(0, 400);
+          ?? (r && !r.is_error && conSchema ? MOTIVO_FORMATO : null)
+          ?? `claude exited with code ${codigo}`;
+        motivo = vencido || MOTIVOS[r?.subtype] || (r && !r.is_error && conSchema) ? seguro
+          : (r?.errors?.join(' ') || errores.trim() || r?.result || seguro).slice(0, 400);
       }
       resolver({
         ok,
@@ -126,6 +131,7 @@ export function ejecutarClaude(args, { cwd, limiteMs = 10 * 60 * 1000, alUsar })
         herramientas: args.includes('stream-json') ? herramientasUsadas(salida) : [],
         denegadas: (r?.permission_denials ?? []).map((d) => ({ nombre: d.tool_name, entrada: d.tool_input ?? {} })),
         motivo,
+        motivoSeguro: seguro,
       });
     };
     hijo.on('close', cerrar);
@@ -146,21 +152,35 @@ export const promptSistema = (...nombres) => nombres.map((n) => readFileSync(joi
 // System prompt with the project context (stack, writing and code rules) from proyectos.json.
 export const sistemaDe = (p, ...nombres) => [promptSistema(...nombres), ...(p?.contexto ? [`# Project context\n\n${p.contexto}`] : [])].join('\n\n');
 
+// Failed jobs keep a short safe reason (already sanitised by ejecutarClaude), never prompt text.
 export function registrarCosto(p, { fecha = new Date().toISOString(), ...datos }) {
+  if (datos.motivo !== undefined) datos.motivo = datos.ok === false && datos.motivo ? motivoSeguro(datos.motivo) : undefined;
   const ruta = rutaCostos(p.salida);
   mkdirSync(dirname(ruta), { recursive: true });
   appendFileSync(ruta, JSON.stringify({ fecha, ...datos }) + '\n');
 }
 
-export function costosDelDia(p, dia = new Date().toISOString().slice(0, 10)) {
+// Local calendar day (machine time zone) of an ISO date.
+export function diaLocal(fecha) {
+  const d = new Date(fecha);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export function leerCostos(p) {
   const ruta = rutaCostos(p.salida);
-  const r = { total: 0, trabajos: 0 };
-  if (!existsSync(ruta)) return r;
+  if (!existsSync(ruta)) return [];
+  const registros = [];
   for (const linea of readFileSync(ruta, 'utf8').split('\n')) {
-    if (!linea) continue;
-    let x;
-    try { x = JSON.parse(linea); } catch { continue; }
-    if (!x.fecha?.startsWith(dia) || x.tipo === 'valoracion') continue;
+    try { const x = linea && JSON.parse(linea); if (x && typeof x === 'object') registros.push(x); } catch { /* unreadable line */ }
+  }
+  return registros;
+}
+
+export function costosDelDia(p, dia = diaLocal(Date.now())) {
+  const r = { total: 0, trabajos: 0 };
+  for (const x of leerCostos(p)) {
+    if (diaLocal(x.fecha) !== dia || x.tipo === 'valoracion') continue;
     r.total += x.costo ?? 0;
     r.trabajos++;
   }
@@ -172,22 +192,22 @@ const nombreCorto = (m) => (/opus/i.test(m) ? 'opus' : /haiku/i.test(m) ? 'haiku
 // Cost per model over the last days versus what the person marked as useful, to calibrate model choice
 // with our own data. A repeated analysis of the same PR counts as a retry.
 export function resumenCostos(p, { dias = 30, ahora = Date.now() } = {}) {
-  const ruta = rutaCostos(p.salida);
   const desde = new Date(ahora - dias * 86400000).toISOString();
   const modelos = {};
+  const modos = {};
   const valoradas = new Map();
   const analizadas = new Set();
   let reintentos = 0;
-  if (!existsSync(ruta)) return { dias, modelos, reintentos };
-  for (const linea of readFileSync(ruta, 'utf8').split('\n')) {
-    let x;
-    try { x = linea && JSON.parse(linea); } catch { continue; }
+  for (const x of leerCostos(p)) {
     if (!x || !(x.fecha >= desde)) continue;
     if (x.tipo === 'valoracion') { valoradas.set(x.comentario, x); continue; }
     const m = (modelos[nombreCorto(x.modelo)] ??= { trabajos: 0, fallidos: 0, costo: 0, utiles: 0, noUtiles: 0 });
-    m.trabajos++;
-    if (x.ok === false) m.fallidos++;
-    m.costo += x.costo ?? 0;
+    const mm = (modos[x.modo ?? 'normal'] ??= { trabajos: 0, fallidos: 0, costo: 0, utiles: 0, noUtiles: 0 });
+    for (const t of [m, mm]) {
+      t.trabajos++;
+      if (x.ok === false) t.fallidos++;
+      t.costo += x.costo ?? 0;
+    }
     if (x.tipo === 'explicar') { if (analizadas.has(x.prId)) reintentos++; analizadas.add(x.prId); }
     if (x.reintento) reintentos++;
   }
@@ -195,7 +215,9 @@ export function resumenCostos(p, { dias = 30, ahora = Date.now() } = {}) {
     if (v.util === null) continue;
     const m = (modelos[nombreCorto(v.modelo)] ??= { trabajos: 0, fallidos: 0, costo: 0, utiles: 0, noUtiles: 0 });
     m[v.util ? 'utiles' : 'noUtiles']++;
+    const mm = (modos[v.modo ?? 'normal'] ??= { trabajos: 0, fallidos: 0, costo: 0, utiles: 0, noUtiles: 0 });
+    mm[v.util ? 'utiles' : 'noUtiles']++;
   }
-  for (const m of Object.values(modelos)) m.costoPorUtil = m.utiles ? m.costo / m.utiles : null;
-  return { dias, modelos, reintentos };
+  for (const m of [...Object.values(modelos), ...Object.values(modos)]) m.costoPorUtil = m.utiles ? m.costo / m.utiles : null;
+  return { dias, modelos, modos, reintentos };
 }

@@ -4,9 +4,9 @@ import { execFile } from 'node:child_process';
 import { createServer } from 'node:http';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
-import { proyecto as cargarProyecto } from './config.mjs';
+import { cargarProyectos, proyecto as cargarProyecto } from './config.mjs';
 import { recolectar } from './recolectar.mjs';
-import { construirHtml, fotoConExplicaciones, versionEnDisco } from './tablero.mjs';
+import { construirHtml, fotoConExplicaciones, nombresDeArchivos, versionEnDisco } from './tablero.mjs';
 
 const VERSION = versionEnDisco();
 import { crearCola } from './trabajos.mjs';
@@ -18,6 +18,9 @@ import { explicarConIa } from './explicar.mjs';
 import { avances } from './avance.mjs';
 import { filtrarPrs } from './filtrar.mjs';
 import { costosDelDia, registrarCosto, resumenCostos } from './ia.mjs';
+import { modoDe, topeDeTrabajo, topeRevisarUltra } from './perfiles.mjs';
+import { datosUltra, leerUltra, revisarUltra } from './ultra.mjs';
+import { crearPresupuesto, crearReservas, gastoMaquina } from './presupuesto.mjs';
 import { estadoServidor, pedirCeder, tokenDe } from './acceso.mjs';
 import { limpiarCopias } from './copias.mjs';
 import { ghJson } from './proceso.mjs';
@@ -29,6 +32,9 @@ import { importarQa } from './qa-importar.mjs';
 import { generarGuia } from './qa-salida.mjs';
 import { aplicarRastreador, cambiosPendientes } from './rastreador-xlsx.mjs';
 import { enSerieEntregas } from './recolectar.mjs';
+
+// Reservations of running AI jobs are shared by every project served by this process.
+const RESERVAS_PROCESO = crearReservas();
 
 const PUERTO = 4317;
 const MAX_CUERPO = 64 * 1024;
@@ -167,7 +173,7 @@ export async function detenerServidores() {
 }
 
 // intervaloVigiaMs and relojVigia exist for tests only.
-export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true, soloPuerto = false, intervaloVigiaMs = null, relojVigia } = {}) {
+export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true, soloPuerto = false, intervaloVigiaMs = null, relojVigia, ejecutarUltra = revisarUltra } = {}) {
   if (servidores.has(proyecto)) {
     const s = servidores.get(proyecto);
     if (abrir) execFile('open', [s.url]);
@@ -243,7 +249,21 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
     },
   });
 
-  const cola = crearCola();
+  // The limit is the served project's; the spend counts every configured project on this machine.
+  let gastoAvisado = false;
+  const presupuesto = crearPresupuesto({
+    compartido: RESERVAS_PROCESO,
+    limite: () => p.ia?.presupuestoDiarioUsd ?? null,
+    gasto: () => {
+      try { return gastoMaquina({ proyectos: cargarProyectos().proyectos }); } catch {
+        if (!gastoAvisado) console.error('[seki-review/presupuesto] The project list could not be read: the budget counts only this project');
+        gastoAvisado = true;
+        return costosDelDia(p).total;
+      }
+    },
+  });
+  const cola = crearCola({ presupuesto });
+  const modo = modoDe(p);
   // QA guide jobs run outside the AI queue (they wait for a lock and for Chrome, and spend no AI): one at a time,
   // a second request with the same options while one runs gets the same job, with other options it gets 409. The newest few states stay readable by id.
   const trabajosGuia = new Map();
@@ -271,7 +291,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         if (explicarFaltantes && r.pendientes.length) {
           // PRs merged into testing live in `recientes`, not in `prs`.
           const validas = mapaPrs(leerJson(rutaInstantanea(p.salida)));
-          resultado.encolados = cola.encolar(soloPrsConocidos(r.pendientes, validas).map((x) => ({ id: x, tipo: 'explicar', prId: x, ejecutar: () => explicarConIa(p, validas.get(x)) })));
+          resultado.encolados = cola.encolar(soloPrsConocidos(r.pendientes, validas).map((x) => ({ id: x, tipo: 'explicar', prId: x, topeUsd: topeDeTrabajo({ tipo: 'explicar', modo }), ejecutar: () => explicarConIa(p, validas.get(x), { modo }) })));
         }
         Object.assign(t, { estado: 'terminado', resultado });
       } catch (e) {
@@ -330,7 +350,8 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         return responder(res, 200, guardarComentarios(p, pr.repo, pr.numero, comentarios, borrados));
       }
       if (req.method === 'POST' && url.pathname === '/api/enviar-revision') {
-        const { id, ids = [] } = await leerCuerpo(req);
+        const { id, ids = [], modo: modoPedido } = await leerCuerpo(req);
+        const modo = modoDe(p, modoPedido);
         const pr = prDeFoto(id);
         if (!Array.isArray(ids)) throw new Error('ids must be an array');
         const lista = leerComentarios(p, pr.repo, pr.numero);
@@ -341,9 +362,10 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         if (cambios.length && pr.estadoPr !== 'OPEN') throw new Error('The PR is no longer open: changes cannot be requested');
         for (const cid of [...todas, ...cambios]) actualizarComentario(p, pr.repo, pr.numero, cid, { estado: 'en_cola', motivo: null });
         const ahora = Date.now();
-        if (preguntas.length) cola.encolar([{ id: `${pr.id}:responder:${ahora}`, tipo: 'responder', prId: pr.id, ...conRescate(pr, preguntas, () => responderPreguntas(p, pr, preguntas)) }]);
-        if (cambios.length) cola.encolar([{ id: `${pr.id}:cambiar:${ahora}`, tipo: 'cambiar', prId: pr.id, ...conRescate(pr, cambios, () => proponerCambios(p, pr, cambios)) }]);
-        for (const cid of investigar) cola.encolar([{ id: `${pr.id}:investigar:${cid}:${ahora}`, tipo: 'investigar', prId: pr.id, ...conRescate(pr, [cid], () => investigarPregunta(p, pr, cid)) }]);
+        if (preguntas.length) cola.encolar([{ id: `${pr.id}:responder:${ahora}`, tipo: 'responder', prId: pr.id, // The number of uncached questions is not known here: the cap counts every question sent.
+          topeUsd: topeDeTrabajo({ tipo: 'responder', modo, n: preguntas.length }), ...conRescate(pr, preguntas, () => responderPreguntas(p, pr, preguntas, { modo })) }]);
+        if (cambios.length) cola.encolar([{ id: `${pr.id}:cambiar:${ahora}`, tipo: 'cambiar', prId: pr.id, topeUsd: topeDeTrabajo({ tipo: 'cambiar', modo, n: cambios.length }), ...conRescate(pr, cambios, () => proponerCambios(p, pr, cambios, { modo })) }]);
+        for (const cid of investigar) cola.encolar([{ id: `${pr.id}:investigar:${cid}:${ahora}`, tipo: 'investigar', prId: pr.id, topeUsd: topeDeTrabajo({ tipo: 'investigar', modo }), ...conRescate(pr, [cid], () => investigarPregunta(p, pr, cid, { modo })) }]);
         return responder(res, 202, { preguntas: todas.length, cambios: cambios.length, desactualizados: desactualizados.length });
       }
       // Was the answer useful? Stored on the question and in the cost log to compare models.
@@ -355,25 +377,27 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         if (!c) throw Object.assign(new Error('The question does not exist'), { codigo: 404 });
         if (c.estado !== 'respondido') throw new Error('Only an answered question can be rated');
         actualizarComentario(p, pr.repo, pr.numero, c.id, { valoracion: util ?? undefined });
-        registrarCosto(p, { tipo: 'valoracion', prId: pr.id, comentario: c.id, modelo: c.modelo, investigado: !!c.investigado, util, costo: 0 });
+        registrarCosto(p, { tipo: 'valoracion', prId: pr.id, comentario: c.id, modelo: c.modelo, modo: c.modo, investigado: !!c.investigado, util, costo: 0 });
         return responder(res, 200, { ok: true });
       }
       if (req.method === 'GET' && url.pathname === '/api/costos') return responder(res, 200, resumenCostos(p));
       if (req.method === 'POST' && url.pathname === '/api/filtrar') {
-        const { consulta } = await leerCuerpo(req);
+        const { consulta, forzar, modo: modoPedido } = await leerCuerpo(req);
+        const modo = modoDe(p, modoPedido);
         const foto = fotoConExplicaciones(p);
         if (!foto) throw Object.assign(new Error('No PR data yet.'), { codigo: 503 });
-        return responder(res, 200, await filtrarPrs(p, foto.prs, consulta));
+        return responder(res, 200, await filtrarPrs(p, foto.prs, consulta, { modo, presupuesto, forzar: forzar === true }));
       }
       if (req.method === 'POST' && url.pathname === '/api/investigar') {
-        const { id, comentario } = await leerCuerpo(req);
+        const { id, comentario, modo: modoPedido } = await leerCuerpo(req);
+        const modo = modoDe(p, modoPedido);
         const pr = prDeFoto(id);
         const c = leerComentarios(p, pr.repo, pr.numero).find((x) => x.id === comentario && x.tipo === 'pregunta');
         if (!c) throw Object.assign(new Error('The question does not exist'), { codigo: 404 });
         if (!['respondido', 'error'].includes(c.estado)) throw new Error('The question is still in progress');
         if (c.headSha && c.headSha !== pr.headSha) throw new Error('The question belongs to an earlier commit of the PR');
         actualizarComentario(p, pr.repo, pr.numero, c.id, { estado: 'en_cola', investigar: true, motivo: null });
-        cola.encolar([{ id: `${pr.id}:investigar:${c.id}:${Date.now()}`, tipo: 'investigar', prId: pr.id, ...conRescate(pr, [c.id], () => investigarPregunta(p, pr, c.id)) }]);
+        cola.encolar([{ id: `${pr.id}:investigar:${c.id}:${Date.now()}`, tipo: 'investigar', prId: pr.id, topeUsd: topeDeTrabajo({ tipo: 'investigar', modo }), ...conRescate(pr, [c.id], () => investigarPregunta(p, pr, c.id, { modo })) }]);
         return responder(res, 202, { encolado: true });
       }
       if (req.method === 'GET' && url.pathname === '/api/propuesta') {
@@ -381,13 +405,14 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         return responder(res, 200, leerPropuesta(p, pr.repo, pr.numero, url.searchParams.get('id')));
       }
       if (req.method === 'POST' && url.pathname.startsWith('/api/propuesta/')) {
-        const { pr: prId, id, indicacion, confirmarFallos } = await leerCuerpo(req);
+        const { pr: prId, id, indicacion, confirmarFallos, modo: modoPedido } = await leerCuerpo(req);
+        const modo = modoDe(p, modoPedido);
         const pr = prDeFoto(prId);
         leerPropuesta(p, pr.repo, pr.numero, id);
         const accion = url.pathname.slice('/api/propuesta/'.length);
         if (accion === 'ajustar') {
           if (typeof indicacion !== 'string' || !indicacion.trim() || indicacion.length > 4000) throw new Error('Instruction empty or longer than 4000 characters');
-          cola.encolar([{ id: `${pr.id}:ajustar:${Date.now()}`, tipo: 'cambiar', prId: pr.id, ejecutar: () => ajustarPropuesta(p, pr, id, indicacion.trim()) }]);
+          cola.encolar([{ id: `${pr.id}:ajustar:${Date.now()}`, tipo: 'cambiar', prId: pr.id, topeUsd: topeDeTrabajo({ tipo: 'cambiar', modo }), ejecutar: () => ajustarPropuesta(p, pr, id, indicacion.trim(), { modo }) }]);
           return responder(res, 202, { encolado: true });
         }
         if (accion === 'aprobar') {
@@ -401,7 +426,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
           if (!['conflicto', 'rechazada'].includes(prop.estado)) throw new Error('Only a conflicting or rejected proposal can be regenerated');
           if (pr.estadoPr !== 'OPEN') throw new Error('The PR is no longer open: changes cannot be requested');
           actualizarComentario(p, pr.repo, pr.numero, prop.comentarioId, { estado: 'en_cola', motivo: null });
-          cola.encolar([{ id: `${pr.id}:cambiar:${Date.now()}`, tipo: 'cambiar', prId: pr.id, ...conRescate(pr, [prop.comentarioId], () => proponerCambios(p, pr, [prop.comentarioId])) }]);
+          cola.encolar([{ id: `${pr.id}:cambiar:${Date.now()}`, tipo: 'cambiar', prId: pr.id, topeUsd: topeDeTrabajo({ tipo: 'cambiar', modo }), ...conRescate(pr, [prop.comentarioId], () => proponerCambios(p, pr, [prop.comentarioId], { modo })) }]);
           return responder(res, 202, { encolado: true });
         }
         return responder(res, 404, { error: 'Not found' });
@@ -469,24 +494,51 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
       }
       if (req.method === 'GET' && url.pathname === '/api/estado') {
         if (req.headers['x-seki-tablero'] === '1') ultimoTablero = Date.now();
-        return responder(res, 200, { vigia: vigia.estado(), refrescando: !!refresco, ultimoRefresco, trabajos: [...cola.lista(), ...listaGuias()], comentarios: marcasComentarios(), avances: avances(), costoHoy: costosDelDia(p), version: VERSION });
+        return responder(res, 200, { vigia: vigia.estado(), refrescando: !!refresco, ultimoRefresco, trabajos: [...cola.lista(), ...listaGuias()], comentarios: marcasComentarios(), avances: avances(), costoHoy: costosDelDia(p), presupuesto: presupuesto.estado(), modo, version: VERSION });
       }
       if (req.method === 'POST' && url.pathname === '/api/refrescar') {
         refrescar();
         return responder(res, 202, { refrescando: true });
       }
       if (req.method === 'POST' && url.pathname === '/api/analizar') {
-        const { prs = [], completar = false } = await leerCuerpo(req);
+        const { prs = [], completar = false, modo: modoPedido } = await leerCuerpo(req);
+        const modo = modoDe(p, modoPedido);
         const validas = fotoConExplicaciones(p).prs;
-        const items = validas
-          .filter((v) => prs.some((x) => v.repo === x.repo && v.numero === x.numero))
-          .map((pr) => ({ id: pr.id, tipo: 'explicar', prId: pr.id, ejecutar: () => explicarConIa(p, pr, { completar: completar === true }) }));
-        return responder(res, 202, { encolados: cola.encolar(items) });
+        const pedidas = validas.filter((v) => prs.some((x) => v.repo === x.repo && v.numero === x.numero));
+        // Saving mode reuses an explanation that already covers the current commit.
+        const reutilizadas = modo === 'ahorro' && completar !== true ? pedidas.filter((v) => v.explicacion && !v.explicacion.desactualizada) : [];
+        const items = pedidas
+          .filter((v) => !reutilizadas.includes(v))
+          .map((pr) => ({ id: pr.id, tipo: 'explicar', prId: pr.id, topeUsd: topeDeTrabajo({ tipo: 'explicar', modo, completar: completar === true }), ejecutar: () => explicarConIa(p, pr, { completar: completar === true, modo }) }));
+        return responder(res, 202, { encolados: cola.encolar(items), reutilizados: reutilizadas.length });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/ultra') {
+        const pr = prDeFoto(`${url.searchParams.get('repo')}#${url.searchParams.get('numero')}`);
+        return responder(res, 200, datosUltra(p, pr, nombresDeArchivos(p, pr)));
+      }
+      if (req.method === 'POST' && url.pathname === '/api/ultra') {
+        const { repo, numero, repetir, modo: modoPedido, confirmar } = await leerJsonEstricto(req);
+        if (confirmar !== true) throw Object.assign(new Error('The Ultra review must be confirmed'), { codigo: 400 });
+        let pr;
+        try { pr = prDeFoto(`${repo}#${numero}`); } catch { throw Object.assign(new Error('The PR is not in the snapshot'), { codigo: 409 }); }
+        if (modoDe(p, modoPedido) === 'ahorro') throw Object.assign(new Error('Ultra review is not available in saving mode'), { codigo: 409 });
+        if (pr.estadoPr !== 'OPEN') throw Object.assign(new Error('The PR is no longer open'), { codigo: 409 });
+        // A stored result for this commit is returned as is: no job, no reservation, no spend.
+        const guardado = repetir === true ? null : leerUltra(p, pr.repo, pr.numero, pr.headSha);
+        if (guardado && !guardado.desactualizada) return responder(res, 200, { desdeCache: true, resultado: guardado });
+        const n = cola.encolar([{ id: `${pr.id}:ultra`, tipo: 'revisar_ultra', prId: pr.id, topeUsd: topeRevisarUltra(), ejecutar: () => ejecutarUltra(p, pr, { repetir: repetir === true }) }]);
+        if (!n) throw Object.assign(new Error('An Ultra review of this PR is already queued'), { codigo: 409 });
+        return responder(res, 202, { encolado: `${pr.id}:ultra` });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/trabajos/forzar') {
+        const { id } = await leerJsonEstricto(req);
+        if (typeof id !== 'string' || !cola.forzar(id)) throw Object.assign(new Error('No blocked job with that id'), { codigo: 404 });
+        return responder(res, 200, { ok: true });
       }
       if (req.method === 'POST' && url.pathname === '/api/cancelar-cola') return responder(res, 200, { cancelados: cola.vaciar() });
       // Another session with another version asks for the port: release it only if no jobs would be cut off.
       if (req.method === 'POST' && url.pathname === '/api/ceder') {
-        if (refresco || vigia.ocupado() || guiaEnCurso() || cola.lista().some((t) => t.estado === 'en_cola' || t.estado === 'en_curso')) return responder(res, 409, { error: 'Jobs in progress' });
+        if (refresco || vigia.ocupado() || guiaEnCurso() || cola.lista().some((t) => ['en_cola', 'bloqueado_presupuesto', 'en_curso'].includes(t.estado))) return responder(res, 409, { error: 'Jobs in progress' });
         responder(res, 200, { ok: true });
         cerrar();
         return;
@@ -494,7 +546,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
       return responder(res, 404, { error: 'Not found' });
     } catch (e) {
       const c = e.codigo;
-      if (Number.isInteger(c) && c >= 400 && c <= 599) return responder(res, c, { error: e.message });
+      if (Number.isInteger(c) && c >= 400 && c <= 599) return responder(res, c, { error: e.message, ...(e.forzar ? { forzar: true } : {}) });
       if (typeof c === 'string') return responder(res, 400, { error: e.message });
       // An untagged failure on a QA route is internal: its message may carry paths or cell contents.
       if (url.pathname.startsWith('/api/qa/')) {
@@ -515,6 +567,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
     await Promise.all([cerrado, ciclo, cola.detener(), guiaActiva?.promesa]);
     while (refresco) await refresco;
     await limpieza;
+    presupuesto.soltar();
   };
   const escuchar = (n) => new Promise((ok, falla) => {
     servidor.once('error', falla);

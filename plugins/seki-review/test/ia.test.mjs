@@ -1,11 +1,12 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { appendFileSync, chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { argsClaude, costosDelDia, ejecutarClaude, elegirModelo, herramientasUsadas, reglasSecretos, registrarCosto, resumenCostos } from '../mcp/lib/ia.mjs';
+import { argsClaude, costosDelDia, ejecutarClaude, elegirModelo, herramientasUsadas, leerCostos, reglasSecretos, registrarCosto, resumenCostos } from '../mcp/lib/ia.mjs';
 
 import { falsoClaude } from './util/claude.mjs';
+import { fijarEnv, fijarTz } from './util/tz.mjs';
 
 const chica = { seguridad: false, adiciones: 20, eliminaciones: 5, esfuerzoTamano: 1 };
 
@@ -96,7 +97,8 @@ test('ejecutarClaude: schema without structured_output gives ok=false', async ()
   assert.equal(r.motivo, 'The response did not arrive in the expected format');
 });
 
-test('costosDelDia sums only the requested day', () => {
+test('costosDelDia sums only the requested day', (t) => {
+  fijarTz(t, 'UTC');
   const p = { salida: mkdtempSync(join(tmpdir(), 'seki-costo-')) };
   registrarCosto(p, { tipo: 'responder', prId: 'r#1', modelo: 'haiku', costo: 0.1, ok: true, fecha: '2026-10-27T10:00:00Z' });
   registrarCosto(p, { tipo: 'responder', prId: 'r#1', modelo: 'haiku', costo: 0.2, ok: true, fecha: '2026-10-27T15:00:00Z' });
@@ -123,7 +125,8 @@ test('argsClaude: extra directories and rules that deny secret files', () => {
   assert.ok(negadas.includes('Read(//a/b/**/claves.txt)'));
 });
 
-test('resumenCostos compares cost per model with what was marked useful and counts retries', () => {
+test('resumenCostos compares cost per model with what was marked useful and counts retries', (t) => {
+  fijarTz(t, 'UTC');
   const p = { salida: mkdtempSync(join(tmpdir(), 'seki-res-')) };
   const f = (d) => `2026-10-${d}T10:00:00.000Z`;
   registrarCosto(p, { fecha: f('01'), tipo: 'explicar', prId: 'a#1', modelo: 'claude-opus-5-5', costo: 9, ok: true });
@@ -152,4 +155,32 @@ test('herramientasUsadas reads the calls from a stream-json output without count
   ].join('\n');
   assert.deepEqual(herramientasUsadas(salida), [{ nombre: 'Grep', entrada: { pattern: 'x' } }]);
   assert.ok(argsClaude({ modelo: 'haiku', sistema: 's', prompt: 'p', tope: 1, turnos: 1, traza: true }).join(' ').includes('--output-format stream-json --verbose'));
+});
+
+test('a failed job never stores model output or stderr in the cost record', async (t) => {
+  const p = { salida: mkdtempSync(join(tmpdir(), 'seki-seg-')) };
+  const dir = mkdtempSync(join(tmpdir(), 'seki-seg-bin-'));
+  const ruta = join(dir, 'claude');
+  writeFileSync(ruta, '#!/bin/sh\necho "token sk-secret leaked" >&2\necho \'{"type":"result","is_error":true,"subtype":"error_during_execution","result":"password sk-secret","total_cost_usd":0.01}\'\nexit 3\n');
+  chmodSync(ruta, 0o755);
+  fijarEnv(t, 'SEKI_CLAUDE', ruta);
+  const r = await ejecutarClaude(['-p', 'x'], { cwd: tmpdir() });
+  assert.match(r.motivo, /sk-secret/);
+  assert.equal(r.motivoSeguro, 'claude exited with code 3');
+  registrarCosto(p, { tipo: 'filtrar', costo: 0.01, ok: false, motivo: r.motivo });
+  registrarCosto(p, { tipo: 'filtrar', costo: 0.01, ok: false, motivo: r.motivoSeguro });
+  registrarCosto(p, { tipo: 'filtrar', costo: 0.01, ok: false, motivo: 'The job reached its cost cap' });
+  const texto = readFileSync(join(p.salida, 'datos', 'costos.jsonl'), 'utf8');
+  assert.doesNotMatch(texto, /sk-secret/);
+  const [a, b, c] = texto.trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(a.motivo, 'The job failed');
+  assert.equal(b.motivo, 'claude exited with code 3');
+  assert.equal(c.motivo, 'The job reached its cost cap');
+});
+
+test('leerCostos skips unreadable lines and non-object values', () => {
+  const p = { salida: mkdtempSync(join(tmpdir(), 'seki-seg-')) };
+  registrarCosto(p, { tipo: 'filtrar', costo: 1, ok: true });
+  appendFileSync(join(p.salida, 'datos', 'costos.jsonl'), 'null\n42\nnot json\n');
+  assert.equal(leerCostos(p).length, 1);
 });

@@ -17,6 +17,7 @@ export const rutaDiff = (salida, repo, numero) => join(salida, 'diffs', `${repo}
 export const rutaComentarios = (salida, repo, numero) => join(salida, 'comentarios', `${repo}-${numero}.json`);
 export const rutaCostos = (salida) => join(salida, 'datos', 'costos.jsonl');
 export const rutaRespuesta = (salida, clave) => join(salida, 'respuestas', `${clave}.json`);
+export const rutaUltra = (salida, repo, numero) => join(salida, 'ultra', `${repo}-${numero}.json`);
 // p.copias (configuration) keeps the copies outside the project folder so they do not inherit its CLAUDE.md.
 export const rutaCopia = (p, repo, numero, sufijo = '') => join(p.copias ?? join(p.salida, 'copias'), `${repo}-${numero}${sufijo}`);
 export const rutaBaseline = (salida, repo, sha) => join(salida, 'datos', 'baseline', `${repo}-${sha}.json`);

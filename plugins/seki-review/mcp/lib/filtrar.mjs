@@ -4,7 +4,9 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { escribirJson, leerJson, rutaDiff } from './cache.mjs';
-import { argsClaude, dirVacio, ejecutarClaude, registrarCosto, sistemaDe, tope, TURNOS } from './ia.mjs';
+import { argsClaude, dirVacio, ejecutarClaude, registrarCosto, sistemaDe } from './ia.mjs';
+import { modoDe, perfil } from './perfiles.mjs';
+import { mensajeBloqueo } from './presupuesto.mjs';
 
 const SCHEMA = {
   type: 'object',
@@ -43,7 +45,7 @@ const rutaFiltro = (p, clave) => join(p.salida, 'filtros', `${clave}.json`);
 
 const enCurso = new Map();
 
-export async function filtrarPrs(p, prs, consulta) {
+export async function filtrarPrs(p, prs, consulta, { modo, presupuesto, forzar = false } = {}) {
   const q = normalizarConsulta(consulta);
   if (!q) throw new Error('Describe which PRs you are looking for.');
   if (q.length > MAX_CONSULTA) throw new Error(`The need cannot exceed ${MAX_CONSULTA} characters.`);
@@ -52,18 +54,27 @@ export async function filtrarPrs(p, prs, consulta) {
   const guardado = leerJson(rutaFiltro(p, clave));
   if (guardado) return { ...guardado, costo: 0, desdeCache: true };
   // A double click or two tabs with the same query share the call instead of paying for it twice.
-  if (!enCurso.has(clave)) enCurso.set(clave, consultar(p, prs, q, firma, clave).finally(() => enCurso.delete(clave)));
+  if (!enCurso.has(clave)) {
+    const { topeUsd } = perfil({ tipo: 'filtrar', modo: modoDe(p, modo) });
+    if (presupuesto && !forzar && !presupuesto.cabe(topeUsd)) {
+      throw Object.assign(new Error(mensajeBloqueo(presupuesto.estado())), { codigo: 429, forzar: true });
+    }
+    const reserva = presupuesto?.reservar(topeUsd);
+    enCurso.set(clave, consultar(p, prs, q, firma, clave, modo)
+      .then((r) => { reserva?.liberar(r.costo); return r; }, (e) => { reserva?.liberar(e.costo); throw e; })
+      .finally(() => enCurso.delete(clave)));
+  }
   return enCurso.get(clave);
 }
 
-async function consultar(p, prs, q, firma, clave) {
-  const modelo = process.env.SEKI_IA_MODELO_FILTRAR ?? process.env.SEKI_IA_MODELO ?? 'sonnet';
+async function consultar(p, prs, q, firma, clave, modo) {
+  const { modo: modoUsado, modelo, topeUsd, turnos } = perfil({ tipo: 'filtrar', modo: modoDe(p, modo) });
   const prompt = `Need: ${q}\n\nPRs (${prs.length}):\n${prs.map((pr) => lineaDePr(p, pr)).join('\n')}`;
   const r = await ejecutarClaude(argsClaude({
-    modelo, prompt, sistema: sistemaDe(p, 'filtrar'), schema: SCHEMA, tools: [], tope: tope('filtrar'), turnos: TURNOS.filtrar,
+    modelo, prompt, sistema: sistemaDe(p, 'filtrar'), schema: SCHEMA, tools: [], tope: topeUsd, turnos,
   }), { cwd: dirVacio(p), limiteMs: 3 * 60 * 1000 });
-  registrarCosto(p, { tipo: 'filtrar', modelo: r.modelo ?? modelo, uso: r.uso, costo: r.costo, ok: r.ok });
-  if (!r.ok) throw new Error(`The AI could not filter: ${String(r.motivo ?? r.texto ?? '').slice(0, 300)}`);
+  registrarCosto(p, { tipo: 'filtrar', modelo: r.modelo ?? modelo, uso: r.uso, costo: r.costo, ok: r.ok, motivo: r.motivoSeguro, modo: modoUsado });
+  if (!r.ok) throw Object.assign(new Error(`The AI could not filter: ${String(r.motivo ?? r.texto ?? '').slice(0, 300)}`), { costo: r.costo });
   const ids = new Set(prs.map((x) => x.id));
   const vistos = new Set();
   const coincidencias = (r.salida.coincidencias ?? [])

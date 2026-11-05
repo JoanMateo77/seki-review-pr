@@ -35,6 +35,11 @@
     "vigia": {
       "intervaloSeg": 300
     },
+    "ia": {
+      "modo": "normal",
+      "presupuestoDiarioUsd": null,
+      "rutasSensibles": []
+    },
     "repos": {
       "api": {
         "etiqueta": "Back",
@@ -147,6 +152,11 @@
     },
     "vigia": {
       "intervaloSeg": 300
+    },
+    "ia": {
+      "modo": "normal",
+      "presupuestoDiarioUsd": null,
+      "rutasSensibles": []
     },
     "repos": {
       "api": {

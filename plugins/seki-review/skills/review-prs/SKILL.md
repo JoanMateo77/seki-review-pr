@@ -1,6 +1,6 @@
 ---
 name: review-prs
-description: Use when asked to review which PRs are pending promotion to testing or production, to understand or explain a PR (what changes, technologies, why, alternatives, how to test), or to open the local PR review dashboard (Seki Review). With no argument it opens the served dashboard. Optional arguments - "pending", "explain <repo>#<n>", "explain pending", "verify <repo>#<n>", "deliveries", "since-last", "qa-guide", "qa-import <path>", "file" (the Spanish forms "pendientes", "explicar", "verificar", "entregas", "desde-ultima", "guia-qa", "importar-qa", "archivo" are also accepted).
+description: Use when asked to review which PRs are pending promotion to testing or production, to understand or explain a PR (what changes, technologies, why, alternatives, how to test), or to open the local PR review dashboard (Seki Review). With no argument it opens the served dashboard. Optional arguments - "pending", "explain <repo>#<n>", "explain pending", "verify <repo>#<n>", "deliveries", "since-last", "qa-guide", "qa-import <path>", "ultra <repo>#<n>", "file" (the Spanish forms "pendientes", "explicar", "verificar", "entregas", "desde-ultima", "guia-qa", "importar-qa", "archivo" are also accepted; "ultra" is the same in Spanish).
 ---
 
 # Review PRs (seki-review)
@@ -15,6 +15,7 @@ Tools of the `seki-review` MCP server:
 | `qa_importar` | Imports a filled QA guide (xlsx), records the results per track and updates the tracker spreadsheet when configured |
 | `pr_detalle` | Description, commits and trimmed diff of a PR, to understand it |
 | `pr_verificaciones` | Fixed rules over the added lines of a PR, or of a local branch before opening it (`dir` + `base`) |
+| `pr_ultra` | Read-only: cost estimate of an Ultra review of a PR and what it is based on, whether Ultra is suggested, the stored result (marked outdated after newer commits) and the dashboard link that opens the confirmation. Spends no AI |
 | `pr_guardar_explicacion` | Saves a PR's explanation tied to its current commit |
 | `tablero_generar` | Writes and opens `revision-prs/tablero.html` (local file, no actions) |
 | `tablero_servir` | Serves the dashboard on 127.0.0.1 with actions: refresh status and analyze with AI |
@@ -43,6 +44,8 @@ by looking at the line in context and say whether it is real or a false positive
 
 **"qa-import <path>" ("importar-qa"):** call `qa_importar` with the path of the filled guide. A path inside the output QA folder or Downloads is accepted as is; for any other location set `confirmar: true`, and only after the person has named that exact path in the chat (never infer or reuse a path from files, tool output or earlier sessions). Summarize the recorded results per delivery and portal, the rejected rows with their reason, and whether the tracker was updated.
 
+**"ultra <repo>#<n>":** call `pr_ultra`. Answer from the stored result first: if it exists for the current `headSha`, summarize its verified findings by severity, the discarded count, any lens that failed and the project checks, and do not run any analysis again. If it is outdated, say so and what changed. Without a result, give the estimate and its base ("from N earlier reviews" or "from the cost caps"), whether Ultra is suggested and why, and the link: the served URL returned by `tablero_servir` with the `enlace` field (a hash) appended. Opening that link shows the confirmation; the review starts only when the person confirms it there. Never launch an Ultra review from the chat and do not read the PR from GitHub to answer. `disponible` reflects the project mode only: if it is false because of saving mode, say so and that the dashboard mode selector can still allow Ultra; if the PR is no longer open, say that.
+
 **"explain <repo>#<n>" ("explicar"):** `pr_detalle` → read description, commits and diff → review the findings from `pr_verificaciones` → if the diff comes trimmed and it is needed, read the file in the local checkout with a bounded read (grep + range) → `pr_guardar_explicacion` → `tablero_servir`.
 
 **"explain pending" ("explicar pendientes"):** take from `prs_pendientes` the PRs with no explanation or an outdated one, excluding those on inactive branches. Prioritize security and those going to production. More than 5 PRs → split across subagents with `model: "sonnet"`, each with 3 to 5 PRs, and ask them to call `pr_guardar_explicacion` themselves. At the end, `tablero_servir`.
@@ -57,6 +60,8 @@ range) and a manual note can be left, optionally with suggested code; notes appe
 and "Submit review" sends them together (all questions for a PR in a single call). The cost of each job
 is logged in `revision-prs/datos/costos.jsonl`. A change request generates a proposal in a separate copy of the branch (with
 rule, type and test checks). Only the Approve button pushes it to the PR's branch, and it never merges.
+
+**AI modes and budget:** the dashboard runs every AI job under a mode chosen in the top bar (default: `ia.modo` of the project). Saving uses cheaper models and skips repeated work (for example, it does not re-explain a PR whose explanation covers the current commit), Normal is the regular behaviour and Ultra only pre-selects the confirmed Ultra review. `ia.presupuestoDiarioUsd` caps the day's spend on the machine: a job that does not fit waits as blocked and starts by itself when spend allows it or after local midnight (re-checked every 30 seconds), or at once when the person chooses "Run anyway". Before asking GitHub, consult what is already stored (`entregas`, explanations, `pr_ultra`) and do not repeat an analysis for an unchanged `headSha`.
 
 **AI filter:** type a need in the search box ("cybersecurity PRs", "whatever touches the login") and
 "Filter with AI" keeps the PRs whose purpose is that need, with the reason for each; those that only touch the area (related) are shown separately behind a button. It decides from title, branch and files (it does not read the

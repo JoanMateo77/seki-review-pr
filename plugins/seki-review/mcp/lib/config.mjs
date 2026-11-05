@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { compilarPatron } from './patrones.mjs';
+import { MODOS } from './perfiles.mjs';
 
 const EJEMPLO = join(dirname(fileURLToPath(import.meta.url)), '../../config/proyectos.ejemplo.json');
 const USUARIO = join(homedir(), '.config/seki-review/proyectos.json');
@@ -16,6 +18,7 @@ export function cargarProyectos() {
 }
 
 export const ENTREGAS_DEFECTO = { sufijosRama: ['-pruebas', '-testing', '-staging'], patronId: null, ventanaDias: 30, alertaDias: 5, cerrarTrasDias: 7, maxPorSenal: 12 };
+export const IA_DEFECTO = { modo: 'normal', presupuestoDiarioUsd: null, rutasSensibles: [] };
 export const VIGIA_DEFECTO = { intervaloSeg: 300 };
 export const VIGIA_INTERVALO_MIN = 120;
 
@@ -41,7 +44,28 @@ const VALIDOS = {
   resultados: textos,
   mapeo: (v) => v !== null && typeof v === 'object' && !Array.isArray(v) && Object.values(v).every((x) => x === null || ['ok', 'fallo', 'bloqueado', 'na'].includes(x)),
   chrome: (v) => v === null || typeof v === 'string',
+  modo: (v) => MODOS.includes(v),
+  presupuestoDiarioUsd: (v) => v === null || positivo(v),
+  rutasSensibles: textos,
 };
+
+const MAX_RUTA_SENSIBLE = 200;
+
+// Valid sensitive-path patterns as strings plus their compiled form; an invalid one is dropped with a warning.
+function rutasSensibles(lista) {
+  const validas = [];
+  const patrones = [];
+  for (const t of lista) {
+    try {
+      if (t.length > MAX_RUTA_SENSIBLE) throw new Error('too long');
+      patrones.push(compilarPatron(t));
+      validas.push(t);
+    } catch {
+      avisar(`ia.rutasSensibles has an invalid pattern (it must be a regular expression of at most ${MAX_RUTA_SENSIBLE} characters without nested quantifiers); it is ignored`);
+    }
+  }
+  return { validas, patrones };
+}
 
 const RASTREADOR_LECTURA = ['hallazgo', 'pasos', 'esperado', 'pantalla', 'prioridad'];
 const RASTREADOR_COLUMNAS = ['estado', 'prPruebas', 'prProd', 'enPruebas', 'enProd'];
@@ -139,7 +163,11 @@ export function proyecto(clave) {
     qa.mapeo = structuredClone(QA_DEFECTO.mapeo);
   }
   qa.rastreador = validarRastreador(p.qa?.rastreador);
-  return { clave: elegida, ...p, qa, entregas: conDefectos(ENTREGAS_DEFECTO, p.entregas, 'entregas'), vigia, salida: expandir(p.salida), copias: expandir(p.copias ?? `~/.cache/seki-review/copias/${elegida}`) };
+  const ia = conDefectos(IA_DEFECTO, p.ia, 'ia');
+  const sensibles = rutasSensibles(ia.rutasSensibles);
+  ia.rutasSensibles = sensibles.validas;
+  ia.patronesSensibles = sensibles.patrones;
+  return { clave: elegida, ...p, qa, ia, entregas: conDefectos(ENTREGAS_DEFECTO, p.entregas, 'entregas'), vigia, salida: expandir(p.salida), copias: expandir(p.copias ?? `~/.cache/seki-review/copias/${elegida}`) };
 }
 
 // Locates a base branch within the repo's deployment lines.

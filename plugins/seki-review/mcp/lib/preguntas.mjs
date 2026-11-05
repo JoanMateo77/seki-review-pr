@@ -5,7 +5,8 @@ import { realpathSync } from 'node:fs';
 import { escribirJson, leerJson, rutaRespuesta } from './cache.mjs';
 import { actualizarComentario, leerComentarios, rescatarPendientes } from './comentarios.mjs';
 import { contextoPreguntas } from './contexto.mjs';
-import { argsClaude, dirVacio, ejecutarClaude, elegirModelo, reglasSecretos, registrarCosto, sistemaDe, tope, TURNOS } from './ia.mjs';
+import { argsClaude, dirVacio, ejecutarClaude, reglasSecretos, registrarCosto, sistemaDe } from './ia.mjs';
+import { modoDe, perfil } from './perfiles.mjs';
 import { copiaDeRama, crearCopia, ramasEquivalentes } from './copias.mjs';
 import { contarHerramienta, fijarAvance, quitarAvance } from './avance.mjs';
 import { ghJson } from './proceso.mjs';
@@ -21,7 +22,7 @@ const clave = (pr, c) => createHash('sha256').update([pr.headSha, c.ambito ?? ''
 
 const detallePr = (p, pr) => ghJson(['pr', 'view', String(pr.numero), '-R', `${p.owner}/${pr.repo}`, '--json', 'body']).catch(() => null);
 
-export async function responderPreguntas(p, pr, ids, { contexto = contextoPreguntas, detalle = detallePr } = {}) {
+export async function responderPreguntas(p, pr, ids, { contexto = contextoPreguntas, detalle = detallePr, modo } = {}) {
   const pedidas = new Set(ids);
   const preguntas = leerComentarios(p, pr.repo, pr.numero).filter((c) => c.tipo === 'pregunta' && pedidas.has(c.id) && PENDIENTES.has(c.estado));
   const actualizar = (id, cambios) => actualizarComentario(p, pr.repo, pr.numero, id, cambios);
@@ -35,7 +36,7 @@ export async function responderPreguntas(p, pr, ids, { contexto = contextoPregun
 
   for (const c of sinCache) { actualizar(c.id, { estado: 'en_curso', motivo: null }); fijarAvance(`c:${c.id}`, { fase: 'redactando' }); }
   try {
-    return await responder(p, pr, sinCache, { contexto, detalle });
+    return await responder(p, pr, sinCache, { contexto, detalle, modo });
   } catch (e) {
     rescatarPendientes(p, pr.repo, pr.numero, sinCache.map((c) => c.id), { estado: 'error', motivo: String(e.message).slice(0, 400) });
     throw e;
@@ -44,20 +45,20 @@ export async function responderPreguntas(p, pr, ids, { contexto = contextoPregun
   }
 }
 
-async function responder(p, pr, sinCache, { contexto, detalle }) {
+async function responder(p, pr, sinCache, { contexto, detalle, modo }) {
   const actualizar = (id, cambios) => actualizarComentario(p, pr.repo, pr.numero, id, cambios);
   // A question about the whole PR weighs as much as all its changed lines.
   const lineas = Math.max(...sinCache.map((c) => (c.ambito === 'pr' ? (pr.adiciones ?? 0) + (pr.eliminaciones ?? 0) : c.hasta - c.desde + 1)));
-  const modelo = elegirModelo({ tipo: 'responder', pr, lineasSeleccionadas: lineas });
+  const { modo: modoUsado, modelo, topeUsd, turnos } = perfil({ tipo: 'responder', modo: modoDe(p, modo), pr, lineasSeleccionadas: lineas });
   const cuerpo = (await detalle(p, pr))?.body;
   const ctx = await contexto(p, { ...pr, cuerpo }, sinCache, { todos: leerComentarios(p, pr.repo, pr.numero) });
   const r = await ejecutarClaude(argsClaude({
     modelo, sistema: sistemaDe(p, 'base', 'responder'),
     prompt: `Answer ${sinCache.length === 1 ? 'the question' : `the ${sinCache.length} questions`} (ids: ${sinCache.map((c) => c.id).join(', ')}).\n\n${ctx}`,
-    schema: SCHEMA, tools: [], tope: tope('responder') * sinCache.length, turnos: TURNOS.responder,
+    schema: SCHEMA, tools: [], tope: topeUsd * sinCache.length, turnos,
   }), { cwd: dirVacio(p) });
   const usado = r.modelo ?? modelo;
-  registrarCosto(p, { tipo: 'responder', prId: pr.id, comentarios: sinCache.map((c) => c.id), modelo: usado, uso: r.uso, costo: r.costo, ok: r.ok, preguntas: sinCache.length });
+  registrarCosto(p, { tipo: 'responder', prId: pr.id, comentarios: sinCache.map((c) => c.id), modelo: usado, uso: r.uso, costo: r.costo, ok: r.ok, motivo: r.motivoSeguro, modo: modoUsado, preguntas: sinCache.length });
 
   const respuestas = new Map((r.ok ? r.salida.respuestas : []).map((x) => [x.id, x]));
   for (const c of sinCache) {
@@ -65,7 +66,7 @@ async function responder(p, pr, sinCache, { contexto, detalle }) {
     if (texto) {
       const falta = necesitaCodigo === true ? true : undefined;
       escribirJson(rutaRespuesta(p.salida, clave(pr, c)), { texto, modelo: usado, necesitaCodigo: falta, fecha: new Date().toISOString() });
-      actualizar(c.id, { estado: 'respondido', respuesta: texto, necesitaCodigo: falta, modelo: usado, costo: r.costo, lote: sinCache.length, desdeCache: false });
+      actualizar(c.id, { estado: 'respondido', respuesta: texto, necesitaCodigo: falta, modelo: usado, modo: modoUsado, costo: r.costo, lote: sinCache.length, desdeCache: false });
     } else {
       actualizar(c.id, { estado: 'error', motivo: r.ok ? 'The AI returned no answer for this question' : r.motivo });
     }
@@ -76,7 +77,7 @@ async function responder(p, pr, sinCache, { contexto, detalle }) {
 const SCHEMA_INVESTIGAR = { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] };
 
 // Read-only copies of the other repos on the equivalent branch; a branch that could not be fetched is reported.
-async function otrasRamas(p, pr) {
+export async function otrasRamas(p, pr) {
   const { ambiente, ramas } = ramasEquivalentes(p, pr);
   const lista = [];
   for (const r of ramas) {
@@ -115,7 +116,7 @@ export function consultasDe(herramientas, raices) {
 
 // Question that needs to look at the code: the AI searches and reads in a read-only copy of the PR (separate from the one
 // used by change requests) and in the checkouts of the other repos, with no access to secret files.
-export async function investigarPregunta(p, pr, id, { contexto = contextoPreguntas, detalle = detallePr } = {}) {
+export async function investigarPregunta(p, pr, id, { contexto = contextoPreguntas, detalle = detallePr, modo } = {}) {
   const todos = leerComentarios(p, pr.repo, pr.numero);
   const c = todos.find((x) => x.id === id && x.tipo === 'pregunta');
   if (!c) throw Object.assign(new Error('The question does not exist'), { codigo: 404 });
@@ -132,12 +133,12 @@ export async function investigarPregunta(p, pr, id, { contexto = contextoPregunt
     const repos = [`- ${pr.repo}: the current directory, at commit ${pr.headSha.slice(0, 7)} of PR #${pr.numero}.`,
       ...otros.map((o) => `- ${o.repo} (${o.portal}): ${o.dir}, ${ambiente === 'prod' ? 'production' : 'testing'} branch ${o.rama} at ${o.sha.slice(0, 7)}, freshly fetched from GitHub.`),
       ...lista.filter((o) => o.falla).map((o) => `- ${o.repo} (${o.portal}), branch ${o.rama}: unavailable (${o.falla}).`)].join('\n');
-    const modelo = elegirModelo({ tipo: 'investigar', pr });
+    const { modo: modoUsado, modelo, topeUsd, turnos } = perfil({ tipo: 'investigar', modo: modoDe(p, modo), pr });
     fijarAvance(clave, { fase: 'leyendo', repos: 1 + otros.length });
     const r = await ejecutarClaude(argsClaude({
       modelo, sistema: sistemaDe(p, 'base', 'investigar'),
       prompt: `Investigate question ${c.id} in the code. When quoting code from another repo, say which repo and branch it is from.\n\nAvailable repositories (read-only):\n${repos}\n\n${ctx}`,
-      schema: SCHEMA_INVESTIGAR, tools: ['Read', 'Grep', 'Glob'], tope: tope('investigar'), turnos: TURNOS.investigar,
+      schema: SCHEMA_INVESTIGAR, tools: ['Read', 'Grep', 'Glob'], tope: topeUsd, turnos,
       dirs: otros.map((o) => o.dir), prohibidas: reglasSecretos([dir, ...otros.map((o) => o.dir)], p.secretos), traza: true,
     }), { cwd: dir, alUsar: (h) => contarHerramienta(clave, h, [dir, ...otros.map((o) => o.dir)]) });
     const consultado = consultasDe(r.herramientas, [{ repo: pr.repo, dir }, ...otros.map((o) => ({ repo: o.portal && o.portal !== o.repo ? `${o.repo} (${o.portal})` : o.repo, dir: o.dir }))]);
@@ -145,8 +146,8 @@ export async function investigarPregunta(p, pr, id, { contexto = contextoPregunt
     const bloqueadas = r.denegadas.map((d) => ({ herramienta: d.nombre, ruta: String(d.entrada.file_path ?? d.entrada.path ?? d.entrada.pattern ?? '').slice(0, 200) }));
     const leido = [{ repo: pr.repo, rama: `PR #${pr.numero}`, sha: pr.headSha }, ...otros.map((o) => ({ repo: o.repo, portal: o.portal, rama: o.rama, sha: o.sha }))];
     const usado = r.modelo ?? modelo;
-    registrarCosto(p, { tipo: 'investigar', prId: pr.id, comentario: id, modelo: usado, uso: r.uso, costo: r.costo, ok: r.ok, archivos: consultado.archivos.length, bloqueadas: bloqueadas.length });
-    if (r.ok && r.salida?.texto) actualizar({ estado: 'respondido', respuesta: r.salida.texto, investigado: true, leido, consultado, bloqueadas: bloqueadas.length ? bloqueadas : undefined, necesitaCodigo: undefined, modelo: usado, costo: r.costo, lote: 1, desdeCache: false });
+    registrarCosto(p, { tipo: 'investigar', prId: pr.id, comentario: id, modelo: usado, uso: r.uso, costo: r.costo, ok: r.ok, motivo: r.motivoSeguro, modo: modoUsado, archivos: consultado.archivos.length, bloqueadas: bloqueadas.length });
+    if (r.ok && r.salida?.texto) actualizar({ estado: 'respondido', respuesta: r.salida.texto, investigado: true, leido, consultado, bloqueadas: bloqueadas.length ? bloqueadas : undefined, necesitaCodigo: undefined, modelo: usado, modo: modoUsado, costo: r.costo, lote: 1, desdeCache: false });
     else actualizar({ estado: 'error', motivo: r.ok ? 'The AI returned no answer' : r.motivo });
     return { ok: r.ok, motivo: r.motivo, costo: r.costo, modelo: usado };
   } catch (e) {

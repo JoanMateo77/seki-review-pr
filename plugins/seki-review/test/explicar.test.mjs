@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { archivosLeidos, coberturaReal, escribirParches, prioridad, promptExplicar, recortarDiff } from '../mcp/lib/explicar.mjs';
+import { escribirJson, rutaDiff } from '../mcp/lib/cache.mjs';
+import { archivosLeidos, coberturaReal, escribirParches, explicarConIa, prioridad, promptExplicar, recortarDiff } from '../mcp/lib/explicar.mjs';
+import { leerCostos } from '../mcp/lib/ia.mjs';
+import { falsoClaude } from './util/claude.mjs';
+import { falsoGh } from './util/gh.mjs';
+import { fijarEnv } from './util/tz.mjs';
 
 const pr = { id: 'api#7', repo: 'api', numero: 7, titulo: 'fix: algo', base: 'main', rama: 'fix/algo', adiciones: 10, eliminaciones: 2 };
 const largo = { filename: 'src/a.ts', status: 'modified', additions: 3000, deletions: 0, patch: '@@ -1,1 +1,3000 @@\n' + Array.from({ length: 3000 }, (_, i) => `+l${i}`).join('\n') };
@@ -70,4 +75,17 @@ test('promptExplicar asks to save with the analyzed commit, not the one the PR h
   const sha = 'a'.repeat(40);
   assert.match(promptExplicar({ pr: { ...pr, headSha: sha }, proyecto: 'demo', archivos: [chico('src/a.ts')] }), new RegExp(`headSha "${sha}"`));
   assert.match(promptExplicar({ pr: { ...pr, headSha: sha }, proyecto: 'demo', archivos: [chico('src/a.ts')], previa: { resumen: 'X' }, foco: ['src/a.ts'] }), new RegExp(`headSha "${sha}"`));
+});
+
+test('an explain job whose answer does not confirm completion is recorded as failed with a safe reason', async (t) => {
+  const salida = mkdtempSync(join(tmpdir(), 'seki-exp-'));
+  const p = { salida, owner: 'o', clave: 'demo', repos: {} };
+  const prx = { ...pr, headSha: 'a'.repeat(40) };
+  escribirJson(rutaDiff(salida, 'api', 7), { headSha: prx.headSha, archivos: [chico('src/a.ts')] });
+  fijarEnv(t, 'SEKI_GH', falsoGh({ body: 'x', commits: [] }).ruta);
+  fijarEnv(t, 'SEKI_CLAUDE', falsoClaude({ type: 'result', is_error: false, subtype: 'success', result: 'I could not save it, sorry.', total_cost_usd: 0.01, modelUsage: { 'claude-sonnet-5-5': { inputTokens: 1, outputTokens: 1 } } }));
+  const r = await explicarConIa(p, prx);
+  assert.equal(r.ok, false);
+  const [rec] = leerCostos(p).filter((x) => x.tipo === 'explicar');
+  assert.deepEqual([rec.ok, rec.motivo], [false, 'The AI did not confirm completion']);
 });

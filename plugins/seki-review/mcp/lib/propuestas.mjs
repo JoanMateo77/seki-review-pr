@@ -9,7 +9,8 @@ import { actualizarComentario, leerComentarios } from './comentarios.mjs';
 import { expandir } from './config.mjs';
 import { contextoPreguntas } from './contexto.mjs';
 import { borrarCopia, crearCopia, diffCopia, reiniciarCopia } from './copias.mjs';
-import { argsClaude, ejecutarClaude, elegirModelo, registrarCosto, sistemaDe, tope, TURNOS } from './ia.mjs';
+import { argsClaude, ejecutarClaude, registrarCosto, sistemaDe } from './ia.mjs';
+import { modoDe, perfil } from './perfiles.mjs';
 import { ghJson, git } from './proceso.mjs';
 import { archivosDeDiff } from './verificar.mjs';
 import { contarHerramienta, fijarAvance, quitarAvance } from './avance.mjs';
@@ -60,7 +61,7 @@ function textoFallos(c) {
   return partes.join('\n\n');
 }
 
-function lineamientos(p) {
+export function lineamientos(p) {
   const dir = p.lineamientos ? expandir(p.lineamientos) : null;
   if (!dir || !existsSync(join(dir, 'SKILL.md'))) return null;
   const destilado = join(dir, 'destilado');
@@ -68,18 +69,18 @@ function lineamientos(p) {
   return [readFileSync(join(dir, 'SKILL.md'), 'utf8'), ...extras].join('\n\n');
 }
 
-async function generar(p, pr, c, dir, { sistema, avisos, contexto, cuerpo, previa, indicacion }) {
-  const modelo = elegirModelo({ tipo: 'cambiar', pr });
+async function generar(p, pr, c, dir, { sistema, avisos, contexto, cuerpo, previa, indicacion, modo }) {
+  const { modo: modoUsado, modelo, topeUsd, turnos } = perfil({ tipo: 'cambiar', modo: modoDe(p, modo), pr });
   const rango = c.desde === c.hasta ? `L${c.desde}` : `L${c.desde}–${c.hasta}`;
   const ctx = await contexto(p, { ...pr, cuerpo }, [c]);
   let prompt = `Request ${c.id} on ${c.archivo} ${rango}: ${c.texto}\n\n${ctx}`;
   if (previa) prompt += `\n\nPrevious proposal (already applied to the copy):\n${previa.patch}\n\nRequested adjustment: ${indicacion}`;
   const clave = `c:${c.id}`;
-  const correr = (args) => ejecutarClaude(argsClaude({ modelo, sistema, schema: SCHEMA, tools: HERRAMIENTAS, tope: tope('cambiar'), turnos: TURNOS.cambiar, persistir: true, traza: true, ...args }), { cwd: dir, alUsar: (h) => contarHerramienta(clave, h, dir) });
+  const correr = (args) => ejecutarClaude(argsClaude({ modelo, sistema, schema: SCHEMA, tools: HERRAMIENTAS, tope: topeUsd, turnos, persistir: true, traza: true, ...args }), { cwd: dir, alUsar: (h) => contarHerramienta(clave, h, dir) });
   fijarAvance(clave, { fase: 'editando' });
   let r = await correr({ prompt, sesion: previa?.sesion ?? undefined });
   let costo = r.costo ?? 0;
-  registrarCosto(p, { tipo: 'cambiar', prId: pr.id, modelo: r.modelo ?? modelo, uso: r.uso, costo: r.costo, ok: r.ok });
+  registrarCosto(p, { tipo: 'cambiar', prId: pr.id, modelo: r.modelo ?? modelo, uso: r.uso, costo: r.costo, ok: r.ok, motivo: r.motivoSeguro, modo: modoUsado });
   if (!r.ok) return { error: r.motivo, costo };
   let patch = await diffCopia(dir);
   if (!r.salida.hecho || !patch.trim()) return { error: r.salida.resumen || 'The AI made no changes', costo };
@@ -89,7 +90,7 @@ async function generar(p, pr, c, dir, { sistema, avisos, contexto, cuerpo, previ
     fijarAvance(clave, { fase: 'corrigiendo', corrigio: true });
     const segunda = await correr({ prompt: `The checks failed. Fix them without widening the scope of the request.\n\n${textoFallos(comp)}`, sesion: r.sesion });
     costo += segunda.costo ?? 0;
-    registrarCosto(p, { tipo: 'cambiar', prId: pr.id, modelo: segunda.modelo ?? modelo, uso: segunda.uso, costo: segunda.costo, ok: segunda.ok, reintento: true });
+    registrarCosto(p, { tipo: 'cambiar', prId: pr.id, modelo: segunda.modelo ?? modelo, uso: segunda.uso, costo: segunda.costo, ok: segunda.ok, motivo: segunda.motivoSeguro, modo: modoUsado, reintento: true });
     if (segunda.ok) {
       r = { ...segunda, salida: segunda.salida.hecho ? segunda.salida : r.salida };
       patch = await diffCopia(dir);
@@ -103,7 +104,7 @@ async function generar(p, pr, c, dir, { sistema, avisos, contexto, cuerpo, previ
       id: nuevoId(), comentarioId: c.id, prId: pr.id, headSha: pr.headSha, patch, archivos,
       fueraDelComentario: archivos.filter((a) => a !== c.archivo),
       resumen: r.salida.resumen, comprobaciones: { ...comp, avisos }, conFallos: conFallos(comp),
-      sesion: r.sesion, modelo: r.modelo ?? modelo, costo, estado: 'lista', creada: new Date().toISOString(),
+      sesion: r.sesion, modelo: r.modelo ?? modelo, modo: modoUsado, costo, estado: 'lista', creada: new Date().toISOString(),
     },
     costo,
   };
@@ -116,7 +117,7 @@ async function preparar(p, pr, deps) {
   const cuerpo = (await (deps.detalle ?? detallePr)(p, pr))?.body;
   const dir = await crearCopia(p, pr.repo, pr.numero, pr.headSha);
   await reiniciarCopia(dir, pr.headSha);
-  return { sistema, avisos, cuerpo, dir, contexto: deps.contexto ?? contextoPreguntas };
+  return { sistema, avisos, cuerpo, dir, contexto: deps.contexto ?? contextoPreguntas, modo: deps.modo };
 }
 
 const detallePr = (p, pr) => ghJson(['pr', 'view', String(pr.numero), '-R', `${p.owner}/${pr.repo}`, '--json', 'body']).catch(() => null);
@@ -149,7 +150,7 @@ async function proponerCambiosSinSerie(p, pr, ids, deps = {}) {
       if (g.error) actualizar(c.id, { estado: 'error', motivo: g.error });
       else {
         guardar(p, pr.repo, pr.numero, g.propuesta);
-        actualizar(c.id, { estado: 'propuesta', propuestaId: g.propuesta.id, motivo: null });
+        actualizar(c.id, { estado: 'propuesta', propuestaId: g.propuesta.id, modo: g.propuesta.modo, motivo: null });
         algunaOk = true;
       }
     } catch (e) {
