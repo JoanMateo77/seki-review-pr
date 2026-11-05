@@ -19,19 +19,23 @@ export default {
       numero: { type: 'integer', description: 'PR number on GitHub' },
     },
   },
+  // `disponible` reflects the project mode only: the dashboard selector can still allow Ultra.
   async handler({ proyecto, repo, numero }) {
+    if (!Number.isInteger(numero) || numero < 1) throw new Error('numero must be a positive integer.');
     const p = cargarProyecto(proyecto);
     const pr = leerJson(rutaInstantanea(p.salida))?.prs.find((x) => x.repo === repo && x.numero === numero);
     if (!pr) throw new Error(`${repo}#${numero} is not in the last snapshot of open PRs: refresh the dashboard status first.`);
     const archivos = leerJson(rutaDiff(p.salida, repo, numero))?.archivos ?? [];
     const modo = modoDe(p);
+    const limite = p.ia.presupuestoDiarioUsd;
     let presupuesto = null;
-    if (p.ia.presupuestoDiarioUsd) {
-      try { presupuesto = { limite: p.ia.presupuestoDiarioUsd, gastado: gastoMaquina({ proyectos: cargarProyectos().proyectos }) }; } catch { presupuesto = { limite: p.ia.presupuestoDiarioUsd, gastado: null }; }
+    if (limite) {
+      let gastado = null;
+      try { gastado = gastoMaquina({ proyectos: cargarProyectos().proyectos }); } catch { console.error('[seki-review/presupuesto] The project list could not be read: the spend is not reported'); }
+      presupuesto = { limite, gastado };
     }
     return {
       repo, numero, headSha: pr.headSha, modo,
-      // Ultra is not offered in saving mode unless the dashboard selector picks another mode.
       disponible: pr.estadoPr === 'OPEN' && modo !== 'ahorro',
       presupuesto,
       ...datosUltra(p, pr, archivos),

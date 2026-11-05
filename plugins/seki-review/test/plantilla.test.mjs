@@ -30,7 +30,7 @@ test('the built page scripts compile and include the AI mode parts', async () =>
   const html = construirHtml({ salida: '/nonexistent' }, { prs: [] }, { token: 't' });
   for (const s of scripts(html)) assert.doesNotThrow(() => new Script(s));
   for (const marca of ['id="selModo"', 'data-ultra-abrir', 'data-forzar', 'Blocked by the daily budget', 'Not compared with the base branch', 'Other repositories were not available', '?ultra=1']) {
-    assert.ok(html.includes(marca) || leerPlantilla().includes(marca), `missing ${marca}`);
+    assert.ok(html.includes(marca), `the built page lacks ${marca}`);
   }
 });
 

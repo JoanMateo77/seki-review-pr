@@ -19,7 +19,7 @@ import { avances } from './avance.mjs';
 import { filtrarPrs } from './filtrar.mjs';
 import { costosDelDia, registrarCosto, resumenCostos } from './ia.mjs';
 import { modoDe, topeDeTrabajo, topeRevisarUltra } from './perfiles.mjs';
-import { datosUltra, revisarUltra } from './ultra.mjs';
+import { datosUltra, leerUltra, revisarUltra } from './ultra.mjs';
 import { crearPresupuesto, gastoMaquina } from './presupuesto.mjs';
 import { estadoServidor, pedirCeder, tokenDe } from './acceso.mjs';
 import { limpiarCopias } from './copias.mjs';
@@ -170,7 +170,7 @@ export async function detenerServidores() {
 }
 
 // intervaloVigiaMs and relojVigia exist for tests only.
-export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true, soloPuerto = false, intervaloVigiaMs = null, relojVigia } = {}) {
+export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true, soloPuerto = false, intervaloVigiaMs = null, relojVigia, ejecutarUltra = revisarUltra } = {}) {
   if (servidores.has(proyecto)) {
     const s = servidores.get(proyecto);
     if (abrir) execFile('open', [s.url]);
@@ -513,17 +513,21 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         return responder(res, 200, datosUltra(p, pr, leerJson(rutaDiff(p.salida, pr.repo, pr.numero))?.archivos ?? []));
       }
       if (req.method === 'POST' && url.pathname === '/api/ultra') {
-        const { repo, numero, repetir, modo: modoPedido } = await leerCuerpo(req);
+        const { repo, numero, repetir, modo: modoPedido, confirmar } = await leerJsonEstricto(req);
+        if (confirmar !== true) throw Object.assign(new Error('The Ultra review must be confirmed'), { codigo: 400 });
         let pr;
         try { pr = prDeFoto(`${repo}#${numero}`); } catch { throw Object.assign(new Error('The PR is not in the snapshot'), { codigo: 409 }); }
         if (modoDe(p, modoPedido) === 'ahorro') throw Object.assign(new Error('Ultra review is not available in saving mode'), { codigo: 409 });
         if (pr.estadoPr !== 'OPEN') throw Object.assign(new Error('The PR is no longer open'), { codigo: 409 });
-        const n = cola.encolar([{ id: `${pr.id}:ultra`, tipo: 'revisar_ultra', prId: pr.id, topeUsd: topeRevisarUltra(), ejecutar: () => revisarUltra(p, pr, { repetir: repetir === true }) }]);
+        // A stored result for this commit is returned as is: no job, no reservation, no spend.
+        const guardado = repetir === true ? null : leerUltra(p, pr.repo, pr.numero, pr.headSha);
+        if (guardado && !guardado.desactualizada) return responder(res, 200, { desdeCache: true, resultado: guardado });
+        const n = cola.encolar([{ id: `${pr.id}:ultra`, tipo: 'revisar_ultra', prId: pr.id, topeUsd: topeRevisarUltra(), ejecutar: () => ejecutarUltra(p, pr, { repetir: repetir === true }) }]);
         if (!n) throw Object.assign(new Error('An Ultra review of this PR is already queued'), { codigo: 409 });
         return responder(res, 202, { encolado: `${pr.id}:ultra` });
       }
       if (req.method === 'POST' && url.pathname === '/api/trabajos/forzar') {
-        const { id } = await leerCuerpo(req);
+        const { id } = await leerJsonEstricto(req);
         if (typeof id !== 'string' || !cola.forzar(id)) throw Object.assign(new Error('No blocked job with that id'), { codigo: 404 });
         return responder(res, 200, { ok: true });
       }

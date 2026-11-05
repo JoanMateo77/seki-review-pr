@@ -6,6 +6,7 @@ const NOMBRE_MODO = Object.fromEntries(MODOS_IA);
 const LENTES_ULTRA = { correccion: 'Correctness', seguridad: 'Security', lineamientos: 'Guidelines' };
 const SEVERIDAD_ULTRA = [['alta', 'High', 'rojo'], ['media', 'Medium', 'ambar'], ['baja', 'Low', '']];
 const VEREDICTO_ULTRA = { CONFIRMED: ['Confirmed', 'verde'], PLAUSIBLE: ['Plausible', 'ambar'] };
+const RUTAS_IA = ['/api/analizar', '/api/enviar-revision', '/api/investigar', '/api/filtrar', '/api/propuesta/ajustar', '/api/propuesta/regenerar'];
 const TIPO_TRABAJO = { explicar: 'Analysis', responder: 'Answers', cambiar: 'Change proposal', investigar: 'Investigation', revisar_ultra: 'Ultra review' };
 
 function modoActual() {
@@ -16,7 +17,7 @@ function modoActual() {
 
 // The mode travels with every AI request; the server validates it.
 function conModo(ruta, cuerpo) {
-  const ia = ['/api/analizar', '/api/enviar-revision', '/api/investigar', '/api/filtrar'].includes(ruta) || ruta.startsWith('/api/propuesta/');
+  const ia = RUTAS_IA.includes(ruta);
   return ia && cuerpo && typeof cuerpo === 'object' && !Array.isArray(cuerpo) && cuerpo.modo === undefined ? { ...cuerpo, modo: modoActual() } : cuerpo;
 }
 
@@ -79,13 +80,16 @@ async function cargarUltra(pr) {
 const textoBase = (e) => (e.base === 'historial' ? `from ${plural(e.muestras, 'earlier review', 'earlier reviews')}` : 'from the cost caps');
 
 function cerrarModal() {
+  // A pending estimate no longer applies once the dialog is closed.
+  estado.pedidoUltra = (estado.pedidoUltra ?? 0) + 1;
   $('modalIa')?.remove();
   estado.modalReturnFocus?.focus?.();
 }
 
 function abrirModal(html) {
+  // The element to return focus to is the one that opened the first dialog, not a button inside it.
+  if (!$('modalIa')) estado.modalReturnFocus = document.activeElement;
   $('modalIa')?.remove();
-  estado.modalReturnFocus = document.activeElement;
   document.body.insertAdjacentHTML('beforeend', `<div class="modal-fondo" id="modalIa"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalIaTitulo">${html}</div></div>`);
   $('modalIa').querySelector('button[data-ultra-confirmar], button')?.focus();
 }
@@ -93,19 +97,23 @@ function abrirModal(html) {
 async function abrirUltra(prId) {
   const pr = FOTO.prs.find((x) => x.id === prId);
   if (!pr || !API) return;
+  const pedido = (estado.pedidoUltra = (estado.pedidoUltra ?? 0) + 1);
   abrirModal(`<h3 id="modalIaTitulo">Ultra review</h3><p class="trabajando">${icono('actualizar', 'girando')}<span>Estimating the cost</span></p><div class="modal-pie"><button type="button" class="btn" data-modal-cerrar>Cancel</button></div>`);
   let d;
   try { d = await api(`/api/ultra?repo=${encodeURIComponent(pr.repo)}&numero=${pr.numero}`); } catch (err) {
-    $('modalIa').querySelector('.trabajando').outerHTML = `<p class="error-texto">${esc(err.message)}</p>`;
+    if (pedido !== estado.pedidoUltra) return;
+    const carga = $('modalIa')?.querySelector('.trabajando');
+    if (carga) carga.outerHTML = `<p class="error-texto">${esc(err.message)}</p>`;
     return;
   }
+  if (pedido !== estado.pedidoUltra || !$('modalIa')) return;
   const b = estado.presupuesto;
   const actual = d.resultado && !d.resultado.desactualizada;
   const cabe = !b?.limite || b.gastado + b.reservado + d.estimacion.usd <= b.limite;
   abrirModal(`<h3 id="modalIaTitulo">Ultra review of ${esc(pr.repo)} #${pr.numero}</h3>
     <p>Three read-only lenses (correctness, security and guidelines), a verification pass over their findings and the project checks on a copy of the branch.</p>
     <p><strong>Estimated cost: ${usd(d.estimacion.usd)}</strong> <span class="tenue">(${textoBase(d.estimacion)})</span></p>
-    ${b?.limite ? `<p class="tenue">Spent today: ${usd(b.gastado)} of ${usd(b.limite)}.${cabe ? '' : ' The review does not fit in the remaining budget: it waits as blocked until the budget allows it or it is run anyway.'}</p>` : ''}
+    ${b?.limite ? `<p class="tenue">Spent today: ${usd(b.gastado)} of ${usd(b.limite)}.${cabe ? '' : ' Does not fit in the remaining budget: it stays blocked until run anyway or the budget allows it.'}</p>` : ''}
     ${d.sugerida ? `<div class="seccion"><span class="estado violeta">${icono('chispa')} Ultra suggested</span><ul class="lista-modal">${d.motivos.map((m) => `<li>${esc(m)}</li>`).join('')}</ul></div>` : ''}
     ${actual ? `<p class="tenue">A result for this commit already exists. Running again repeats the analysis and spends the estimate.</p>` : ''}
     <div class="modal-pie">
@@ -120,7 +128,8 @@ async function confirmarUltra(prId, repetir) {
   const pr = FOTO.prs.find((x) => x.id === prId);
   if (!pr) return;
   try {
-    await api('/api/ultra', { repo: pr.repo, numero: pr.numero, repetir, modo: modoActual() });
+    const r = await api('/api/ultra', { repo: pr.repo, numero: pr.numero, repetir, modo: modoActual(), confirmar: true });
+    if (r.desdeCache) estado.ultra?.delete(pr.id);
   } catch (err) {
     const caja = $('modalIaError');
     if (caja) { caja.textContent = err.message; caja.hidden = false; }
@@ -151,7 +160,7 @@ function resultadoUltra(pr, r) {
     : `<ul class="lista-modal"><li>Fixed rules: ${plural(c.reglas?.hallazgos?.length ?? 0, 'finding', 'findings')}${c.reglas?.bloqueantes ? ` (${c.reglas.bloqueantes} blocking)` : ''}</li>${medida('Types', c.tipos)}${medida('Tests', c.tests)}</ul>
       ${c.sinBaseline ? '<p class="tenue">Not compared with the base branch.</p>' : ''}`;
   return `${r.desactualizada ? `<div class="seccion"><span class="estado ambar">${icono('alerta')} The PR received commits after this review</span></div>` : ''}
-    <p class="origen">${icono('chispa')} <span><strong>Ultra review.</strong> Commit <span class="mono">${esc((r.headSha ?? '').slice(0, 7))}</span> · ${esc(new Date(r.fecha).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }))}. Findings verified against the code; they do not replace reviewing the diff.</span></p>
+    <p class="origen">${icono('chispa')} <span><strong>Ultra review.</strong> Commit <span class="mono">${esc((r.headSha ?? '').slice(0, 7))}</span>${r.fecha ? ` · ${esc(new Date(r.fecha).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }))}` : ''}. Findings verified against the code; they do not replace reviewing the diff.</span></p>
     ${lentes.length ? `<div class="seccion"><span class="estado ambar">${icono('alerta')} ${lentes.map((l) => `${esc(LENTES_ULTRA[l.nombre] ?? l.nombre)} lens ${l.omitida ? 'skipped' : 'failed'}${l.motivo ? `: ${esc(l.motivo)}` : ''}`).join(' · ')}</span></div>` : ''}
     ${r.otrosRepos === 'no_disponibles' ? '<p class="tenue">Other repositories were not available.</p>' : ''}
     ${sev || '<p class="tenue">No verified findings.</p>'}

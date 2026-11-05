@@ -14,6 +14,20 @@ const PLUGIN = join(dirname(fileURLToPath(import.meta.url)), '../../.claude-plug
 // a plugin update, the page can be newer than the server. The page compares both versions.
 export const versionEnDisco = () => { try { return JSON.parse(readFileSync(PLUGIN, 'utf8')).version; } catch { return null; } };
 
+// File names of a PR's cached diff, kept in memory per commit: the full diff is parsed once, not on every call.
+const NOMBRES_MAX = 500;
+const nombresCache = new Map();
+export function nombresDeArchivos(p, pr) {
+  const clave = `${p.salida}|${pr.repo}#${pr.numero}@${pr.headSha}`;
+  if (nombresCache.has(clave)) return nombresCache.get(clave);
+  const d = leerJson(rutaDiff(p.salida, pr.repo, pr.numero));
+  if (d?.headSha !== pr.headSha || !Array.isArray(d.archivos)) return [];
+  const nombres = d.archivos.map((a) => a.filename).filter(Boolean);
+  nombresCache.set(clave, nombres);
+  if (nombresCache.size > NOMBRES_MAX) nombresCache.delete(nombresCache.keys().next().value);
+  return nombres;
+}
+
 // The snapshot with the explanations current at serving time (they may have been written after the snapshot).
 export function fotoConExplicaciones(p) {
   const foto = leerJson(rutaInstantanea(p.salida));
@@ -21,9 +35,7 @@ export function fotoConExplicaciones(p) {
   for (const pr of foto.prs) {
     const e = leerJson(rutaExplicacion(p.salida, pr.repo, pr.numero));
     pr.explicacion = e ? { ...e, desactualizada: e.headSha !== pr.headSha } : undefined;
-    // The cached diff is only read when the project has sensitive path patterns.
-    const archivos = p.ia?.patronesSensibles?.length ? leerJson(rutaDiff(p.salida, pr.repo, pr.numero))?.archivos : [];
-    pr.ultraSugerida = sugerirUltra(p, pr, archivos ?? []).sugerida;
+    pr.ultraSugerida = sugerirUltra(p, pr, p.ia?.patronesSensibles?.length ? nombresDeArchivos(p, pr) : []).sugerida;
   }
   return foto;
 }

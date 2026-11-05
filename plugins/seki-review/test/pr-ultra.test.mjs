@@ -32,6 +32,7 @@ test('pr_ultra is read-only, declares its inputs and needs a PR from the snapsho
   assert.deepEqual(herramienta.inputSchema.required, ['repo', 'numero']);
   const e = entorno();
   await assert.rejects(() => herramienta.handler({ proyecto: e.clave, repo: 'r', numero: 9 }), /snapshot/);
+  await assert.rejects(() => herramienta.handler({ proyecto: e.clave, repo: 'r', numero: '1' }), /positive integer/);
 });
 
 test('pr_ultra returns the estimate from the caps, the mode, the link and no result', async () => {

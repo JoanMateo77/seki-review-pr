@@ -65,7 +65,10 @@ async function sondear() {
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && API) sondear(); });
 
 async function accionApi(ruta, cuerpo) {
-  try { await api(ruta, cuerpo); } catch (err) { avisar(err.message); }
+  try {
+    const r = await api(ruta, cuerpo);
+    if (r?.reutilizados) avisar('The explanation already covers the current commit.');
+  } catch (err) { avisar(err.message); }
   sondear();
 }
 
