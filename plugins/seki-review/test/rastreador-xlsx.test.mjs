@@ -9,6 +9,9 @@ import { leerZip, reemplazarEntradas } from '../mcp/lib/zip.mjs';
 import { leerXlsx } from '../mcp/lib/xlsx.mjs';
 import { trackerFixture } from './util/xlsx-fixture.mjs';
 
+// The tracker writes local calendar dates: pin the zone the fixtures were written for.
+process.env.TZ = 'America/Bogota';
+
 const temporales = [];
 after(() => { for (const d of temporales.splice(0)) rmSync(d, { recursive: true, force: true }); });
 const tmp = () => {
