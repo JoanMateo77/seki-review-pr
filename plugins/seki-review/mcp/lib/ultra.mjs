@@ -1,15 +1,18 @@
 // Ultra review of one PR: three read-only lenses (correctness, security, guidelines), structural drop of findings that
 // cite code that does not exist, one verification call and the project checks. Always an explicit, confirmed job.
-import { readFileSync, realpathSync, statSync } from 'node:fs';
-import { isAbsolute, join, resolve, sep } from 'node:path';
+import { mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, isAbsolute, resolve, sep } from 'node:path';
 import { escribirJson, leerJson, rutaUltra } from './cache.mjs';
 import { comprobar } from './calidad.mjs';
 import { expandir } from './config.mjs';
-import { crearCopia } from './copias.mjs';
+import { crearCopia, ramasEquivalentes } from './copias.mjs';
 import { asegurarDiff } from './diffs.mjs';
-import { argsClaude, ejecutarClaude, reglasSecretos, registrarCosto, sistemaDe } from './ia.mjs';
+import { prioridad } from './explicar.mjs';
+import { argsClaude, ejecutarClaude, MOTIVO_FORMATO, reglasSecretos, registrarCosto, sistemaDe } from './ia.mjs';
 import { perfil } from './perfiles.mjs';
 import { otrasRamas } from './preguntas.mjs';
+import { enParalelo, git } from './proceso.mjs';
 import { lineamientos } from './propuestas.mjs';
 import { paralelo as paraleloCola } from './trabajos.mjs';
 
@@ -17,16 +20,19 @@ const MAX_HALLAZGOS = 30;
 const MAX_TITULO = 200;
 const MAX_DETALLE = 2000;
 const MAX_PARCHE = 60000;
+const MAX_ARCHIVOS_LISTA = 300;
+const MAX_BYTES_ARCHIVO = 2 * 1024 * 1024;
 const SEVERIDADES = new Set(['alta', 'media', 'baja']);
 const VEREDICTOS = new Set(['CONFIRMED', 'PLAUSIBLE', 'REJECTED']);
 const LENTES = ['correccion', 'seguridad', 'lineamientos'];
 const MOTIVO_GENERICO = 'The job failed';
 const MOTIVO_SIN_GUIAS = 'The project guidelines are not available';
+const MOTIVO_NO_EXISTE = 'The cited file does not exist';
 
 const SCHEMA_LENTE = {
   type: 'object',
   properties: { hallazgos: { type: 'array', items: { type: 'object', properties: {
-    archivo: { type: 'string' }, linea: { type: 'integer' }, severidad: { type: 'string', enum: ['alta', 'media', 'baja'] },
+    repo: { type: 'string' }, archivo: { type: 'string' }, linea: { type: 'integer' }, severidad: { type: 'string', enum: ['alta', 'media', 'baja'] },
     titulo: { type: 'string' }, detalle: { type: 'string' },
   }, required: ['archivo', 'linea', 'severidad', 'titulo', 'detalle'] } } },
   required: ['hallazgos'],
@@ -46,141 +52,206 @@ export function leerUltra(p, repo, numero, headSha) {
   return headSha && guardado.headSha !== headSha ? { ...guardado, desactualizada: true } : guardado;
 }
 
-// The cached diff holds GitHub patches without headers; the project checks parse a git diff.
+// The cached diff holds GitHub patches without headers or final newline; the checks parse and `git apply` a git diff.
 export function parcheUnido(archivos) {
   return archivos.filter((a) => a.patch !== undefined).map((a) => {
     const origen = a.status === 'added' ? '/dev/null' : `a/${a.previous_filename ?? a.filename}`;
     const destino = a.status === 'removed' ? '/dev/null' : `b/${a.filename}`;
-    return `diff --git a/${a.previous_filename ?? a.filename} b/${a.filename}\n--- ${origen}\n+++ ${destino}\n${a.patch}`;
-  }).join('\n');
+    return `diff --git a/${a.previous_filename ?? a.filename} b/${a.filename}\n--- ${origen}\n+++ ${destino}\n${a.patch}${a.patch.endsWith('\n') ? '' : '\n'}`;
+  }).join('');
+}
+
+// File list capped, and diff cut at file boundaries in review priority order (generated files stay out).
+export function contextoDeDiff(archivos) {
+  const lista = archivos.slice(0, MAX_ARCHIVOS_LISTA).map((a) => `- ${a.filename} (${a.status}, +${a.additions ?? 0} -${a.deletions ?? 0})`);
+  if (archivos.length > MAX_ARCHIVOS_LISTA) lista.push(`- and ${archivos.length - MAX_ARCHIVOS_LISTA} more`);
+  const orden = archivos.map((a, i) => ({ a, i, n: prioridad(a.filename) })).filter((x) => x.n < 9 && x.a.patch !== undefined).sort((x, y) => x.n - y.n || x.i - y.i);
+  let usado = 0;
+  const incluidos = [];
+  const fuera = [];
+  for (const { a } of orden) {
+    const trozo = parcheUnido([a]);
+    if (usado + trozo.length > MAX_PARCHE) { fuera.push(a.filename); continue; }
+    usado += trozo.length;
+    incluidos.push(trozo);
+  }
+  const nota = fuera.length ? `\n\nNot included in this message (read them in the copy): ${fuera.slice(0, MAX_ARCHIVOS_LISTA).join(', ')}${fuera.length > MAX_ARCHIVOS_LISTA ? ` and ${fuera.length - MAX_ARCHIVOS_LISTA} more` : ''}` : '';
+  return { archivos: lista.join('\n') || '(no data)', diff: incluidos.join('\n') + nota };
 }
 
 const texto = (v, max) => String(v ?? '').trim().slice(0, max);
+const redondear = (n) => Math.round(n * 1e6) / 1e6;
 
 function normalizar(lente, salida) {
   const lista = Array.isArray(salida?.hallazgos) ? salida.hallazgos.slice(0, MAX_HALLAZGOS) : [];
   return lista.map((h, i) => ({
     id: `${lente}-${i + 1}`, lente,
+    ...(h?.repo ? { repo: texto(h.repo, 100) } : {}),
     archivo: texto(h?.archivo, 300), linea: Number.isInteger(h?.linea) ? h.linea : 0,
     severidad: SEVERIDADES.has(h?.severidad) ? h.severidad : 'media',
     titulo: texto(h?.titulo, MAX_TITULO), detalle: texto(h?.detalle, MAX_DETALLE),
   }));
 }
 
-// A finding survives only if its file exists inside the copy and its line is within the file.
-function existeCita(dir, h) {
-  if (!h.archivo || isAbsolute(h.archivo)) return 'The cited file does not exist in the copy';
-  const raiz = realpathSync(dir);
-  const ruta = resolve(raiz, h.archivo);
-  let real;
-  try { real = realpathSync(ruta); } catch { return 'The cited file does not exist in the copy'; }
-  if (real !== raiz && !real.startsWith(raiz + sep)) return 'The cited file does not exist in the copy';
-  if (!statSync(real).isFile()) return 'The cited file does not exist in the copy';
-  if (!Number.isInteger(h.linea) || h.linea < 1) return 'The cited line is not valid';
-  const lineas = readFileSync(real, 'utf8').split('\n');
-  const total = lineas.at(-1) === '' ? lineas.length - 1 : lineas.length;
-  return h.linea > total ? 'The cited line is beyond the end of the file' : null;
+// A finding survives only if its file exists inside a directory the AI was given and its line is within the file.
+function existeCita(raices, cuentas, h) {
+  try {
+    const base = raices.get(h.repo ?? '');
+    if (!base) return 'The cited repository is not available';
+    if (!h.archivo || isAbsolute(h.archivo)) return MOTIVO_NO_EXISTE;
+    const raiz = realpathSync(base);
+    const real = realpathSync(resolve(raiz, h.archivo));
+    if (real !== raiz && !real.startsWith(raiz + sep)) return MOTIVO_NO_EXISTE;
+    const st = statSync(real);
+    if (!st.isFile()) return MOTIVO_NO_EXISTE;
+    if (st.size > MAX_BYTES_ARCHIVO) return 'The cited file is too large to verify';
+    if (!Number.isInteger(h.linea) || h.linea < 1) return 'The cited line is not valid';
+    if (!cuentas.has(real)) {
+      const lineas = readFileSync(real, 'utf8').split('\n');
+      cuentas.set(real, lineas.at(-1) === '' ? lineas.length - 1 : lineas.length);
+    }
+    return h.linea > cuentas.get(real) ? 'The cited line is beyond the end of the file' : null;
+  } catch {
+    return MOTIVO_NO_EXISTE;
+  }
 }
 
-// n tasks with at most `limite` running at once.
-async function enParalelo(tareas, limite) {
-  const salida = new Array(tareas.length);
-  let siguiente = 0;
-  const trabajador = async () => { while (siguiente < tareas.length) { const i = siguiente++; salida[i] = await tareas[i](); } };
-  await Promise.all(Array.from({ length: Math.min(Math.max(1, limite), tareas.length) }, trabajador));
-  return salida;
+// Checks run on a dedicated copy at the merge-base with the PR patch applied, so the baseline works as in change
+// proposals. Without a merge-base (or if the patch does not apply) they run on the PR commit and are not compared.
+async function copiaDeComprobacion(p, pr, patch, dirLectura) {
+  if (!p.repos[pr.repo]?.comprobar) return { dir: dirLectura, baseSha: pr.headSha };
+  const checkout = expandir(p.repos[pr.repo].checkout);
+  let base = null;
+  try { base = (await git(checkout, ['merge-base', pr.headSha, `origin/${pr.base}`])).trim() || null; } catch { /* no merge-base */ }
+  if (base && patch.trim()) {
+    const tmp = mkdtempSync(join(tmpdir(), 'seki-ultra-'));
+    try {
+      const dir = await crearCopia(p, pr.repo, pr.numero, base, { sufijo: '-ultra' });
+      const archivo = join(tmp, 'cambio.diff');
+      writeFileSync(archivo, patch);
+      await git(dir, ['apply', '--whitespace=nowarn', archivo]);
+      return { dir, baseSha: base };
+    } catch { /* falls back to the PR commit */ } finally { rmSync(tmp, { recursive: true, force: true }); }
+  }
+  return { dir: await crearCopia(p, pr.repo, pr.numero, pr.headSha, { sufijo: '-ultra' }), baseSha: null };
 }
-
-const listaDeArchivos = (archivos) => archivos.map((a) => `- ${a.filename} (${a.status}, +${a.additions ?? 0} -${a.deletions ?? 0})`).join('\n') || '(no data)';
 
 export async function revisarUltra(p, pr, {
   repetir = false, paralelo = paraleloCola(), ejecutar = ejecutarClaude, comprobarFn = comprobar,
-  copiar = crearCopia, otras = otrasRamas, diff = asegurarDiff, guias = lineamientos,
+  copiar = crearCopia, otras = otrasRamas, diff = asegurarDiff, guias = lineamientos, copiarComprobacion = copiaDeComprobacion,
 } = {}) {
-  const guardado = leerJson(rutaUltra(p.salida, pr.repo, pr.numero));
+  if (!pr?.headSha) throw new Error('The PR has no head commit');
+  const guardado = leerUltra(p, pr.repo, pr.numero);
   if (!repetir && guardado?.headSha === pr.headSha) return { ok: true, motivo: null, costo: 0, modelo: null, resultado: guardado, desdeCache: true };
+  const limite = Number.isInteger(paralelo) && paralelo >= 1 ? paralelo : 1;
 
+  // Everything that can fail without spending comes first.
+  const sistemas = Object.fromEntries([...LENTES, 'verificar'].map((n) => [n, sistemaDe(p, 'base', `ultra-${n}`)]));
   const dir = await copiar(p, pr.repo, pr.numero, pr.headSha, { sufijo: '-lectura' });
-  const { ambiente, lista } = await otras(p, pr).catch(() => ({ ambiente: 'pruebas', lista: [] }));
+  let ambiente;
+  try { ambiente = ramasEquivalentes(p, pr).ambiente; } catch { ambiente = 'pruebas'; }
+  let lista = [];
+  let otrosRepos = 'disponibles';
+  try { ({ ambiente, lista } = await otras(p, pr)); } catch { otrosRepos = 'no_disponibles'; }
   const otros = lista.filter((o) => !o.falla);
   const archivos = await diff(p, pr.repo, pr.numero, pr.headSha);
   const patch = parcheUnido(archivos);
   const reglasGuia = guias(p);
   const dirGuias = reglasGuia && p.lineamientos ? expandir(p.lineamientos) : null;
 
-  const repos = [`- ${pr.repo}: the current directory, at commit ${pr.headSha.slice(0, 7)} of PR #${pr.numero}.`,
+  const repos = otrosRepos === 'no_disponibles' ? 'Other repositories: unavailable.' : [
     ...otros.map((o) => `- ${o.repo} (${o.portal}): ${o.dir}, ${ambiente === 'prod' ? 'production' : 'testing'} branch ${o.rama} at ${o.sha.slice(0, 7)}.`),
     ...lista.filter((o) => o.falla).map((o) => `- ${o.repo} (${o.portal}), branch ${o.rama}: unavailable.`)].join('\n');
+  const { archivos: listaArchivos, diff: textoDiff } = contextoDeDiff(archivos);
   const contexto = [`PR #${pr.numero} of ${pr.repo}: ${pr.titulo ?? ''}`.trim(),
-    `Available repositories (read-only):\n${repos}`,
-    `Changed files:\n${listaDeArchivos(archivos)}`,
-    `Diff${patch.length > MAX_PARCHE ? ' (truncated; read the rest in the copy)' : ''}:\n${patch.slice(0, MAX_PARCHE)}`].join('\n\n');
+    `Available repositories (read-only):\n- ${pr.repo}: the current directory, at commit ${pr.headSha.slice(0, 7)} of PR #${pr.numero}.\n${repos}`.trim(),
+    `Changed files:\n${listaArchivos}`, `Diff:\n${textoDiff}`].join('\n\n');
+
+  const raices = new Map([['', dir], [pr.repo, dir], ...otros.map((o) => [o.repo, o.dir])]);
+  const dirsOtros = otros.map((o) => o.dir);
+  const prohibidas = reglasSecretos([dir, ...dirsOtros, ...(dirGuias ? [dirGuias] : [])], p.secretos);
 
   const pasos = [];
-  const registrar = (paso, r) => pasos.push({ paso, modelo: r.modelo ?? null, costo: r.costo ?? 0, ok: !!r.ok });
-  const directorios = [...otros.map((o) => o.dir), ...(dirGuias ? [dirGuias] : [])];
-  const prohibidas = reglasSecretos([dir, ...directorios], p.secretos);
-
-  const llamar = async (tipo, prompt, sistema, schema, dirs) => {
+  const llamar = async (paso, tipo, prompt, schema, dirs) => {
     const f = perfil({ tipo, modo: 'ultra', pr });
+    let r;
     try {
-      const r = await ejecutar(argsClaude({ modelo: f.modelo, sistema, prompt, schema, tools: ['Read', 'Grep', 'Glob'], tope: f.topeUsd, turnos: f.turnos, dirs, prohibidas }), { cwd: dir });
-      return { ...r, modelo: r.modelo ?? f.modelo };
+      r = await ejecutar(argsClaude({ modelo: f.modelo, sistema: sistemas[paso], prompt, schema, tools: ['Read', 'Grep', 'Glob'], tope: f.topeUsd, turnos: f.turnos, dirs, prohibidas }), { cwd: dir });
     } catch {
-      return { ok: false, costo: 0, modelo: f.modelo, salida: null, motivoSeguro: MOTIVO_GENERICO };
+      r = { ok: false, costo: 0, salida: null, motivoSeguro: MOTIVO_GENERICO };
     }
+    const modelo = r.modelo ?? f.modelo;
+    pasos.push({ paso, modelo, costo: redondear(r.costo ?? 0), ok: !!r.ok });
+    return { ...r, modelo };
   };
+  const falla = (r, valido) => (r.ok && valido ? null : r.ok ? MOTIVO_FORMATO : r.motivoSeguro ?? MOTIVO_GENERICO);
+  const aviso = (paso, motivo) => console.error(`[seki-review/ultra] The ${paso} step failed: ${motivo}`);
 
-  const lentes = await enParalelo(LENTES.map((nombre) => async () => {
-    if (nombre === 'lineamientos' && !reglasGuia) return { nombre, ok: false, omitida: true, motivo: MOTIVO_SIN_GUIAS, costo: 0, hallazgos: [] };
-    const extra = nombre === 'lineamientos' ? `\n\nProject guidelines:\n${reglasGuia}` : '';
-    const r = await llamar('ultra_lente', `Lens: ${nombre}. Review this PR.\n\n${contexto}${extra}`, sistemaDe(p, 'base', `ultra-${nombre}`), SCHEMA_LENTE, directorios);
-    registrar(nombre, r);
-    const ok = !!r.ok && Array.isArray(r.salida?.hallazgos);
-    return { nombre, ok, ...(ok ? {} : { motivo: r.motivoSeguro ?? MOTIVO_GENERICO }), costo: r.costo ?? 0, hallazgos: ok ? normalizar(nombre, r.salida) : [], modelo: r.modelo };
-  }), paralelo);
-
-  const descartadas = [];
-  const candidatas = [];
-  for (const h of lentes.flatMap((l) => l.hallazgos)) {
-    const motivo = existeCita(dir, h);
-    if (motivo) descartadas.push({ ...h, motivo }); else candidatas.push(h);
-  }
-
-  let motivoFallo = null;
-  let veredictos = new Map();
-  let verif = null;
-  const algunaLente = lentes.some((l) => l.ok);
-  if (!algunaLente) motivoFallo = lentes.find((l) => !l.omitida)?.motivo ?? MOTIVO_GENERICO;
-  else if (candidatas.length) {
-    const fichas = candidatas.map(({ id, lente, archivo, linea, severidad, titulo, detalle }) => ({ id, lente, archivo, linea, severidad, titulo, detalle }));
-    verif = await llamar('ultra_verificar', `Verify these findings.\n\nAvailable repositories (read-only):\n${repos}\n\nFindings:\n${JSON.stringify(fichas, null, 1)}`, sistemaDe(p, 'base', 'ultra-verificar'), SCHEMA_VERIFICAR, directorios);
-    registrar('verificar', verif);
-    if (verif.ok && Array.isArray(verif.salida?.veredictos)) {
-      veredictos = new Map(verif.salida.veredictos.filter((v) => VEREDICTOS.has(v?.veredicto)).map((v) => [v.id, { veredicto: v.veredicto, razon: texto(v.razon, 300) }]));
-    } else motivoFallo = verif.motivoSeguro ?? MOTIVO_GENERICO;
-  }
-
-  const costo = pasos.reduce((s, x) => s + x.costo, 0);
-  const modelo = pasos.find((x) => x.modelo)?.modelo ?? null;
-  const ok = !motivoFallo;
+  let ok = false;
+  let motivoFallo = MOTIVO_GENERICO;
   let resultado = null;
-  if (ok) {
-    const hallazgos = [];
-    for (const h of candidatas) {
-      const v = veredictos.get(h.id);
-      if (v && v.veredicto !== 'REJECTED') hallazgos.push({ ...h, ...v });
-      else descartadas.push({ ...h, motivo: v ? `Rejected by the verification: ${v.razon}` : 'The verification gave no verdict' });
+  try {
+    const lentes = await enParalelo(LENTES, limite, async (nombre) => {
+      if (nombre === 'lineamientos' && !reglasGuia) return { nombre, ok: false, omitida: true, motivo: MOTIVO_SIN_GUIAS, costo: 0, hallazgos: [] };
+      const extra = nombre === 'lineamientos' ? `\n\nProject guidelines:\n${reglasGuia}` : '';
+      const r = await llamar(nombre, 'ultra_lente', `Lens: ${nombre}. Review this PR.\n\n${contexto}${extra}`, SCHEMA_LENTE, nombre === 'lineamientos' && dirGuias ? [...dirsOtros, dirGuias] : dirsOtros);
+      const motivo = falla(r, Array.isArray(r.salida?.hallazgos));
+      if (motivo) aviso(nombre, motivo);
+      return { nombre, ok: !motivo, ...(motivo ? { motivo } : {}), costo: redondear(r.costo ?? 0), hallazgos: motivo ? [] : normalizar(nombre, r.salida) };
+    });
+
+    const descartadas = [];
+    const candidatas = [];
+    const cuentas = new Map();
+    for (const h of lentes.flatMap((l) => l.hallazgos)) {
+      const motivo = existeCita(raices, cuentas, h);
+      if (motivo) descartadas.push({ ...h, motivo }); else candidatas.push(h);
     }
-    let comprobacion = null;
-    try { comprobacion = await comprobarFn(p, pr.repo, dir, patch, pr.headSha); } catch { comprobacion = { error: 'The project checks could not run' }; }
-    resultado = {
-      headSha: pr.headSha, fecha: new Date().toISOString(),
-      lentes: lentes.map(({ nombre, ok: lok, omitida, motivo, costo: c, hallazgos: hs }) => ({ nombre, ok: lok, ...(omitida ? { omitida } : {}), ...(motivo ? { motivo } : {}), costo: c, hallazgos: hs.length })),
-      hallazgos, descartadas, comprobacion,
-    };
-    escribirJson(rutaUltra(p.salida, pr.repo, pr.numero), resultado);
+
+    let veredictos = new Map();
+    motivoFallo = null;
+    if (!lentes.some((l) => l.ok)) motivoFallo = lentes.find((l) => !l.omitida)?.motivo ?? MOTIVO_GENERICO;
+    else if (candidatas.length) {
+      const fichas = candidatas.map(({ id, lente, repo, archivo, linea, severidad, titulo, detalle }) => ({ id, lente, ...(repo ? { repo } : {}), archivo, linea, severidad, titulo, detalle }));
+      const v = await llamar('verificar', 'ultra_verificar', `Verify these findings.\n\nAvailable repositories (read-only):\n- ${pr.repo}: the current directory.\n${repos}\n\nFindings:\n${JSON.stringify(fichas, null, 1)}`, SCHEMA_VERIFICAR, dirsOtros);
+      motivoFallo = falla(v, Array.isArray(v.salida?.veredictos));
+      if (motivoFallo) aviso('verification', motivoFallo);
+      else {
+        for (const x of v.salida.veredictos) {
+          if (x && VEREDICTOS.has(x.veredicto) && typeof x.id === 'string' && !veredictos.has(x.id)) veredictos.set(x.id, { veredicto: x.veredicto, razon: texto(x.razon, 300) });
+        }
+      }
+    }
+
+    ok = !motivoFallo;
+    if (ok) {
+      const hallazgos = [];
+      for (const h of candidatas) {
+        const v = veredictos.get(h.id);
+        if (v && v.veredicto !== 'REJECTED') hallazgos.push({ ...h, ...v });
+        else descartadas.push({ ...h, motivo: v ? `Rejected by the verification: ${v.razon}` : 'The verification gave no verdict' });
+      }
+      let comprobacion;
+      try {
+        const c = await copiarComprobacion(p, pr, patch, dir);
+        comprobacion = await comprobarFn(p, pr.repo, c.dir, patch, c.baseSha ?? pr.headSha, c.baseSha ? {} : { sinBaseline: true });
+        if (!c.baseSha) comprobacion = { ...comprobacion, sinBaseline: true };
+      } catch { comprobacion = { error: 'The project checks could not run' }; }
+      resultado = {
+        headSha: pr.headSha, fecha: new Date().toISOString(),
+        ...(otrosRepos === 'no_disponibles' ? { otrosRepos } : {}),
+        lentes: lentes.map(({ nombre, ok: lok, omitida, motivo, costo, hallazgos: hs }) => ({ nombre, ok: lok, ...(omitida ? { omitida } : {}), ...(motivo ? { motivo } : {}), costo, hallazgos: hs.length })),
+        hallazgos, descartadas, comprobacion,
+      };
+      escribirJson(rutaUltra(p.salida, pr.repo, pr.numero), resultado);
+    }
+  } finally {
+    const detalle = [...LENTES, 'verificar'].flatMap((n) => pasos.filter((x) => x.paso === n));
+    registrarCosto(p, {
+      tipo: 'revisar_ultra', modo: 'ultra', prId: pr.id, modelo: detalle.find((x) => x.modelo)?.modelo ?? null,
+      costo: redondear(detalle.reduce((s, x) => s + x.costo, 0)), ok, ...(ok ? {} : { motivo: motivoFallo ?? MOTIVO_GENERICO }), detalle,
+    });
   }
-  registrarCosto(p, { tipo: 'revisar_ultra', modo: 'ultra', prId: pr.id, modelo, costo, ok, ...(ok ? {} : { motivo: motivoFallo }), detalle: pasos });
-  return { ok, motivo: motivoFallo, costo, modelo, resultado };
+  const costo = redondear(pasos.reduce((s, x) => s + x.costo, 0));
+  return { ok, motivo: ok ? null : motivoFallo, costo, modelo: pasos.find((x) => x.modelo)?.modelo ?? null, resultado };
 }

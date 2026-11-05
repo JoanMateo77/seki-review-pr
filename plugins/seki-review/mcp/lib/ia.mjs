@@ -62,7 +62,7 @@ const SALIDA_CODIGO = /^claude exited with code -?\d+$/;
 
 // Only classified reasons are persisted: model output and stderr can carry code or secrets.
 export const motivoSeguro = (m) => (typeof m === 'string' && (SEGUROS.has(m) || SALIDA_CODIGO.test(m)) ? m : MOTIVO_GENERICO);
-export { MOTIVO_SIN_CONFIRMAR };
+export { MOTIVO_FORMATO, MOTIVO_SIN_CONFIRMAR };
 
 function uso(r) {
   const u = { entrada: 0, cacheCreada: 0, cacheLeida: 0, salida: 0 };

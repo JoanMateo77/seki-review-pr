@@ -96,7 +96,7 @@ function resultado(r, base) {
   };
 }
 
-export async function comprobar(p, repo, dir, patch, headSha, { limiteMs = LIMITE_MS } = {}) {
+export async function comprobar(p, repo, dir, patch, headSha, { limiteMs = LIMITE_MS, sinBaseline = false } = {}) {
   const archivos = archivosDeDiff(patch);
   const { hallazgos, resumen } = verificar({ repo, archivos, omitidas: p.repos[repo]?.reglas_omitidas, extra: reglasDeConfig(p.reglas) });
   const reglas = { hallazgos, resumen, bloqueantes: resumen.bloqueante ?? 0 };
@@ -106,7 +106,8 @@ export async function comprobar(p, repo, dir, patch, headSha, { limiteMs = LIMIT
   const tipos = await medir(cfg, 'tipos', dir, tocados, limiteMs);
   const tests = tocados.length ? await medir(cfg, 'tests', dir, tocados, limiteMs) : null;
   const hayFallos = tipos?.fallos.length || tests?.fallos.length || tipos?.codigo || tests?.codigo;
-  const base = !hayFallos ? { tipos: [], tests: [] }
+  const base = sinBaseline ? { tipos: null, tests: null }
+    : !hayFallos ? { tipos: [], tests: [] }
     : !patch.trim() ? { tipos: tipos?.fallos, tests: tests?.fallos }
     : await baseline(p, repo, dir, headSha, patch, tocados, limiteMs);
   return { reglas, tipos: resultado(tipos, base.tipos), tests: resultado(tests, base.tests) };
