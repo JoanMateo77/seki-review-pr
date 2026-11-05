@@ -4,6 +4,16 @@ Each version has its `seki-review-vX.Y.Z` tag on the commit that releases it.
 
 ## seki-review
 
+### 0.23.0 (2026-11-05)
+- AI modes: every AI job runs under `ahorro`, `normal` or `ultra`, drawn from one profiles table (model, cost cap, turns, second pass). Precedence: `SEKI_IA_MODELO_<TIPO>` and `SEKI_IA_TOPE_<TIPO>`, then `SEKI_IA_MODELO`, then the mode of the request, then `ia.modo` of the project, then `normal`. `TOPES` and `TURNOS` stay equal to the normal row.
+- Saving mode uses Haiku for answers and the filter and Sonnet for the rest (never Opus), skips the second explanation pass and does not re-analyze a PR whose explanation already covers the current commit unless completing it. The dashboard selector overrides the project mode for the session.
+- Daily budget: `ia.presupuestoDiarioUsd` limits the day's spend on the machine (every project, local time zone, failed jobs included). A job that does not fit stays queued as "Blocked by the daily budget" and starts by itself when spend allows it, or once on "Run anyway" (`POST /api/trabajos/forzar`); the AI filter answers 429 with the same message and a retry flag. Reservations keep two simultaneous jobs from overshooting.
+- Ultra review: confirmed, cost-estimated job on one PR with three read-only lenses, structural removal of findings that cite code that does not exist, one verification call and the project checks. Results are stored per commit (`salida/ultra/`) and marked outdated after newer commits. New endpoints `GET/POST /api/ultra`; `/api/estado` adds `presupuesto` and `modo`.
+- Estimates from the median of the last 30 days of the same job and mode (the cost caps when there are fewer than three records); `ia.rutasSensibles` and security PRs suggest Ultra.
+- Dashboard: mode selector, "$X of $Y today" spend line, "Ultra review" button, confirmation dialog, "Ultra review" tab, "Ultra" signal on suggested PRs, blocked jobs with "Run anyway", by-mode summary in the cost tooltip, and the link `#/pr/<repo>/<n>?ultra=1`.
+- New read-only MCP tool `pr_ultra` and skill argument `ultra <repo>#<n>`; the failed AI jobs log a safe reason.
+- `ia` block in `config/proyectos.ejemplo.json`.
+
 ### 0.22.0 (2026-11-04)
 - QA guide: new tool `qa_guia` and "QA guide" action on the Deliveries tab generate an xlsx, html and pdf under `salida/qa/` for the deliveries waiting for QA, with signed rows, steps taken from the PR explanations or descriptions, and `desde: "ultimo-corte"` for incremental cuts. The tool never runs the AI; the dashboard can queue missing explanations.
 - QA import: new tool `qa_importar` and dashboard import read the filled guide, record results per track and move deliveries to "Ready for production" or "QA failed". Paths outside the output QA folder and Downloads need `confirmar: true`.

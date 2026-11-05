@@ -25,6 +25,9 @@ System sans. Product scale: 12 px (metadata, counts, mono), 13 px (text and cont
 - Status: pill with a tinted background and text in the same tone.
 - Check: icon, name and value with a line of evidence below ("how it was checked").
 - Icons: custom SVG symbols, 1.6 stroke, 14 px. No emojis or Unicode glyphs.
+- AI mode: selector in the top bar (Saving, Normal, Ultra), kept for the browser session. Spend line reads "AI spend today: X of Y" when a budget is set; the cost tooltip adds a by-mode summary.
+- Ultra review: button in the PR actions (hidden in Saving), confirmation dialog with the estimate and its base, "Ultra review" tab with findings by severity and verdict, and a violet "Ultra" signal on suggested PRs. A job blocked by the budget shows an amber notice with "Run anyway".
+- Dialog: centered panel over a dimmed layer, closed with Escape, Cancel or a click outside; focus stays inside while it is open.
 
 ## Deliberate rejections
 
