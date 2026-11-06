@@ -273,4 +273,5 @@ const [inicial, tabInicial] = decodeURIComponent(location.hash.slice(1)).split('
 if (CUERPOS[tabInicial]) estado.tab = tabInicial;
 pintarTodo();
 if (FOTO.prs.some((p) => p.id === inicial)) seleccionar(inicial);
+else if (mensajeRutaDesconocida(inicial)) avisar(mensajeRutaDesconocida(inicial));
 if (API) sondear();

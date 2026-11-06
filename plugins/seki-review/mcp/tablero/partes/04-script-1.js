@@ -163,6 +163,7 @@ function senales(pr) {
   else if (t?.estado === 'error') s.push(`<span class="senal rojo" title="The analysis failed">${icono('bloqueo')}</span>`);
   const cs = vivos(pr).length;
   if (cs) s.push(`<span class="senal" title="${plural(cs, 'comment', 'comments')} on the diff">${icono('comentario')}${cs}</span>`);
+  if (pr.paraRevisar && !pr.soloRevision) s.push(`<span class="senal" title="Also in the To review list">${esc(ORIGEN_PARA_REVISAR[pr.paraRevisar] ?? '')}</span>`);
   if (pr.seguridad) s.push(`<span class="senal" title="Security">${icono('escudo')}</span>`);
   if (pr.ultraSugerida && modoActual() !== 'ahorro') s.push(`<span class="senal violeta" title="Ultra review suggested">${icono('chispa')}Ultra</span>`);
   const esfuerzo = pr.explicacion?.esfuerzo ?? pr.esfuerzoTamano;
@@ -172,8 +173,10 @@ function senales(pr) {
 }
 
 function pintarCola() {
-  const prs = FOTO.prs.filter(pasaFiltros);
-  if (!prs.length) {
+  const todos = FOTO.prs.filter(pasaFiltros);
+  const prs = todos.filter((p) => !p.soloRevision);
+  const paraRevisar = todos.filter((p) => p.soloRevision);
+  if (!todos.length) {
     $('cola').innerHTML = `${avisoVersion()}${bannerFiltroIa()}<div class="vacio"><p>No PRs match the search and active filters.</p><button class="btn" data-accion="limpiar">Clear filters</button></div>`;
     return;
   }
@@ -186,7 +189,7 @@ function pintarCola() {
     porGrupo.get(g).push(pr);
   }
   const posicion = (g) => (orden.includes(g) ? orden.indexOf(g) : 99);
-  $('cola').innerHTML = avisoVersion() + bannerFiltroIa() + (estado.filtroIa ? '' : seccionCambios()) + [...porGrupo.keys()].sort((a, b) => posicion(a) - posicion(b)).map((g) => {
+  $('cola').innerHTML = avisoVersion() + bannerFiltroIa() + seccionParaRevisar(paraRevisar) + (estado.filtroIa ? '' : seccionCambios()) + [...porGrupo.keys()].sort((a, b) => posicion(a) - posicion(b)).map((g) => {
     const [nombre, desc] = defs[g] ?? GRUPOS[g] ?? [FOTO.acciones?.[g] ?? g, ''];
     const filas = porGrupo.get(g).sort((a, b) => a.repo.localeCompare(b.repo) || b.numero - a.numero);
     const cerrado = estado.cerrados.has(g);

@@ -32,6 +32,7 @@ import { importarQa } from './qa-importar.mjs';
 import { generarGuia } from './qa-salida.mjs';
 import { aplicarRastreador, cambiosPendientes } from './rastreador-xlsx.mjs';
 import { enSerieEntregas } from './recolectar.mjs';
+import { incorporarEnlace, quitarRevisar } from './revisar.mjs';
 
 // Reservations of running AI jobs are shared by every project served by this process.
 const RESERVAS_PROCESO = crearReservas();
@@ -48,6 +49,11 @@ const TIPOS_GUIA = {
 };
 const MAX_RESULTADOS_GUIA = 20;
 const falloHttp = (codigo, mensaje) => Object.assign(new Error(mensaje), { codigo });
+// Errors tagged by the review-intake library carry a safe message and the status to answer with.
+const PREFIJO_REVISAR = '[seki-review/revisar] ';
+const errorRevisar = (e) => {
+  throw typeof e?.codigo === 'string' && String(e.message).startsWith(PREFIJO_REVISAR) ? falloHttp(e.http ?? 400, e.message.slice(PREFIJO_REVISAR.length)) : e;
+};
 
 // The guide is a regular file inside salida/qa: a link, a subfolder or a name outside the pattern is never served.
 function leerArchivoGuia(p, nombre) {
@@ -225,6 +231,17 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
       return fijar(lanzar(repos));
     }
     return refresco;
+  };
+
+  // Each change to the review list refreshes its repo, one after another and after any refresh in progress, so a PR
+  // is never missed because a refresh of another repo (or one that started before the change) answered for it.
+  let cadenaRevisar = Promise.resolve();
+  const refrescarRepo = (repo) => {
+    cadenaRevisar = cadenaRevisar.then(async () => {
+      while (refresco) await refresco;
+      await refrescar([repo]);
+    }).catch(() => {});
+    return cadenaRevisar;
   };
 
   // Merge watcher. It shares the single-flight refresh: a probe is skipped while a manual refresh runs, and a
@@ -499,6 +516,20 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
       if (req.method === 'POST' && url.pathname === '/api/refrescar') {
         refrescar();
         return responder(res, 202, { refrescando: true });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/revisar') {
+        const { enlace } = await leerJsonEstricto(req);
+        const r = await incorporarEnlace(p, enlace).catch(errorRevisar);
+        if (r.estado === 'agregada' || !fotoConExplicaciones(p)?.prs.some((x) => x.id === r.id)) refrescarRepo(r.repo);
+        return responder(res, 202, { id: r.id, estado: r.estado });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/revisar/quitar') {
+        const { id } = await leerJsonEstricto(req);
+        const m = typeof id === 'string' && id.length <= 200 ? /^([\w.-]+)#\d+$/.exec(id) : null;
+        if (!m) throw falloHttp(400, 'The PR id must look like repo#number');
+        if (!quitarRevisar(p, id)) throw falloHttp(404, 'The PR is not in the To review list');
+        if (p.repos[m[1]]) refrescarRepo(m[1]);
+        return responder(res, 202, { id, quitada: true });
       }
       if (req.method === 'POST' && url.pathname === '/api/analizar') {
         const { prs = [], completar = false, modo: modoPedido } = await leerCuerpo(req);
