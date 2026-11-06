@@ -26,7 +26,7 @@ function filaParaRevisar(pr) {
       <span class="punto ${tono(pr)}"></span>
       <span class="id mono">${esc(pr.repoEtiqueta)} #${pr.numero}</span>
       <span class="titulo" title="${esc(pr.titulo)}">${esc(pr.titulo)}</span>
-      <span class="senales"><span class="etiqueta-revisar">${esc(origen)}</span><span class="autor-revisar" title="Author">@${esc(pr.autor)}</span>${senales(pr)}</span>
+      <span class="senales"><span class="etiqueta-revisar">${esc(origen)}</span>${pr.autor ? `<span class="autor-revisar" title="Author">@${esc(pr.autor)}</span>` : ''}${senales(pr)}</span>
     </button>
     ${API ? `<button type="button" class="btn-texto quitar-revisar" data-quitar-revisar="${esc(pr.id)}" title="Only removes it from this list; nothing changes on GitHub">Remove from To review</button>` : ''}
   </div>`;
@@ -48,7 +48,7 @@ function seccionParaRevisar(prs) {
   }).join('')}</div>`;
 }
 
-const rangoRevision = (c) => (c.desde ? `:L${Number(c.desde)}–${Number(c.hasta ?? c.desde)}` : '');
+const rangoRevision = (c) => (c.desde ? `:L${Number(c.desde)}${c.hasta && Number(c.hasta) !== Number(c.desde) ? `–${Number(c.hasta)}` : ''}` : '');
 
 // Plain Markdown to paste on GitHub: decision, the owner's comments on the diff, then the general notes. No escaping.
 function revisionMarkdown(pr, revisionPr, comentariosPr) {
@@ -65,7 +65,8 @@ function revisionMarkdown(pr, revisionPr, comentariosPr) {
 }
 
 function mensajeRutaDesconocida(id) {
-  return typeof id === 'string' && ID_PR.test(id) ? 'This PR is not in the dashboard. Paste its link in Review a PR.' : null;
+  if (typeof id !== 'string' || !ID_PR.test(id)) return null;
+  return `This PR is not in the dashboard.${API ? ' Paste its link in Review a PR.' : ''}`;
 }
 
 function errorRevisar(texto) {

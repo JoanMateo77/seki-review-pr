@@ -240,7 +240,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
     cadenaRevisar = cadenaRevisar.then(async () => {
       while (refresco) await refresco;
       await refrescar([repo]);
-    }).catch(() => {});
+    }).catch((e) => console.error(`[seki-review/revisar] The refresh after a list change failed: ${e?.code ?? 'error'}`));
     return cadenaRevisar;
   };
 
@@ -520,7 +520,9 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
       if (req.method === 'POST' && url.pathname === '/api/revisar') {
         const { enlace } = await leerJsonEstricto(req);
         const r = await incorporarEnlace(p, enlace).catch(errorRevisar);
-        if (r.estado === 'agregada' || !fotoConExplicaciones(p)?.prs.some((x) => x.id === r.id)) refrescarRepo(r.repo);
+        let enFoto = false;
+        try { enFoto = !!leerJson(rutaInstantanea(p.salida))?.prs?.some((x) => x.id === r.id); } catch { /* unreadable: refreshed below */ }
+        if (r.estado === 'agregada' || !enFoto) refrescarRepo(r.repo);
         return responder(res, 202, { id: r.id, estado: r.estado });
       }
       if (req.method === 'POST' && url.pathname === '/api/revisar/quitar') {

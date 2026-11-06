@@ -30,6 +30,7 @@ export const ACCIONES = {
 };
 
 const PAGINAS_GEMELAS = 3;
+const LIMITE_PEDIDAS = 100;
 const PAGINAS_MAXIMAS = 10;
 const POR_PAGINA = 100;
 const MAX_DESCRIPCION = 4096;
@@ -274,13 +275,15 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
   // the author filter; the ones that are also the owner's own keep their grouping and only get the mark.
   const marcas = new Map();
   const ajenas = [];
-  if (p.autor) {
+  {
     const propios = new Set(abiertas.map(({ repo, pr }) => `${repo}#${pr.number}`));
     const sinBusqueda = new Set();
     const pedidas = (await Promise.all(nombres.map(async (repo) => {
       try {
-        const args = ['pr', 'list', '-R', `${p.owner}/${repo}`, '--state', 'open', '--limit', '100', '--search', 'review-requested:@me', '--json', CAMPOS];
-        return (await ghJson(args)).map((pr) => ({ repo, pr }));
+        const args = ['pr', 'list', '-R', `${p.owner}/${repo}`, '--state', 'open', '--limit', String(LIMITE_PEDIDAS), '--search', 'review-requested:@me', '--json', CAMPOS];
+        const lista = await ghJson(args);
+        if (lista.length >= LIMITE_PEDIDAS) console.error(`[seki-review/revisar] The requested search of ${repo} reached its limit of ${LIMITE_PEDIDAS}; older requests may be missing`);
+        return lista.map((pr) => ({ repo, pr }));
       } catch (e) {
         console.error(`[seki-review/revisar] Requested PRs of ${repo} were not read: ${e?.code ?? 'error'}`);
         sinBusqueda.add(repo);

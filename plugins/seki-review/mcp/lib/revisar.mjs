@@ -1,7 +1,8 @@
 // PRs the owner has to review: parsing of a pasted link and the local list that remembers them.
-import { existsSync } from 'node:fs';
+import { copyFileSync, existsSync, readFileSync } from 'node:fs';
+import { basename } from 'node:path';
 import { conBloqueoSync, escribirAtomico } from './bloqueo.mjs';
-import { leerJson, rutaRevisar } from './cache.mjs';
+import { rutaRevisar } from './cache.mjs';
 import { ghJson } from './proceso.mjs';
 
 export const MAX_ENLACE = 500;
@@ -52,49 +53,72 @@ const valida = (e) => e && typeof e.repo === 'string' && Number.isInteger(e.nume
 
 // Entries the owner dismissed stay (hidden) while GitHub still lists the PR as requested, so the next refresh
 // does not bring it back; the collector drops them once the search stops returning the PR.
+const registrar = (mensaje) => console.error(`[seki-review/revisar] ${mensaje}`);
+
+function leerCrudo(ruta) {
+  const datos = JSON.parse(readFileSync(ruta, 'utf8'));
+  if (!Array.isArray(datos?.prs)) throw new Error('unexpected shape');
+  return datos.prs.filter(valida);
+}
+
 export function leerRevisar(p, { todas = false } = {}) {
-  let datos = null;
-  try { datos = leerJson(rutaRevisar(p.salida), null); } catch { /* unreadable: treated as empty */ }
-  return (Array.isArray(datos?.prs) ? datos.prs : []).filter((e) => valida(e) && (todas || !e.descartada));
+  const ruta = rutaRevisar(p.salida);
+  let prs = [];
+  if (existsSync(ruta)) {
+    try { prs = leerCrudo(ruta); } catch (e) { registrar(`${basename(ruta)} could not be read (${e?.code ?? e?.name ?? 'error'}); treated as empty`); }
+  }
+  return todas ? prs : prs.filter((e) => !e.descartada);
 }
 
 // Read-modify-write under the file lock: the dashboard and the MCP tool are separate processes.
+// An unreadable file is copied aside before a fresh list starts, so a write never destroys it.
 function modificar(p, fn) {
   const ruta = rutaRevisar(p.salida);
   return conBloqueoSync(ruta, () => {
-    const actual = existsSync(ruta) ? leerRevisar(p, { todas: true }) : [];
+    let actual = [];
+    if (existsSync(ruta)) {
+      try { actual = leerCrudo(ruta); } catch (e) {
+        const copia = `${ruta}.corrupt-${Date.now()}`;
+        copyFileSync(ruta, copia);
+        registrar(`${basename(ruta)} could not be read (${e?.code ?? e?.name ?? 'error'}); it was copied to ${basename(copia)} and a new list starts`);
+      }
+    }
     const { prs, resultado } = fn(actual);
     if (prs) escribirAtomico(ruta, JSON.stringify({ version: 1, prs }, null, 2) + '\n');
     return resultado;
   });
 }
 
-// An `enlace` entry is never downgraded to `solicitada`; adding by link brings back a dismissed one.
-// Returns 'agregada' when something became visible, otherwise 'ya_estaba'.
+// An `enlace` entry is never downgraded to `solicitada`; adding by link brings back a dismissed entry and upgrades a
+// requested one. Returns 'agregada' when the visible list changed, otherwise 'ya_estaba' (and nothing is written).
 export function agregarRevisar(p, entradas) {
   const lista = Array.isArray(entradas) ? entradas : [entradas];
   return modificar(p, (actual) => {
     const porId = new Map(actual.map((e) => [idDe(e), e]));
-    let nuevas = 0;
+    let cambios = 0;
     for (const { repo, numero, origen } of lista) {
       const id = `${repo}#${numero}`;
       const previa = porId.get(id);
       if (!previa) {
         porId.set(id, { repo, numero, origen, agregada: new Date().toISOString() });
-        nuevas++;
+        cambios++;
       } else if (origen === 'enlace' && (previa.origen !== 'enlace' || previa.descartada)) {
         const { descartada, ...resto } = previa;
         porId.set(id, { ...resto, origen: 'enlace' });
-        if (descartada) nuevas++;
+        cambios++;
       }
     }
     let prs = [...porId.values()];
-    if (prs.length > MAX_REVISAR) {
+    // The cap counts visible entries only: a dismissed one is what keeps a still-requested PR from coming back.
+    const visibles = prs.filter((e) => !e.descartada);
+    if (visibles.length > MAX_REVISAR) {
       const antes = (a, b) => String(a.agregada).localeCompare(String(b.agregada));
       const orden = (a, b) => (a.origen === b.origen ? 0 : a.origen === 'solicitada' ? -1 : 1) || antes(a, b);
-      prs = prs.sort(orden).slice(prs.length - MAX_REVISAR).sort(antes);
+      const fuera = new Set(visibles.sort(orden).slice(0, visibles.length - MAX_REVISAR));
+      prs = prs.filter((e) => !fuera.has(e));
+      cambios++;
     }
-    return { prs, resultado: nuevas ? 'agregada' : 'ya_estaba' };
+    return cambios ? { prs, resultado: 'agregada' } : { prs: null, resultado: 'ya_estaba' };
   });
 }
 
@@ -118,7 +142,7 @@ export async function incorporarEnlace(p, enlace) {
   const id = `${repo}#${numero}`;
   let pr;
   try {
-    pr = await ghJson(['pr', 'view', String(numero), '-R', `${p.owner}/${repo}`, '--json', 'state,number']);
+    pr = await ghJson(['pr', 'view', String(numero), '-R', `${p.owner}/${repo}`, '--json', 'state']);
   } catch {
     throw fallo('PR_NO_ENCONTRADA', `PR ${id} could not be read from GitHub`, 404);
   }

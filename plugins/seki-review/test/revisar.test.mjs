@@ -1,6 +1,8 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parsearEnlacePr, leerRevisar, agregarRevisar, quitarRevisar, podarRevisar, MAX_REVISAR } from '../mcp/lib/revisar.mjs';
@@ -53,6 +55,7 @@ test('the list collapses same-id entries and never downgrades an enlace', () => 
   assert.deepEqual(leerRevisar(p), []);
   assert.equal(agregarRevisar(p, { repo: 'api', numero: 1, origen: 'solicitada' }), 'agregada');
   assert.equal(agregarRevisar(p, { repo: 'api', numero: 1, origen: 'solicitada' }), 'ya_estaba');
+  assert.equal(agregarRevisar(p, { repo: 'api', numero: 1, origen: 'enlace' }), 'agregada', 'the upgrade is a change');
   assert.equal(agregarRevisar(p, { repo: 'api', numero: 1, origen: 'enlace' }), 'ya_estaba');
   assert.equal(agregarRevisar(p, { repo: 'api', numero: 1, origen: 'solicitada' }), 'ya_estaba');
   agregarRevisar(p, [{ repo: 'web', numero: 2, origen: 'solicitada' }, { repo: 'web', numero: 2, origen: 'solicitada' }]);
@@ -97,4 +100,71 @@ test('quitar and podar remove only what they are given; a corrupt file reads as 
   mkdirSync(join(p.salida, 'datos'), { recursive: true });
   writeFileSync(rutaRevisar(p.salida), '{ no json');
   assert.deepEqual(leerRevisar(p), []);
+});
+
+const registrando = (fn) => {
+  const original = console.error;
+  const lineas = [];
+  console.error = (...a) => lineas.push(a.join(' '));
+  try { return { resultado: fn(), lineas }; } finally { console.error = original; }
+};
+
+test('an unreadable list is copied aside and logged before a new one starts; reads log instead of failing silently', () => {
+  const p = proyecto();
+  mkdirSync(join(p.salida, 'datos'), { recursive: true });
+  const ruta = rutaRevisar(p.salida);
+  writeFileSync(ruta, '{ not json');
+  const lectura = registrando(() => leerRevisar(p));
+  assert.deepEqual(lectura.resultado, []);
+  assert.match(lectura.lineas.join('\n'), /\[seki-review\/revisar\] revisar\.json could not be read/);
+  assert.equal(readdirSync(join(p.salida, 'datos')).filter((x) => x.startsWith('revisar.json.corrupt-')).length, 0, 'a read never moves files');
+  const { lineas } = registrando(() => agregarRevisar(p, { repo: 'api', numero: 1, origen: 'enlace' }));
+  assert.match(lineas.join('\n'), /copied to revisar\.json\.corrupt-/);
+  const copias = readdirSync(join(p.salida, 'datos')).filter((x) => x.startsWith('revisar.json.corrupt-'));
+  assert.equal(copias.length, 1);
+  assert.equal(readFileSync(join(p.salida, 'datos', copias[0]), 'utf8'), '{ not json');
+  assert.deepEqual(leerRevisar(p).map((e) => e.numero), [1]);
+  // A file with the wrong shape is treated the same way.
+  writeFileSync(ruta, JSON.stringify({ version: 1, prs: 'x' }));
+  registrando(() => agregarRevisar(p, { repo: 'api', numero: 2, origen: 'enlace' }));
+  assert.equal(readdirSync(join(p.salida, 'datos')).filter((x) => x.startsWith('revisar.json.corrupt-')).length, 2);
+});
+
+test('nothing is rewritten when the call changes nothing', () => {
+  const p = proyecto();
+  agregarRevisar(p, [{ repo: 'api', numero: 1, origen: 'enlace' }, { repo: 'api', numero: 2, origen: 'solicitada' }]);
+  const antes = statSync(rutaRevisar(p.salida)).ino;
+  assert.equal(agregarRevisar(p, [{ repo: 'api', numero: 1, origen: 'solicitada' }, { repo: 'api', numero: 2, origen: 'solicitada' }]), 'ya_estaba');
+  assert.equal(statSync(rutaRevisar(p.salida)).ino, antes);
+  assert.equal(quitarRevisar(p, 'api#9'), false);
+  assert.equal(podarRevisar(p, new Set(['api#9'])), 0);
+  assert.equal(statSync(rutaRevisar(p.salida)).ino, antes);
+});
+
+test('the cap counts visible entries only and never evicts a dismissed one', () => {
+  const p = proyecto();
+  const descartadas = Array.from({ length: 5 }, (_, i) => ({ repo: 'web', numero: i + 1, origen: 'solicitada', agregada: '2020-01-01T00:00:00.000Z', descartada: true }));
+  const visibles = Array.from({ length: MAX_REVISAR }, (_, i) => ({ repo: 'api', numero: i + 1, origen: 'solicitada', agregada: `2021-01-01T00:00:${String(i % 60).padStart(2, '0')}.000Z` }));
+  mkdirSync(join(p.salida, 'datos'), { recursive: true });
+  writeFileSync(rutaRevisar(p.salida), JSON.stringify({ version: 1, prs: [...descartadas, ...visibles] }));
+  agregarRevisar(p, { repo: 'api', numero: 999, origen: 'enlace' });
+  const todas = leerRevisar(p, { todas: true });
+  assert.equal(todas.filter((e) => e.descartada).length, 5);
+  assert.equal(todas.filter((e) => !e.descartada).length, MAX_REVISAR);
+  assert.ok(todas.some((e) => e.numero === 999));
+});
+
+test('two processes writing the list at once lose no entries', async () => {
+  const p = proyecto();
+  mkdirSync(join(p.salida, 'datos'), { recursive: true });
+  const modulo = fileURLToPath(new URL('../mcp/lib/revisar.mjs', import.meta.url));
+  const guion = `import { agregarRevisar } from ${JSON.stringify(modulo)};
+const [salida, desde] = process.argv.slice(1);
+for (let i = 0; i < 25; i++) agregarRevisar({ salida }, { repo: 'api', numero: Number(desde) + i, origen: 'solicitada' });`;
+  const correr = (desde) => new Promise((ok, falla) => {
+    const h = spawn(process.execPath, ['--input-type=module', '-e', guion, p.salida, String(desde)], { stdio: 'inherit' });
+    h.on('exit', (c) => (c === 0 ? ok() : falla(new Error(`child exited with ${c}`))));
+  });
+  await Promise.all([correr(1), correr(1000)]);
+  assert.equal(leerRevisar(p).length, 50);
 });

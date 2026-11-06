@@ -27,7 +27,8 @@ export default {
     mkdirSync(p.salida, { recursive: true });
     writeFileSync(ruta, html);
     if (abrir && process.platform === 'darwin') execFile('open', [ruta]);
+    const revisar = foto.prs.filter((x) => x.soloRevision).length;
     const explicadas = foto.prs.filter((x) => x.explicacion && !x.explicacion.desactualizada).length;
-    return `Dashboard at ${ruta}: ${foto.prs.length} PRs, ${explicadas} with an up-to-date explanation. Snapshot from ${foto.generado.slice(0, 16)}.`;
+    return `Dashboard at ${ruta}: ${foto.prs.length} PRs${revisar ? ` (${revisar} to review)` : ''}, ${explicadas} with an up-to-date explanation. Snapshot from ${foto.generado.slice(0, 16)}.`;
   },
 };

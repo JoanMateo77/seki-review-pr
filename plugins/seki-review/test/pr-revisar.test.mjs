@@ -7,6 +7,7 @@ import { falsoGhRutas, limpiarGhRutas } from './util/gh-rutas.mjs';
 import { leerJson, rutaRevisar } from '../mcp/lib/cache.mjs';
 import herramienta from '../mcp/tools/pr_revisar.mjs';
 import pendientes from '../mcp/tools/prs_pendientes.mjs';
+import generar from '../mcp/tools/tablero_generar.mjs';
 
 after(limpiarGhRutas);
 const temporales = [];
@@ -27,7 +28,7 @@ function entorno(rutas) {
   process.env.SEKI_GH = gh.ruta;
   return { clave, salida, gh };
 }
-const vista = (num, state = 'OPEN') => ({ patron: `^pr view ${num} -R o/r --json state,number$`, json: { state, number: num } });
+const vista = (num, state = 'OPEN') => ({ patron: `^pr view ${num} -R o/r --json state$`, json: { state, number: num } });
 const ghPr = (num, autor, extra = {}) => ({
   number: num, title: `pr ${num}`, url: `u/${num}`, baseRefName: 'viejo', headRefName: `rama-${num}`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
   additions: 1, deletions: 1, changedFiles: 1, isDraft: false, headRefOid: `sha${num}`, author: { login: autor }, reviewDecision: '', body: 'b', state: 'OPEN', ...extra,
@@ -67,4 +68,15 @@ test('prs_pendientes lists the To review section apart from the groups', async (
   assert.match(texto, /## To review \(1\)/);
   assert.match(texto, /- r#50 pr 50 \[Requested · by ana · /);
   assert.doesNotMatch(texto, /Branches no longer in use/);
+});
+
+test('tablero_generar reports how many PRs are to review', async () => {
+  const e = entorno([
+    { patron: '^api user$', json: { login: 'yo' } },
+    { patron: '^pr list -R o/r .*--search review-requested:@me', json: [ghPr(50, 'ana')] },
+    { patron: '^pr list ', json: [] },
+    { patron: '^api repos/o/r/pulls\\?base=', json: [] },
+  ]);
+  const texto = await generar.handler({ proyecto: e.clave, refrescar: true, abrir: false });
+  assert.match(texto, /: 1 PRs \(1 to review\), 0 with an up-to-date explanation/);
 });

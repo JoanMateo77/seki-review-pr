@@ -130,7 +130,7 @@ is merged, closed or removed. A PR can also be added by link: the "Review a PR" 
 `https://github.com/<owner>/<repo>/pull/<n>`, `<repo>#<n>` or `<repo> <n>`; the repository must be configured and the PR open. These PRs go through the
 same pipeline as the others (summary, files, checks, how to test, comments, AI, Ultra) and appear first in a "To review" section, grouped by the
 owner's local decision, with a "Requested" or "Added by link" badge and the author. They never enter deliveries, merge events or the QA guide.
-"Remove from To review" only edits the local list; nothing is written to GitHub. In the Review tab, "Copy review" builds a Markdown version of the
+"Remove from To review" only edits the local list; nothing is written to GitHub, and a removed PR that GitHub still requests stays hidden until GitHub stops requesting the review, when its entry leaves the list. The bulk "Analyze those without an explanation" action skips these PRs; each one is analyzed from its detail. In the Review tab, "Copy review" builds a Markdown version of the
 decision, comments and notes to paste on GitHub.
 
 **Change requests.** The AI works in a separate copy: a detached worktree at the PR's commit, located in

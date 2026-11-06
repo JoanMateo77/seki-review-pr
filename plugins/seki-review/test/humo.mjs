@@ -108,7 +108,7 @@ if (!tool) {
     const ghPr = (n, autor) => ({ number: n, title: `pr ${n}`, url: `u/${n}`, baseRefName: 'viejo', headRefName: `rama-${n}`, createdAt: ahora, updatedAt: ahora, additions: 1, deletions: 1, changedFiles: 1, isDraft: false, headRefOid: `sha${n}`, author: { login: autor }, reviewDecision: '', body: '', state: 'OPEN' });
     const gh = falsoGhRutas([
       { patron: '^pr list -R o/r .*--search review-requested:@me', json: [ghPr(10, 'ana')] },
-      { patron: '^pr view 20 -R o/r --json state,number$', json: { state: 'OPEN', number: 20 } },
+      { patron: '^pr view 20 -R o/r --json state$', json: { state: 'OPEN', number: 20 } },
       { patron: '^pr view 20 -R o/r ', json: ghPr(20, 'beto') },
       { patron: '^pr list ', json: [] },
       { patron: '^api repos/o/r/pulls\\?base=', json: [] },

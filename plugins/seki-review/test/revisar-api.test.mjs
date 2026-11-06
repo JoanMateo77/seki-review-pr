@@ -30,7 +30,7 @@ const rutasBase = (...mas) => [
   { patron: '^api repos/o/r/pulls\\?base=', json: [] },
   { patron: '^api --paginate --slurp repos/o/r/pulls/\\d+/(files|commits)', json: [[]] },
 ];
-const vista = (n, state = 'OPEN') => ({ patron: `^pr view ${n} -R o/r --json state,number$`, json: { state, number: n } });
+const vista = (n, state = 'OPEN') => ({ patron: `^pr view ${n} -R o/r --json state$`, json: { state, number: n } });
 const vistaCompleta = (n) => ({ patron: `^pr view ${n} -R o/r --json number,title,.*,state$`, json: ghPr(n) });
 
 let n = 0;
@@ -194,10 +194,10 @@ test('revisionMarkdown builds plain Markdown: decision, comments with file and r
     '**src/a.js:L10–12**',
     'Question: Why a loop?',
     '',
-    '**src/b.js:L5–5**',
+    '**src/b.js:L5**',
     'Rename it.',
     '',
-    '**src/c.js:L7–7**',
+    '**src/c.js:L7**',
     'Fine.',
     '',
     'Notes',
@@ -209,7 +209,7 @@ test('revisionMarkdown does not escape and is empty when there is nothing to say
   const ctx = tablero();
   const md = ctx.revisionMarkdown({ id: 'r#1' }, { decision: 'aprobada' }, [{ tipo: 'nota', archivo: 'a<b>.js', desde: 1, hasta: 1, texto: '<script>x & "y"</script>' }]);
   assert.match(md, /^Decision: Approved\n/);
-  assert.match(md, /\*\*a<b>\.js:L1–1\*\*\n<script>x & "y"<\/script>/);
+  assert.match(md, /\*\*a<b>\.js:L1\*\*\n<script>x & "y"<\/script>/);
   assert.equal(ctx.revisionMarkdown({ id: 'r#1' }, null, []), '');
   assert.equal(ctx.revisionMarkdown({ id: 'r#1' }, {}, [{ tipo: 'nota', estado: 'descartado', archivo: 'a', desde: 1, texto: 'x' }]), '');
 });
@@ -247,4 +247,22 @@ test('the built page carries the Review a PR field, the copy action and compiles
   const html = construirHtml({ salida: '/nonexistent', ia: {} }, { prs: [] }, { token: 't' });
   for (const marca of ['id="enlaceRevisar"', 'Paste a PR link or repo#number', 'data-copiar-revision', 'Copy review', 'Remove from To review']) assert.ok(html.includes(marca), `the built page lacks ${marca}`);
   for (const codigo of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) assert.doesNotThrow(() => new Script(codigo[1]));
+});
+
+test('the bulk analysis never includes PRs listed only to be reviewed', () => {
+  const fuente = readFileSync(new URL('04-script-1.js', PARTES), 'utf8');
+  const linea = fuente.split('\n').find((l) => l.startsWith('const pendientesDeAnalisis'));
+  const ctx = createContext({ FOTO: { prs: [
+    { id: 'r#1', ambiente: 'prod' },
+    { id: 'r#2', ambiente: 'prod', soloRevision: true },
+    { id: 'r#3', ambiente: 'prod', paraRevisar: 'enlace' },
+  ] }, trabajoActivo: () => false });
+  runInContext(`${linea}\nglobalThis.pendientes = pendientesDeAnalisis;`, ctx);
+  assert.deepEqual(Array.from(ctx.pendientes(), (x) => x.id), ['r#1', 'r#3']);
+});
+
+test('a card without author omits the author and the static board drops the paste instruction', () => {
+  const html = tablero().seccionParaRevisar([{ id: 'r#1', repo: 'r', repoEtiqueta: 'r', numero: 1, titulo: 'T', autor: null, paraRevisar: 'enlace', soloRevision: true }]);
+  assert.doesNotMatch(html, /autor-revisar|@null|@undefined/);
+  assert.equal(tablero({ API: null }).mensajeRutaDesconocida('api#1'), 'This PR is not in the dashboard.');
 });

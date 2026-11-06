@@ -76,7 +76,8 @@ const usd = (x) => { const n = Number(x) || 0; return `USD ${n.toLocaleString('e
 const nombreModelo = (m) => (m ?? '').replace(/^claude-/, '').replace(/-\d.*$/, '').replace(/^./, (c) => c.toUpperCase());
 const costoTexto = (t) => `${t.modelo ? ` · ${nombreModelo(t.modelo)}` : ''}${t.costo ? ` · ${usd(t.costo)}` : ''}`;
 const trabajoActivo = (pr) => ['en_cola', 'en_curso', 'bloqueado_presupuesto'].includes(trabajo(pr)?.estado);
-const pendientesDeAnalisis = () => FOTO.prs.filter((p) => p.ambiente !== 'inactiva' && (!p.explicacion || p.explicacion.desactualizada) && !trabajoActivo(p));
+// PRs listed only to be reviewed are analyzed one by one from their detail, never in bulk.
+const pendientesDeAnalisis = () => FOTO.prs.filter((p) => p.ambiente !== 'inactiva' && !p.soloRevision && (!p.explicacion || p.explicacion.desactualizada) && !trabajoActivo(p));
 
 // One tone per PR, the most severe that applies: red blocks, amber needs a look, green ready, violet merged.
 function tono(pr) {
