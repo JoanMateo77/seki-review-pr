@@ -1,6 +1,6 @@
 import { test, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { falsoGhRutas, limpiarGhRutas } from './util/gh-rutas.mjs';
@@ -181,4 +181,141 @@ test('proyecto() merges entregas and vigia defaults under user values and clamps
   p = proyecto('t');
   assert.equal(p.entregas.cerrarTrasDias, 7);
   assert.equal(p.vigia.intervaloSeg, 300);
+});
+
+// Review intake: PRs requested from the owner and PRs added by link.
+function entornoRevisar() {
+  const dir = temporal('seki-rec-');
+  const salida = join(dir, 'salida');
+  mkdirSync(join(salida, 'datos'), { recursive: true });
+  const ruta = join(dir, 'proyectos.json');
+  writeFileSync(ruta, JSON.stringify({ t: { owner: 'o', autor: 'yo', salida, repos: { a: { lineas: [linea], inactivas: { viejo: 'retired' } }, b: { lineas: [linea] } } } }));
+  process.env.SEKI_REVIEW_CONFIG = ruta;
+  return salida;
+}
+const ghPr = (n, autor, extra) => ({
+  number: n, title: `pr ${n}`, url: `u/${n}`, baseRefName: 'viejo', headRefName: `rama-${n}`, createdAt: hace(3), updatedAt: hace(1),
+  additions: 1, deletions: 1, changedFiles: 1, isDraft: false, headRefOid: `sha${n}`, author: { login: autor }, reviewDecision: '', body: 'b', state: 'OPEN', ...extra,
+});
+const baseRutas = (...mas) => [
+  { patron: '^api user$', json: { login: 'yo' } },
+  ...mas,
+  pulls('a', 'main', []), pulls('a', 'testing', []), pulls('b', 'main', []), pulls('b', 'testing', []),
+];
+const pedida = (repo, lista) => ({ patron: `^pr list -R o/${repo} .*--search review-requested:@me`, json: lista });
+const propias = (repo, lista) => ({ patron: `^pr list -R o/${repo} .*--author yo`, json: lista });
+const vista = (repo, n, json) => ({ patron: `^pr view ${n} -R o/${repo} `, json });
+
+test('a requested PR enters the snapshot without the author filter and is remembered after it leaves the search', async () => {
+  const salida = entornoRevisar();
+  const f = falsoGhRutas(baseRutas(pedida('a', [ghPr(50, 'otro')]), propias('a', [ghPr(1, 'yo')]), { patron: '^pr list ', json: [] }));
+  process.env.SEKI_GH = f.ruta;
+  const foto = await recolectar({ proyecto: 't' });
+  assert.deepEqual(foto.prs.map((x) => x.id).sort(), ['a#1', 'a#50']);
+  const ajena = foto.prs.find((x) => x.id === 'a#50');
+  assert.equal(ajena.paraRevisar, 'solicitada');
+  assert.equal(ajena.soloRevision, true);
+  assert.equal(ajena.autor, 'otro');
+  const propia = foto.prs.find((x) => x.id === 'a#1');
+  assert.equal(propia.paraRevisar, undefined);
+  assert.ok(!propia.soloRevision);
+  const busqueda = f.llamadas().find((c) => c.includes('review-requested:@me') && c.includes('o/a'));
+  assert.ok(!busqueda.includes('--author'));
+  assert.deepEqual(leerJson(join(salida, 'datos', 'revisar.json')).prs.map((e) => [e.repo, e.numero, e.origen]), [['a', 50, 'solicitada']]);
+
+  // The owner reviewed it on GitHub: the search no longer returns it, but the list still does.
+  f.fijar(baseRutas(pedida('a', []), propias('a', [ghPr(1, 'yo')]), vista('a', 50, ghPr(50, 'otro')), { patron: '^pr list ', json: [] }));
+  const otra = await recolectar({ proyecto: 't' });
+  assert.equal(otra.prs.find((x) => x.id === 'a#50')?.paraRevisar, 'solicitada');
+  assert.ok(f.llamadas().some((c) => c[0] === 'pr' && c[1] === 'view' && c[2] === '50'));
+});
+
+test('a listed PR that GitHub reports closed or merged leaves the list and the snapshot', async () => {
+  const salida = entornoRevisar();
+  writeFileSync(join(salida, 'datos', 'revisar.json'), JSON.stringify({ version: 1, prs: [
+    { repo: 'a', numero: 60, origen: 'enlace', agregada: hace(2) }, { repo: 'a', numero: 61, origen: 'solicitada', agregada: hace(2) }, { repo: 'a', numero: 62, origen: 'enlace', agregada: hace(2) },
+  ] }));
+  process.env.SEKI_GH = falsoGhRutas(baseRutas(
+    vista('a', 60, ghPr(60, 'otro', { state: 'MERGED' })), vista('a', 61, ghPr(61, 'otro', { state: 'CLOSED' })), vista('a', 62, ghPr(62, 'otro')),
+    { patron: '^pr list ', json: [] },
+  )).ruta;
+  const foto = await recolectar({ proyecto: 't' });
+  assert.deepEqual(foto.prs.map((x) => x.id), ['a#62']);
+  assert.equal(foto.prs[0].paraRevisar, 'enlace');
+  assert.deepEqual(leerJson(join(salida, 'datos', 'revisar.json')).prs.map((e) => e.numero), [62]);
+});
+
+test('listed PRs stay out of deliveries and out of the merge and new-PR changes', async () => {
+  const salida = entornoRevisar();
+  const enPruebas = (n, autor, extra) => ghPr(n, autor, { baseRefName: 'testing', title: `solo pruebas ${n}`, ...extra });
+  const archivos = { patron: '^api --paginate --slurp repos/o/a/pulls/\\d+/(files|commits)', json: [[]] };
+  writeFileSync(join(salida, 'datos', 'revisar.json'), JSON.stringify({ version: 1, prs: [{ repo: 'a', numero: 70, origen: 'enlace', agregada: hace(1) }] }));
+  const f = falsoGhRutas(baseRutas(archivos, vista('a', 70, enPruebas(70, 'otro')), propias('a', [enPruebas(1, 'yo')]), { patron: '^pr list ', json: [] }));
+  process.env.SEKI_GH = f.ruta;
+  await recolectar({ proyecto: 't' });
+  const entregas = leerJson(rutaEntregas(proyecto('t').salida)).entregas.flatMap((e) => e.prs);
+  assert.ok(entregas.includes('a#1'));
+  assert.ok(!entregas.includes('a#70'));
+
+  f.fijar(baseRutas(archivos, vista('a', 70, enPruebas(70, 'otro', { state: 'MERGED' })), propias('a', [enPruebas(1, 'yo')]), { patron: '^pr list ', json: [] }));
+  const foto = await recolectar({ proyecto: 't' });
+  assert.ok(!(foto.cambios?.mergeadas ?? []).some((x) => x.id === 'a#70'));
+  assert.ok(!(foto.cambios?.nuevas ?? []).some((x) => x.id === 'a#70'));
+  assert.ok(!f.llamadas().some((c) => c[1] === 'repos/o/a/pulls/70'));
+  assert.ok(!existsSync(rutaEventos(salida)) || !readFileSync(rutaEventos(salida), 'utf8').includes('a#70'));
+});
+
+test('the owner PR that is also listed keeps its grouping and shows the mark; the author filter still applies to the rest', async () => {
+  const salida = entornoRevisar();
+  writeFileSync(join(salida, 'datos', 'revisar.json'), JSON.stringify({ version: 1, prs: [{ repo: 'a', numero: 1, origen: 'enlace', agregada: hace(1) }] }));
+  const f = falsoGhRutas(baseRutas(propias('a', [ghPr(1, 'yo')]), { patron: '^pr list ', json: [] }));
+  process.env.SEKI_GH = f.ruta;
+  const foto = await recolectar({ proyecto: 't' });
+  assert.equal(foto.prs.length, 1);
+  assert.equal(foto.prs[0].paraRevisar, 'enlace');
+  assert.ok(!foto.prs[0].soloRevision);
+  assert.ok(!f.llamadas().some((c) => c[1] === 'view'));
+  const generales = f.llamadas().filter((c) => c[0] === 'pr' && c[1] === 'list' && !c.includes('--search'));
+  assert.ok(generales.length > 0 && generales.every((c) => c.includes('--author')));
+});
+
+test('with no requested PRs and an empty list nothing is added and no list file is written', async () => {
+  const salida = entornoRevisar();
+  process.env.SEKI_GH = falsoGhRutas(baseRutas({ patron: '^pr list ', json: [] })).ruta;
+  const foto = await recolectar({ proyecto: 't' });
+  assert.deepEqual(foto.prs, []);
+  assert.equal(existsSync(join(salida, 'datos', 'revisar.json')), false);
+});
+
+test('a partial refresh only touches the listed PRs of the given repos', async () => {
+  const salida = entornoRevisar();
+  writeFileSync(join(salida, 'datos', 'revisar.json'), JSON.stringify({ version: 1, prs: [
+    { repo: 'a', numero: 80, origen: 'enlace', agregada: hace(1) }, { repo: 'b', numero: 81, origen: 'enlace', agregada: hace(1) },
+  ] }));
+  const f = falsoGhRutas(baseRutas(vista('b', 81, ghPr(81, 'otro', { state: 'CLOSED' })), { patron: '^pr list ', json: [] }));
+  process.env.SEKI_GH = f.ruta;
+  await recolectar({ proyecto: 't', repos: ['b'] });
+  assert.ok(!f.llamadas().some((c) => c.join(' ').includes('o/a')));
+  assert.deepEqual(leerJson(join(salida, 'datos', 'revisar.json')).prs.map((e) => e.numero), [80]);
+});
+
+test('a failing gh view keeps the listed PR in the list and out of the snapshot', async () => {
+  const salida = entornoRevisar();
+  writeFileSync(join(salida, 'datos', 'revisar.json'), JSON.stringify({ version: 1, prs: [{ repo: 'a', numero: 90, origen: 'enlace', agregada: hace(1) }] }));
+  process.env.SEKI_GH = falsoGhRutas(baseRutas({ patron: '^pr view 90 ', salida: 1, stderr: 'boom' }, { patron: '^pr list ', json: [] })).ruta;
+  const foto = await recolectar({ proyecto: 't' });
+  assert.deepEqual(foto.prs, []);
+  assert.deepEqual(leerJson(join(salida, 'datos', 'revisar.json')).prs.map((e) => e.numero), [90]);
+});
+
+test('a dismissed requested PR stays hidden while requested and its entry goes once the search stops returning it', async () => {
+  const salida = entornoRevisar();
+  writeFileSync(join(salida, 'datos', 'revisar.json'), JSON.stringify({ version: 1, prs: [{ repo: 'a', numero: 55, origen: 'solicitada', agregada: hace(1), descartada: true }] }));
+  const f = falsoGhRutas(baseRutas(pedida('a', [ghPr(55, 'otro')]), { patron: '^pr list ', json: [] }));
+  process.env.SEKI_GH = f.ruta;
+  assert.deepEqual((await recolectar({ proyecto: 't' })).prs, []);
+  assert.equal(leerJson(join(salida, 'datos', 'revisar.json')).prs.length, 1);
+  f.fijar(baseRutas(pedida('a', []), { patron: '^pr list ', json: [] }));
+  await recolectar({ proyecto: 't' });
+  assert.deepEqual(leerJson(join(salida, 'datos', 'revisar.json')).prs, []);
 });
