@@ -2,7 +2,7 @@
 // closed), new PRs and PRs that changed group. Departures are looked up on GitHub one by one.
 import { enParalelo, ghJson } from './proceso.mjs';
 
-const abiertas = (foto) => new Map((foto?.prs ?? []).filter((x) => x.estadoPr !== 'MERGED').map((x) => [x.id, x]));
+const abiertas = (foto) => new Map((foto?.prs ?? []).filter((x) => x.estadoPr !== 'MERGED' && !x.soloRevision).map((x) => [x.id, x]));
 
 export async function compararFotos(anterior, actual, owner) {
   if (!anterior?.prs) return null;

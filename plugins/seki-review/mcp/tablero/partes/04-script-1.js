@@ -76,7 +76,8 @@ const usd = (x) => { const n = Number(x) || 0; return `USD ${n.toLocaleString('e
 const nombreModelo = (m) => (m ?? '').replace(/^claude-/, '').replace(/-\d.*$/, '').replace(/^./, (c) => c.toUpperCase());
 const costoTexto = (t) => `${t.modelo ? ` · ${nombreModelo(t.modelo)}` : ''}${t.costo ? ` · ${usd(t.costo)}` : ''}`;
 const trabajoActivo = (pr) => ['en_cola', 'en_curso', 'bloqueado_presupuesto'].includes(trabajo(pr)?.estado);
-const pendientesDeAnalisis = () => FOTO.prs.filter((p) => p.ambiente !== 'inactiva' && (!p.explicacion || p.explicacion.desactualizada) && !trabajoActivo(p));
+// PRs listed only to be reviewed are analyzed one by one from their detail, never in bulk.
+const pendientesDeAnalisis = () => FOTO.prs.filter((p) => p.ambiente !== 'inactiva' && !p.soloRevision && (!p.explicacion || p.explicacion.desactualizada) && !trabajoActivo(p));
 
 // One tone per PR, the most severe that applies: red blocks, amber needs a look, green ready, violet merged.
 function tono(pr) {
@@ -163,6 +164,7 @@ function senales(pr) {
   else if (t?.estado === 'error') s.push(`<span class="senal rojo" title="The analysis failed">${icono('bloqueo')}</span>`);
   const cs = vivos(pr).length;
   if (cs) s.push(`<span class="senal" title="${plural(cs, 'comment', 'comments')} on the diff">${icono('comentario')}${cs}</span>`);
+  if (pr.paraRevisar && !pr.soloRevision) s.push(`<span class="senal" title="Also in the To review list">${esc(ORIGEN_PARA_REVISAR[pr.paraRevisar] ?? '')}</span>`);
   if (pr.seguridad) s.push(`<span class="senal" title="Security">${icono('escudo')}</span>`);
   if (pr.ultraSugerida && modoActual() !== 'ahorro') s.push(`<span class="senal violeta" title="Ultra review suggested">${icono('chispa')}Ultra</span>`);
   const esfuerzo = pr.explicacion?.esfuerzo ?? pr.esfuerzoTamano;
@@ -172,8 +174,10 @@ function senales(pr) {
 }
 
 function pintarCola() {
-  const prs = FOTO.prs.filter(pasaFiltros);
-  if (!prs.length) {
+  const todos = FOTO.prs.filter(pasaFiltros);
+  const prs = todos.filter((p) => !p.soloRevision);
+  const paraRevisar = todos.filter((p) => p.soloRevision);
+  if (!todos.length) {
     $('cola').innerHTML = `${avisoVersion()}${bannerFiltroIa()}<div class="vacio"><p>No PRs match the search and active filters.</p><button class="btn" data-accion="limpiar">Clear filters</button></div>`;
     return;
   }
@@ -186,20 +190,20 @@ function pintarCola() {
     porGrupo.get(g).push(pr);
   }
   const posicion = (g) => (orden.includes(g) ? orden.indexOf(g) : 99);
-  $('cola').innerHTML = avisoVersion() + bannerFiltroIa() + (estado.filtroIa ? '' : seccionCambios()) + [...porGrupo.keys()].sort((a, b) => posicion(a) - posicion(b)).map((g) => {
+  $('cola').innerHTML = avisoVersion() + bannerFiltroIa() + seccionParaRevisar(paraRevisar) + (estado.filtroIa ? '' : seccionCambios()) + [...porGrupo.keys()].sort((a, b) => posicion(a) - posicion(b)).map((g) => {
     const [nombre, desc] = defs[g] ?? GRUPOS[g] ?? [FOTO.acciones?.[g] ?? g, ''];
     const filas = porGrupo.get(g).sort((a, b) => a.repo.localeCompare(b.repo) || b.numero - a.numero);
     const cerrado = estado.cerrados.has(g);
     return `<section class="grupo" ${cerrado ? 'data-cerrado' : ''}>
       <button class="grupo-cab" data-grupo-toggle="${g}" aria-expanded="${!cerrado}">${icono('chevron')}<span>${esc(nombre)}</span><span class="n">${filas.length}</span><span class="desc">${esc(desc)}</span></button>
-      <div class="filas">${filas.map((pr) => `
+      <div class="filas">${filas.map((pr) => conQuitarRevisar(pr, `
         <button class="fila" data-id="${esc(pr.id)}" aria-current="${estado.seleccion === pr.id}">
           <span class="punto ${tono(pr)}"></span>
           <span class="id mono">${esc(pr.repoEtiqueta)} #${pr.numero}</span>
           <span class="titulo" title="${esc(pr.titulo)}">${esc(pr.titulo)}</span>
           <span class="senales">${senales(pr)}</span>
           ${estado.filtroIa?.estado === 'listo' ? motivoHtml(estado.filtroIa.motivos.get(pr.id)) : ''}
-        </button>`).join('')}</div>
+        </button>`)).join('')}</div>
     </section>`;
   }).join('');
 }

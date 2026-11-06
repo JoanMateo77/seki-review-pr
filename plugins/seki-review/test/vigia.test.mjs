@@ -229,7 +229,7 @@ async function servidor({ demoraMs = 0, retener = false, repos = ['r1'], cambiad
 const fs = require('node:fs');
 fs.appendFileSync(${JSON.stringify(registro)}, process.argv.slice(2).join(' ') + '\\n');
 const a = process.argv.slice(2);
-const cambiado = a.includes('--search') && ${JSON.stringify(cambiados)}.some((r) => a.includes('o/' + r));
+const cambiado = a.includes('--search') && !a.join(' ').includes('review-requested:') && ${JSON.stringify(cambiados)}.some((r) => a.includes('o/' + r));
 const responder = () => process.stdout.write(cambiado ? '[{"number":1}]' : '[]');
 const retener = ${JSON.stringify(retener)};
 if (retener === true || (typeof retener === 'string' && a.join(' ').includes(retener))) { const t = setInterval(() => { if (fs.existsSync(${JSON.stringify(suelta)}) || !fs.existsSync(${JSON.stringify(dir)})) { clearInterval(t); responder(); } }, 5); }

@@ -32,6 +32,7 @@ import { importarQa } from './qa-importar.mjs';
 import { generarGuia } from './qa-salida.mjs';
 import { aplicarRastreador, cambiosPendientes } from './rastreador-xlsx.mjs';
 import { enSerieEntregas } from './recolectar.mjs';
+import { idDe, incorporarEnlace, leerRevisar, quitarRevisar } from './revisar.mjs';
 
 // Reservations of running AI jobs are shared by every project served by this process.
 const RESERVAS_PROCESO = crearReservas();
@@ -48,6 +49,11 @@ const TIPOS_GUIA = {
 };
 const MAX_RESULTADOS_GUIA = 20;
 const falloHttp = (codigo, mensaje) => Object.assign(new Error(mensaje), { codigo });
+// Errors tagged by the review-intake library carry a safe message and the status to answer with.
+const PREFIJO_REVISAR = '[seki-review/revisar] ';
+const errorRevisar = (e) => {
+  throw typeof e?.codigo === 'string' && String(e.message).startsWith(PREFIJO_REVISAR) ? falloHttp(e.http ?? 400, e.message.slice(PREFIJO_REVISAR.length)) : e;
+};
 
 // The guide is a regular file inside salida/qa: a link, a subfolder or a name outside the pattern is never served.
 function leerArchivoGuia(p, nombre) {
@@ -210,21 +216,43 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
     },
     (e) => { ultimoRefresco = { ok: false, fecha: new Date().toISOString(), mensaje: e.message.slice(0, 300) }; },
   );
-  // Single-flight. A full refresh requested while a partial one (the watcher's) runs is chained after it, so the
-  // manual click still yields a full refresh.
-  let refrescoParcial = false;
+  // Single-flight with one pending refresh. A request made while a refresh runs merges its repos into the pending one
+  // (a full request makes it full), which starts right after the running one ends. The returned promise resolves when
+  // the refresh that covers the requested repos has finished, so nobody is answered by a refresh of other repos or by
+  // one that started before their change. A full request while a full refresh runs and nothing is pending joins it.
+  let enCursoCompleto = false;
+  let pendiente = null;
+  const iniciar = (repos) => {
+    enCursoCompleto = !repos?.length;
+    const mio = lanzar(repos).finally(() => { if (refresco === mio) { refresco = null; enCursoCompleto = false; } });
+    refresco = mio;
+    return mio;
+  };
   const refrescar = (repos) => {
     const completo = !repos?.length;
-    const fijar = (pr) => { const mio = pr.finally(() => { if (refresco === mio) refresco = null; }); refresco = mio; return mio; };
-    if (refresco && refrescoParcial && completo) {
-      refrescoParcial = false;
-      return fijar(refresco.then(() => lanzar()));
+    if (!refresco && !pendiente) return iniciar(repos);
+    if (completo && !pendiente && enCursoCompleto) return refresco;
+    if (!pendiente) {
+      const lote = { repos: new Set(), completo: false };
+      lote.promesa = refresco.then(() => { pendiente = null; return iniciar(lote.completo ? undefined : [...lote.repos]); });
+      pendiente = lote;
     }
-    if (!refresco) {
-      refrescoParcial = !completo;
-      return fijar(lanzar(repos));
-    }
-    return refresco;
+    if (completo) pendiente.completo = true;
+    else for (const r of repos) pendiente.repos.add(r);
+    return pendiente.promesa;
+  };
+  const refrescando = () => !!refresco || !!pendiente;
+
+  // Each change to the review list refreshes its repo through the shared path.
+  const refrescarRepo = (repo) => refrescar([repo]).catch((e) => console.error(`[seki-review/revisar] The refresh after a list change failed: ${e?.code ?? 'error'}`));
+
+  // Repos whose list entries (added after the last snapshot, for example from the chat tool) are not in it yet.
+  const reposConEntradasNuevas = () => {
+    let foto = null;
+    try { foto = leerJson(rutaInstantanea(p.salida)); } catch { return []; }
+    const ids = new Set((foto?.prs ?? []).map((x) => x.id));
+    const desde = foto?.generado ?? '';
+    return [...new Set(leerRevisar(p).filter((e) => p.repos[e.repo] && String(e.agregada) > desde && !ids.has(idDe(e))).map((e) => e.repo))];
   };
 
   // Merge watcher. It shares the single-flight refresh: a probe is skipped while a manual refresh runs, and a
@@ -240,9 +268,8 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
     intervaloMs: intervaloVigiaMs ?? p.vigia.intervaloSeg * 1000,
     reloj: relojVigia,
     tableroAbierto: () => Date.now() - ultimoTablero < VENTANA_TABLERO_MS,
-    sondear: async () => (refresco ? [] : sondeo.sondear()),
+    sondear: async () => (refrescando() ? [] : [...new Set([...(await sondeo.sondear()), ...reposConEntradasNuevas()])]),
     refrescar: async (repos) => {
-      if (refresco) await refresco;
       await refrescar(repos);
       if (!ultimoRefresco?.ok) throw new Error(ultimoRefresco?.mensaje ?? 'Refresh failed');
       sondeo.confirmar();
@@ -494,11 +521,27 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
       }
       if (req.method === 'GET' && url.pathname === '/api/estado') {
         if (req.headers['x-seki-tablero'] === '1') ultimoTablero = Date.now();
-        return responder(res, 200, { vigia: vigia.estado(), refrescando: !!refresco, ultimoRefresco, trabajos: [...cola.lista(), ...listaGuias()], comentarios: marcasComentarios(), avances: avances(), costoHoy: costosDelDia(p), presupuesto: presupuesto.estado(), modo, version: VERSION });
+        return responder(res, 200, { vigia: vigia.estado(), refrescando: refrescando(), ultimoRefresco, trabajos: [...cola.lista(), ...listaGuias()], comentarios: marcasComentarios(), avances: avances(), costoHoy: costosDelDia(p), presupuesto: presupuesto.estado(), modo, version: VERSION });
       }
       if (req.method === 'POST' && url.pathname === '/api/refrescar') {
         refrescar();
         return responder(res, 202, { refrescando: true });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/revisar') {
+        const { enlace } = await leerJsonEstricto(req);
+        const r = await incorporarEnlace(p, enlace).catch(errorRevisar);
+        let enFoto = false;
+        try { enFoto = !!leerJson(rutaInstantanea(p.salida))?.prs?.some((x) => x.id === r.id); } catch { /* unreadable: refreshed below */ }
+        if (r.estado === 'agregada' || !enFoto) refrescarRepo(r.repo);
+        return responder(res, 202, { id: r.id, estado: r.estado });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/revisar/quitar') {
+        const { id } = await leerJsonEstricto(req);
+        const m = typeof id === 'string' && id.length <= 200 ? /^([\w.-]+)#\d+$/.exec(id) : null;
+        if (!m) throw falloHttp(400, 'The PR id must look like repo#number');
+        if (!quitarRevisar(p, id)) throw falloHttp(404, 'The PR is not in the To review list');
+        if (p.repos[m[1]]) refrescarRepo(m[1]);
+        return responder(res, 202, { id, quitada: true });
       }
       if (req.method === 'POST' && url.pathname === '/api/analizar') {
         const { prs = [], completar = false, modo: modoPedido } = await leerCuerpo(req);
@@ -538,7 +581,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
       if (req.method === 'POST' && url.pathname === '/api/cancelar-cola') return responder(res, 200, { cancelados: cola.vaciar() });
       // Another session with another version asks for the port: release it only if no jobs would be cut off.
       if (req.method === 'POST' && url.pathname === '/api/ceder') {
-        if (refresco || vigia.ocupado() || guiaEnCurso() || cola.lista().some((t) => ['en_cola', 'bloqueado_presupuesto', 'en_curso'].includes(t.estado))) return responder(res, 409, { error: 'Jobs in progress' });
+        if (refrescando() || vigia.ocupado() || guiaEnCurso() || cola.lista().some((t) => ['en_cola', 'bloqueado_presupuesto', 'en_curso'].includes(t.estado))) return responder(res, 409, { error: 'Jobs in progress' });
         responder(res, 200, { ok: true });
         cerrar();
         return;
@@ -565,7 +608,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
     const cerrado = new Promise((ok) => servidor.close(() => ok()));
     servidor.closeAllConnections?.();
     await Promise.all([cerrado, ciclo, cola.detener(), guiaActiva?.promesa]);
-    while (refresco) await refresco;
+    while (refrescando()) await (pendiente?.promesa ?? refresco);
     await limpieza;
     presupuesto.soltar();
   };

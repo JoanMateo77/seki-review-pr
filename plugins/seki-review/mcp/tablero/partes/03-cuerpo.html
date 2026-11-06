@@ -47,6 +47,10 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
       <input type="search" id="buscar" placeholder="Search by number, title, branch or file" aria-label="Search PRs">
       <kbd>/</kbd>
     </label>
+    <div class="revisar-campo" hidden>
+      <input type="text" id="enlaceRevisar" placeholder="Paste a PR link or repo#number" aria-label="Review a PR" aria-describedby="errorRevisar" maxlength="500" autocomplete="off" spellcheck="false" title="Review a PR: paste its link and press Enter">
+      <div class="error-revisar" id="errorRevisar" role="alert" hidden></div>
+    </div>
     <button type="button" class="btn chico filtrar-ia" id="filtrarIa" data-accion="filtrarIa" hidden aria-label="Filter with AI using the search text" title="AI keeps only the PRs that match what you typed, for example “cybersecurity PRs” (Ctrl + Enter in the search box)"><svg class="i" aria-hidden="true"><use href="#i-chispa"/></svg><span>Filter with AI</span></button>
     <div class="acciones-barra" id="accionesBarra"></div>
     <div class="rol" role="group" aria-label="View">

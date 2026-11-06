@@ -1,6 +1,6 @@
 ---
 name: review-prs
-description: Use when asked to review which PRs are pending promotion to testing or production, to understand or explain a PR (what changes, technologies, why, alternatives, how to test), or to open the local PR review dashboard (Seki Review). With no argument it opens the served dashboard. Optional arguments - "pending", "explain <repo>#<n>", "explain pending", "verify <repo>#<n>", "deliveries", "since-last", "qa-guide", "qa-import <path>", "ultra <repo>#<n>", "file" (the Spanish forms "pendientes", "explicar", "verificar", "entregas", "desde-ultima", "guia-qa", "importar-qa", "archivo" are also accepted; "ultra" is the same in Spanish).
+description: Use when asked to review which PRs are pending promotion to testing or production, to understand or explain a PR (what changes, technologies, why, alternatives, how to test), or to open the local PR review dashboard (Seki Review). With no argument it opens the served dashboard. Optional arguments - "pending", "explain <repo>#<n>", "explain pending", "verify <repo>#<n>", "deliveries", "since-last", "qa-guide", "qa-import <path>", "ultra <repo>#<n>", "review <link>", "file" (the Spanish forms "pendientes", "explicar", "verificar", "entregas", "desde-ultima", "guia-qa", "importar-qa", "revisar", "archivo" are also accepted; "ultra" is the same in Spanish).
 ---
 
 # Review PRs (seki-review)
@@ -16,6 +16,7 @@ Tools of the `seki-review` MCP server:
 | `pr_detalle` | Description, commits and trimmed diff of a PR, to understand it |
 | `pr_verificaciones` | Fixed rules over the added lines of a PR, or of a local branch before opening it (`dir` + `base`) |
 | `pr_ultra` | Read-only: cost estimate of an Ultra review of a PR and what it is based on, whether Ultra is suggested, the stored result (marked outdated after newer commits) and the dashboard link that opens the confirmation. Spends no AI |
+| `pr_revisar` | Adds a PR to the dashboard's "To review" list from its link (`https://github.com/<owner>/<repo>/pull/<n>`, `<repo>#<n>`). Checks that the repository is configured and the PR open; spends no AI and writes nothing to GitHub |
 | `pr_guardar_explicacion` | Saves a PR's explanation tied to its current commit |
 | `tablero_generar` | Writes and opens `revision-prs/tablero.html` (local file, no actions) |
 | `tablero_servir` | Serves the dashboard on 127.0.0.1 with actions: refresh status and analyze with AI |
@@ -46,9 +47,13 @@ by looking at the line in context and say whether it is real or a false positive
 
 **"ultra <repo>#<n>":** call `pr_ultra`. Answer from the stored result first: if it exists for the current `headSha`, summarize its verified findings by severity, the discarded count, any lens that failed and the project checks, and do not run any analysis again. If it is outdated, say so and what changed. Without a result, give the estimate and its base ("from N earlier reviews" or "from the cost caps"), whether Ultra is suggested and why, and the link: the served URL returned by `tablero_servir` with the `enlace` field (a hash) appended. Opening that link shows the confirmation; the review starts only when the person confirms it there. Never launch an Ultra review from the chat and do not read the PR from GitHub to answer. `disponible` reflects the project mode only: if it is false because of saving mode, say so and that the dashboard mode selector can still allow Ultra; if the PR is no longer open, say that.
 
+**"review <link>" ("revisar"):** call `pr_revisar` with the link or `<repo>#<n>` exactly as the person wrote it (never build a `gh` command from it). Reply in one line: the PR id and whether it was added or already there. A served dashboard with its tab open refreshes that repo on its next watcher probe (every few minutes), and "Refresh status" brings it in at once; to open it, call `tablero_servir` and append `enlaceTablero` to the served URL: the link selects the PR as soon as it arrives in the snapshot. Do not explain or analyze the PR unless asked: the AI actions stay in the dashboard. A refusal (repository not configured, PR closed or merged, text that is not a link) is reported as is.
+
+**To review in summaries:** `prs_pendientes` lists a "To review" section with the PRs where the owner is requested directly on GitHub (not through a team) or that were added by link, with their author. Mention it first when it is not empty (these PRs wait on the owner, not on promotion), and never count them among the user's pending promotions or deliveries.
+
 **"explain <repo>#<n>" ("explicar"):** `pr_detalle` → read description, commits and diff → review the findings from `pr_verificaciones` → if the diff comes trimmed and it is needed, read the file in the local checkout with a bounded read (grep + range) → `pr_guardar_explicacion` → `tablero_servir`.
 
-**"explain pending" ("explicar pendientes"):** take from `prs_pendientes` the PRs with no explanation or an outdated one, excluding those on inactive branches. Prioritize security and those going to production. More than 5 PRs → split across subagents with `model: "sonnet"`, each with 3 to 5 PRs, and ask them to call `pr_guardar_explicacion` themselves. At the end, `tablero_servir`.
+**"explain pending" ("explicar pendientes"):** take from `prs_pendientes` the PRs with no explanation or an outdated one, excluding those on inactive branches and the "To review" section (other people's PRs are analyzed one by one on request). Prioritize security and those going to production. More than 5 PRs → split across subagents with `model: "sonnet"`, each with 3 to 5 PRs, and ask them to call `pr_guardar_explicacion` themselves. At the end, `tablero_servir`.
 
 **Review by another person:** the dashboard is a local file that can be sent. The reviewer chooses "Reviewer"
 at the top, records their decision and observations per PR and exports a JSON; the author imports it into their dashboard. If asked to read

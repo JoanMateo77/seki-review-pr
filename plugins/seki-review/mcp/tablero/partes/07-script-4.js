@@ -203,6 +203,7 @@ function pintarTodo({ detalle = true } = {}) {
   pintarCola();
   if (detalle) pintarDetalle();
   sincronizarAnimaciones();
+  seleccionarPendiente();
 }
 
 // Each poll repaints the detail and looping animations would restart: the bar and icon would jump every 3 s.

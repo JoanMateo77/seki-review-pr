@@ -30,6 +30,7 @@ if (tool) {
   console.log(r.result?.content?.[0]?.text ?? JSON.stringify(r.error));
 }
 if (!lista.result.tools.some((t) => t.name === 'pr_ultra')) { console.error('FAIL: the pr_ultra tool is not registered'); process.exitCode = 1; }
+if (!lista.result.tools.some((t) => t.name === 'pr_revisar')) { console.error('FAIL: the pr_revisar tool is not registered'); process.exitCode = 1; }
 srv.kill();
 
 // Board with an AI mode and a daily budget, served on a free port; an Ultra review with fake dependencies stores its result.
@@ -84,6 +85,45 @@ if (!tool) {
   } finally {
     if (configPrevia === undefined) delete process.env.SEKI_REVIEW_CONFIG; else process.env.SEKI_REVIEW_CONFIG = configPrevia;
     await detenerServidores();
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// Review intake with a fake gh: one PR requested from the owner and one added with pr_revisar end up in the snapshot, not in deliveries.
+if (!tool) {
+  const { proyecto: cargarProyecto } = await import('../mcp/lib/config.mjs');
+  const { recolectar } = await import('../mcp/lib/recolectar.mjs');
+  const { leerJson, rutaEntregas } = await import('../mcp/lib/cache.mjs');
+  const { falsoGhRutas, limpiarGhRutas } = await import('./util/gh-rutas.mjs');
+  const { default: revisar } = await import('../mcp/tools/pr_revisar.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'seki-humo-revisar-'));
+  const previo = { config: process.env.SEKI_REVIEW_CONFIG, gh: process.env.SEKI_GH };
+  const verificar = (ok, texto) => { console.log(ok ? 'ok  ' : 'FAIL', texto); if (!ok) process.exitCode = 1; };
+  try {
+    const salida = join(dir, 'salida');
+    mkdirSync(join(salida, 'datos'), { recursive: true });
+    writeFileSync(join(dir, 'proyectos.json'), JSON.stringify({ humo: { owner: 'o', autor: 'yo', salida, repos: { r: { lineas: [{ portal: 'P', prod: 'main', pruebas: 'develop' }], inactivas: { viejo: 'retired' } } } } }));
+    process.env.SEKI_REVIEW_CONFIG = join(dir, 'proyectos.json');
+    const ahora = new Date().toISOString();
+    const ghPr = (n, autor) => ({ number: n, title: `pr ${n}`, url: `u/${n}`, baseRefName: 'viejo', headRefName: `rama-${n}`, createdAt: ahora, updatedAt: ahora, additions: 1, deletions: 1, changedFiles: 1, isDraft: false, headRefOid: `sha${n}`, author: { login: autor }, reviewDecision: '', body: '', state: 'OPEN' });
+    const gh = falsoGhRutas([
+      { patron: '^pr list -R o/r .*--search user-review-requested:yo', json: [ghPr(10, 'ana')] },
+      { patron: '^pr view 20 -R o/r --json state$', json: { state: 'OPEN', number: 20 } },
+      { patron: '^pr view 20 -R o/r ', json: ghPr(20, 'beto') },
+      { patron: '^pr list ', json: [] },
+      { patron: '^api repos/o/r/pulls\\?base=', json: [] },
+    ]);
+    process.env.SEKI_GH = gh.ruta;
+    const r = await revisar.handler({ proyecto: 'humo', enlace: 'https://github.com/o/r/pull/20' });
+    verificar(r.id === 'r#20' && r.estado === 'agregada', 'pr_revisar adds a PR by link');
+    const foto = await recolectar({ proyecto: 'humo' });
+    const marcas = Object.fromEntries(foto.prs.map((x) => [x.id, x.paraRevisar]));
+    verificar(marcas['r#10'] === 'solicitada' && marcas['r#20'] === 'enlace', 'the requested PR and the linked PR are in the snapshot under To review');
+    verificar(foto.prs.every((x) => x.soloRevision), 'neither is treated as the owner\'s own PR');
+    verificar(leerJson(rutaEntregas(cargarProyecto('humo').salida)).entregas.every((e) => !e.prs.some((id) => id === 'r#10' || id === 'r#20')), 'neither enters the deliveries');
+  } finally {
+    for (const [k, v] of [['SEKI_REVIEW_CONFIG', previo.config], ['SEKI_GH', previo.gh]]) v === undefined ? delete process.env[k] : (process.env[k] = v);
+    limpiarGhRutas();
     rmSync(dir, { recursive: true, force: true });
   }
 }

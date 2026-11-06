@@ -18,7 +18,10 @@ export default {
   },
   async handler({ proyecto, repos, incluir_inactivas = false }) {
     const foto = await recolectar({ proyecto, repos, incluirInactivas: true });
-    const lineas = [`${foto.proyecto}: ${foto.prs.length} open PRs (${foto.generado.slice(0, 16)})`];
+    // PRs in the snapshot only to be reviewed are listed apart; they are not the user's pending promotions.
+    const propias = foto.prs.filter((x) => !x.soloRevision);
+    const paraRevisar = foto.prs.filter((x) => x.soloRevision);
+    const lineas = [`${foto.proyecto}: ${propias.length} open PRs (${foto.generado.slice(0, 16)})`];
     const c = foto.cambios;
     if (c) {
       lineas.push('', `## Changes detected between ${c.desde.slice(0, 16)} and ${c.hasta.slice(0, 16)}`);
@@ -29,11 +32,11 @@ export default {
     }
     for (const [accion, titulo] of Object.entries(foto.acciones)) {
       if (accion === 'inactiva' && !incluir_inactivas) {
-        const n = foto.prs.filter((x) => x.accion === accion).length;
+        const n = propias.filter((x) => x.accion === accion).length;
         if (n) lineas.push('', `## ${titulo}: ${n} PRs (set incluir_inactivas=true to list them)`);
         continue;
       }
-      const grupo = foto.prs.filter((x) => x.accion === accion);
+      const grupo = propias.filter((x) => x.accion === accion);
       if (!grupo.length) continue;
       lineas.push('', `## ${titulo} (${grupo.length})`);
       for (const x of grupo) {
@@ -53,6 +56,13 @@ export default {
           x.explicacion ? (x.explicacion.desactualizada ? 'explanation outdated' : 'explained') : 'no explanation',
         ].filter(Boolean).join(' · ');
         lineas.push(`- ${x.repo}#${x.numero} ${x.titulo} [${extra}]`);
+      }
+    }
+    if (paraRevisar.length) {
+      const ORIGEN = { solicitada: 'Requested', enlace: 'Added by link' };
+      lineas.push('', `## To review (${paraRevisar.length})`);
+      for (const x of paraRevisar) {
+        lineas.push(`- ${x.repo}#${x.numero} ${x.titulo} [${[ORIGEN[x.paraRevisar], `by ${x.autor ?? 'unknown'}`, x.portal, x.borrador && 'draft', `${x.dias} d`].filter(Boolean).join(' · ')}]`);
       }
     }
     return lineas.join('\n');

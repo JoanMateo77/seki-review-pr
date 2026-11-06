@@ -39,3 +39,10 @@ test('the AI mode part is evaluated before the script that paints for the first 
   assert.ok(orden.indexOf('07b-modos.js') > orden.indexOf('07-script-4.js'));
   assert.ok(orden.indexOf('07b-modos.js') < orden.indexOf('08-script-5.js'));
 });
+
+test('the review intake part is evaluated after the detail script and before the first paint', () => {
+  const orden = JSON.parse(readFileSync(new URL('orden.json', PARTES), 'utf8'));
+  assert.ok(orden.indexOf('07c-revisar.js') > orden.indexOf('07-script-4.js'));
+  assert.ok(orden.indexOf('07c-revisar.js') < orden.indexOf('08-script-5.js'));
+  assert.ok(orden.includes('02d-revisar.css'));
+});

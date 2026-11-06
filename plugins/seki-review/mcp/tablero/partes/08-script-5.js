@@ -273,4 +273,9 @@ const [inicial, tabInicial] = decodeURIComponent(location.hash.slice(1)).split('
 if (CUERPOS[tabInicial]) estado.tab = tabInicial;
 pintarTodo();
 if (FOTO.prs.some((p) => p.id === inicial)) seleccionar(inicial);
+else if (mensajeRutaDesconocida(inicial)) {
+  // A PR added from the chat arrives with the next refresh: it is selected then.
+  if (API) { estado.seleccionPendiente = inicial; estado.pendienteDeRuta = true; }
+  avisar(mensajeRutaDesconocida(inicial));
+}
 if (API) sondear();

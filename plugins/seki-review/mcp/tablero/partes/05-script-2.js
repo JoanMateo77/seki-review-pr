@@ -78,7 +78,7 @@ function tabRevision(pr) {
     ${sec('Feedback for the author', `<textarea id="notaRevision" placeholder="What’s missing, what was tested, what needs clarifying">${esc(r.nota ?? '')}</textarea>
       <div class="guardado" id="guardado">${r.fecha ? `Saved ${esc(new Date(r.fecha).toLocaleString('en-US'))}` : ''}</div>`)}
     <p class="tenue">The review stays in this browser. To send it to the author:</p>
-    <div class="acciones"><button class="btn" data-accion="exportar">${icono('descargar')} Export review</button><button class="btn" data-accion="copiarResumen">${icono('copiar')} Copy summary</button></div>`;
+    <div class="acciones"><button class="btn" data-accion="exportar">${icono('descargar')} Export review</button><button class="btn" data-accion="copiarResumen">${icono('copiar')} Copy summary</button><button class="btn" data-copiar-revision title="Decision, comments on the diff and notes as Markdown, to paste on GitHub">${icono('copiar')} Copy review</button></div>`;
 }
 
 const ESTADO_ARCHIVO = { added: 'Added', removed: 'Removed', modified: 'Modified', renamed: 'Renamed', copied: 'Copied', changed: 'Changed' };

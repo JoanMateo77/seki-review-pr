@@ -13,6 +13,7 @@ import { agrupar } from './entregas.mjs';
 import { construirEntregas } from './etapas.mjs';
 import { eventosDe, registrarEventos } from './eventos.mjs';
 import { leerGuias, qaDeEventos } from './qa-guia.mjs';
+import { agregarRevisar, idDe, leerRevisar, podarRevisar } from './revisar.mjs';
 
 const CAMPOS = 'number,title,url,baseRefName,headRefName,createdAt,updatedAt,additions,deletions,changedFiles,isDraft,headRefOid,author,reviewDecision,body';
 
@@ -29,6 +30,7 @@ export const ACCIONES = {
 };
 
 const PAGINAS_GEMELAS = 3;
+const LIMITE_PEDIDAS = 100;
 const PAGINAS_MAXIMAS = 10;
 const POR_PAGINA = 100;
 const MAX_DESCRIPCION = 4096;
@@ -121,9 +123,11 @@ export async function derivarEnSerie(p, foto) {
   const bases = Object.values(p.repos).flatMap((r) => r.lineas.flatMap((l) => [l.prod, l.pruebas])).filter((b) => typeof b === 'string');
   const cfg = { sufijosRama: p.entregas.sufijosRama, patronId: p.entregas.patronId, maxPorSenal: p.entregas.maxPorSenal, bases, owner: p.owner };
   const prsPorId = new Map();
-  for (const pr of [...foto.prs, ...(foto.recientes ?? [])]) if (!prsPorId.has(pr.id)) prsPorId.set(pr.id, pr);
+  // PRs that are in the snapshot only to be reviewed belong to someone else's deliveries.
+  const propia = { ...foto, prs: foto.prs.filter((pr) => !pr.soloRevision) };
+  for (const pr of [...propia.prs, ...(foto.recientes ?? [])]) if (!prsPorId.has(pr.id)) prsPorId.set(pr.id, pr);
   const entregas = agrupar([...prsPorId.values()], cfg, ajustes);
-  const { todos } = await registrarEventos(p, eventosDe(foto, entregas));
+  const { todos } = await registrarEventos(p, eventosDe(propia, entregas));
   const construidas = construirEntregas({ entregas, prsPorId, cfgRepos: p.repos, cfg: p.entregas, eventos: todos, ahora: new Date(), qaDe: qaDeEventos(todos, leerGuias(p).guias) });
   const salida = { generado: new Date().toISOString(), entregas: construidas };
   escribirJson(rutaEntregas(p.salida), salida);
@@ -205,7 +209,7 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
     return (await ghJson(args)).map((pr) => ({ repo, pr }));
   }))).flat();
 
-  const prs = await enParalelo(abiertas, 6, async ({ repo, pr }) => {
+  async function procesarPr({ repo, pr, origen, solo }) {
     const cfgRepo = p.repos[repo];
     const linea = clasificarBase(cfgRepo, pr.baseRefName);
     const item = {
@@ -235,6 +239,8 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
       seguridad: esSeguridad(pr.title),
       esfuerzoTamano: esfuerzoPorTamano(pr.additions + pr.deletions, pr.changedFiles),
     };
+    if (origen) item.paraRevisar = origen;
+    if (solo) item.soloRevision = true;
 
     if (linea.ambiente === 'prod' || linea.ambiente === 'pruebas') {
       const otra = linea.ambiente === 'prod' ? linea.pruebas : linea.prod;
@@ -263,7 +269,57 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
 
     item.accion = accionSugerida(item);
     return item;
-  });
+  }
+
+  // Open PRs the owner has to review: requested on GitHub (remembered in the list) or added by link. They skip
+  // the author filter; the ones that are also the owner's own keep their grouping and only get the mark.
+  const marcas = new Map();
+  const ajenas = [];
+  {
+    const propios = new Set(abiertas.map(({ repo, pr }) => idDe({ repo, numero: pr.number })));
+    const sinBusqueda = new Set();
+    const pedidas = (await Promise.all(nombres.map(async (repo) => {
+      try {
+        const args = ['pr', 'list', '-R', `${p.owner}/${repo}`, '--state', 'open', '--limit', String(LIMITE_PEDIDAS), '--search', `user-review-requested:${login || '@me'}`, '--json', CAMPOS];
+        const lista = await ghJson(args);
+        if (lista.length >= LIMITE_PEDIDAS) console.error(`[seki-review/revisar] The requested search of ${repo} reached its limit of ${LIMITE_PEDIDAS}; older requests may be missing`);
+        return lista.map((pr) => ({ repo, pr }));
+      } catch (e) {
+        console.error(`[seki-review/revisar] Requested PRs of ${repo} were not read: ${e?.code ?? 'error'}`);
+        sinBusqueda.add(repo);
+        return [];
+      }
+    }))).flat();
+    if (pedidas.length) agregarRevisar(p, pedidas.map(({ repo, pr }) => ({ repo, numero: pr.number, origen: 'solicitada' })));
+    const abiertasPedidas = new Map(pedidas.map(({ repo, pr }) => [idDe({ repo, numero: pr.number }), pr]));
+    const salen = new Map();
+    const todas = leerRevisar(p, { todas: true }).filter((e) => nombres.includes(e.repo) && p.repos[e.repo]);
+    // A dismissed entry only matters while GitHub still lists the PR as requested (judged only where the search worked).
+    for (const e of todas) if (e.descartada && !sinBusqueda.has(e.repo) && !abiertasPedidas.has(idDe(e))) salen.set(idDe(e), e);
+    const lista = todas.filter((e) => !e.descartada);
+    await enParalelo(lista, 6, async (e) => {
+      const id = idDe(e);
+      if (propios.has(id)) { marcas.set(id, e.origen); return; }
+      let pr = abiertasPedidas.get(id);
+      if (!pr) {
+        try {
+          pr = await ghJson(['pr', 'view', String(e.numero), '-R', `${p.owner}/${e.repo}`, '--json', `${CAMPOS},state`]);
+        } catch (err) {
+          console.error(`[seki-review/revisar] ${id} was not read: ${err?.code ?? 'error'}`);
+          return;
+        }
+        if (pr.state !== 'OPEN') { salen.set(id, e); return; }
+      }
+      ajenas.push({ repo: e.repo, pr, origen: e.origen, solo: true });
+    });
+    if (salen.size) podarRevisar(p, salen);
+  }
+
+  const prs = await enParalelo(
+    [...abiertas.map((x) => ({ ...x, origen: marcas.get(idDe({ repo: x.repo, numero: x.pr.number })) })), ...ajenas.sort((x, y) => x.repo.localeCompare(y.repo) || x.pr.number - y.pr.number)],
+    6,
+    procesarPr,
+  );
 
   // PRs already merged into testing whose code never reached production and that have no PR to production.
   const huerfanas = [];
