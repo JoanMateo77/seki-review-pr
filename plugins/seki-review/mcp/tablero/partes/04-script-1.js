@@ -196,14 +196,14 @@ function pintarCola() {
     const cerrado = estado.cerrados.has(g);
     return `<section class="grupo" ${cerrado ? 'data-cerrado' : ''}>
       <button class="grupo-cab" data-grupo-toggle="${g}" aria-expanded="${!cerrado}">${icono('chevron')}<span>${esc(nombre)}</span><span class="n">${filas.length}</span><span class="desc">${esc(desc)}</span></button>
-      <div class="filas">${filas.map((pr) => `
+      <div class="filas">${filas.map((pr) => conQuitarRevisar(pr, `
         <button class="fila" data-id="${esc(pr.id)}" aria-current="${estado.seleccion === pr.id}">
           <span class="punto ${tono(pr)}"></span>
           <span class="id mono">${esc(pr.repoEtiqueta)} #${pr.numero}</span>
           <span class="titulo" title="${esc(pr.titulo)}">${esc(pr.titulo)}</span>
           <span class="senales">${senales(pr)}</span>
           ${estado.filtroIa?.estado === 'listo' ? motivoHtml(estado.filtroIa.motivos.get(pr.id)) : ''}
-        </button>`).join('')}</div>
+        </button>`)).join('')}</div>
     </section>`;
   }).join('');
 }

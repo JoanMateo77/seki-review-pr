@@ -202,7 +202,7 @@ const baseRutas = (...mas) => [
   ...mas,
   pulls('a', 'main', []), pulls('a', 'testing', []), pulls('b', 'main', []), pulls('b', 'testing', []),
 ];
-const pedida = (repo, lista) => ({ patron: `^pr list -R o/${repo} .*--search review-requested:@me`, json: lista });
+const pedida = (repo, lista) => ({ patron: `^pr list -R o/${repo} .*--search user-review-requested:yo`, json: lista });
 const propias = (repo, lista) => ({ patron: `^pr list -R o/${repo} .*--author yo`, json: lista });
 const vista = (repo, n, json) => ({ patron: `^pr view ${n} -R o/${repo} `, json });
 
@@ -219,7 +219,7 @@ test('a requested PR enters the snapshot without the author filter and is rememb
   const propia = foto.prs.find((x) => x.id === 'a#1');
   assert.equal(propia.paraRevisar, undefined);
   assert.ok(!propia.soloRevision);
-  const busqueda = f.llamadas().find((c) => c.includes('review-requested:@me') && c.includes('o/a'));
+  const busqueda = f.llamadas().find((c) => c.includes('user-review-requested:yo') && c.includes('o/a'));
   assert.ok(!busqueda.includes('--author'));
   assert.deepEqual(leerJson(join(salida, 'datos', 'revisar.json')).prs.map((e) => [e.repo, e.numero, e.origen]), [['a', 50, 'solicitada']]);
 
@@ -335,7 +335,7 @@ test('without an author filter the listed and requested PRs are still marked', a
   writeFileSync(join(salida, 'datos', 'revisar.json'), JSON.stringify({ version: 1, prs: [{ repo: 'a', numero: 2, origen: 'enlace', agregada: hace(1) }] }));
   const f = falsoGhRutas([
     { patron: '^api repos/o/a/pulls\\?base=', json: [] },
-    { patron: '^pr list -R o/a .*--search review-requested:@me', json: [ghPr(1, 'otro')] },
+    { patron: '^pr list -R o/a .*--search user-review-requested:@me', json: [ghPr(1, 'otro')] },
     { patron: '^pr list -R o/a ', json: [ghPr(1, 'otro'), ghPr(2, 'otro'), ghPr(3, 'yo')] },
   ]);
   process.env.SEKI_GH = f.ruta;
@@ -384,20 +384,44 @@ test('a requested search that reaches its limit is logged', async () => {
   assert.ok(lineas.some((l) => l.includes('reached its limit of 100')));
 });
 
-test('listed PRs add no rows to the QA guide', async () => {
+test('listed PRs add no rows to the QA guide, even when they share a branch with an owner PR waiting for QA', async () => {
   const salida = entornoRevisar();
   writeFileSync(join(salida, 'datos', 'revisar.json'), JSON.stringify({ version: 1, prs: [{ repo: 'a', numero: 70, origen: 'enlace', agregada: hace(1) }] }));
-  const enPruebas = (n, autor) => ghPr(n, autor, { baseRefName: 'testing', title: `solo pruebas ${n}` });
-  process.env.SEKI_GH = falsoGhRutas(baseRutas(
+  const ajena = ghPr(70, 'otro', { baseRefName: 'testing', title: 'solo pruebas 70', headRefName: 'feat/x' });
+  process.env.SEKI_GH = falsoGhRutas([
+    { patron: '^api user$', json: { login: 'yo' } },
     { patron: '^api --paginate --slurp repos/o/a/pulls/\\d+/(files|commits)', json: [[]] },
-    vista('a', 70, enPruebas(70, 'otro')), propias('a', [enPruebas(1, 'yo')]), { patron: '^pr list ', json: [] },
-  )).ruta;
+    vista('a', 70, ajena), propias('a', []), { patron: '^pr list ', json: [] },
+    pulls('a', 'testing', [rest(1, 'solo pruebas 1', 'yo', { merged_at: hace(1), closed_at: hace(1), updated_at: hace(1), head: { sha: 'h1', ref: 'feat/x' } })]),
+    pulls('a', 'main', []), pulls('b', 'main', []), pulls('b', 'testing', []),
+  ]).ruta;
   const foto = await recolectar({ proyecto: 't' });
   const { filasDeGuia } = await import('../mcp/lib/qa-guia.mjs');
   const entregas = leerJson(rutaEntregas(salida)).entregas;
-  const filas = filasDeGuia({ entregas, prsPorId: new Map(foto.prs.map((x) => [x.id, x])) });
+  assert.ok(entregas.some((e) => e.etapa === 'esperando_qa' && e.prs.includes('a#1')), 'the owner PR waits for QA');
+  const filas = filasDeGuia({ entregas, prsPorId: new Map([...foto.prs, ...foto.recientes].map((x) => [x.id, x])) });
+  assert.ok(filas.length > 0);
+  assert.ok(filas.some((f) => f.prs.includes('a#1')));
   assert.ok(!filas.some((f) => f.prs.includes('a#70')));
   assert.ok(!JSON.stringify(entregas).includes('a#70'));
+});
+
+test('the requested search names the owner login, or @me when it is not known', async () => {
+  const buscada = async (extra) => {
+    const dir = temporal('seki-rec-');
+    const salida = join(dir, 'salida');
+    mkdirSync(join(salida, 'datos'), { recursive: true });
+    writeFileSync(join(dir, 'proyectos.json'), JSON.stringify({ t: { owner: 'o', ...extra, salida, repos: { a: { lineas: [linea] } } } }));
+    process.env.SEKI_REVIEW_CONFIG = join(dir, 'proyectos.json');
+    const f = falsoGhRutas([{ patron: '^api user$', json: { login: 'yo' } }, { patron: '^pr list ', json: [] }, pulls('a', 'main', []), pulls('a', 'testing', [])]);
+    process.env.SEKI_GH = f.ruta;
+    await recolectar({ proyecto: 't' });
+    return f.llamadas().find((c) => c.includes('--search'))[c0(f)];
+  };
+  const c0 = (f) => f.llamadas().find((c) => c.includes('--search')).indexOf('--search') + 1;
+  assert.equal(await buscada({ autor: 'yo' }), 'user-review-requested:yo');
+  assert.equal(await buscada({ autor: '@me' }), 'user-review-requested:yo');
+  assert.equal(await buscada({}), 'user-review-requested:@me');
 });
 
 test('the item built for an owner PR keeps its fields exactly (no behaviour change from the extraction)', async () => {

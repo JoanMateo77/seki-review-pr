@@ -59,7 +59,7 @@ const llamarCon = (e, enlace) => herramienta.handler({ proyecto: e.clave, enlace
 test('prs_pendientes lists the To review section apart from the groups', async () => {
   const e = entorno([
     { patron: '^api user$', json: { login: 'yo' } },
-    { patron: '^pr list -R o/r .*--search review-requested:@me', json: [ghPr(50, 'ana')] },
+    { patron: '^pr list -R o/r .*--search user-review-requested:yo', json: [ghPr(50, 'ana')] },
     { patron: '^pr list ', json: [] },
     { patron: '^api repos/o/r/pulls\\?base=', json: [] },
   ]);
@@ -73,7 +73,7 @@ test('prs_pendientes lists the To review section apart from the groups', async (
 test('tablero_generar reports how many PRs are to review', async () => {
   const e = entorno([
     { patron: '^api user$', json: { login: 'yo' } },
-    { patron: '^pr list -R o/r .*--search review-requested:@me', json: [ghPr(50, 'ana')] },
+    { patron: '^pr list -R o/r .*--search user-review-requested:yo', json: [ghPr(50, 'ana')] },
     { patron: '^pr list ', json: [] },
     { patron: '^api repos/o/r/pulls\\?base=', json: [] },
   ]);

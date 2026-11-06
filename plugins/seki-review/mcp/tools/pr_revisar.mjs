@@ -6,7 +6,7 @@ export default {
   description:
     'Adds a PR to the "To review" list of the dashboard from its link (https://github.com/<owner>/<repo>/pull/<n>, <repo>#<n> or "<repo> <n>"). ' +
     'The repository must be configured in the project and the PR open (one `gh pr view` checks it). It spends no AI and writes nothing to GitHub: ' +
-    'a running dashboard picks the PR up on its next refresh. Returns the PR id, whether it was added or already there, and the dashboard hash that selects it.',
+    'a served dashboard with its tab open refreshes the repo on its next watcher probe (every few minutes) or on "Refresh status". Returns the PR id, whether it was added or already there, and the dashboard hash that selects it.',
   inputSchema: {
     type: 'object',
     required: ['enlace'],

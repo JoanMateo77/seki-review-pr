@@ -34,26 +34,26 @@ const vista = (n, state = 'OPEN') => ({ patron: `^pr view ${n} -R o/r --json sta
 const vistaCompleta = (n) => ({ patron: `^pr view ${n} -R o/r --json number,title,.*,state$`, json: ghPr(n) });
 
 let n = 0;
-async function entorno(rutas) {
+async function entorno(rutas, { repos = ['r'], servidor = {} } = {}) {
   const clave = `ri${++n}`;
   const dir = mkdtempSync(join(tmpdir(), 'seki-revisar-api-'));
   temporales.push(dir);
   const salida = join(dir, 'salida');
   mkdirSync(join(salida, 'datos'), { recursive: true });
   const ruta = join(dir, 'proyectos.json');
-  writeFileSync(ruta, JSON.stringify({ [clave]: { owner: 'o', autor: 'yo', salida, repos: { r: { lineas: [{ portal: 'P', prod: 'main', pruebas: 'develop' }] } } } }));
+  writeFileSync(ruta, JSON.stringify({ [clave]: { owner: 'o', autor: 'yo', salida, repos: Object.fromEntries(repos.map((r) => [r, { lineas: [{ portal: 'P', prod: 'main', pruebas: 'develop' }] }])) } }));
   process.env.SEKI_REVIEW_CONFIG = ruta;
   const gh = falsoGhRutas(rutas);
   process.env.SEKI_GH = gh.ruta;
   const p = cargarProyecto(clave);
   escribirJson(rutaInstantanea(salida), { proyecto: clave, generado: new Date().toISOString(), owner: 'o', prs: [], recientes: [] });
-  const { url } = await iniciarServidor({ proyecto: clave, puerto: 0, abrir: false });
+  const { url } = await iniciarServidor({ proyecto: clave, puerto: 0, abrir: false, ...servidor });
   const u = new URL(url);
   const token = u.searchParams.get('t');
   const llamar = (r, cuerpo, cabeceras = {}) => fetch(`${u.origin}${r}`, { method: cuerpo === undefined ? 'GET' : 'POST', headers: { 'x-seki-token': token, 'content-type': 'application/json', ...cabeceras }, body: cuerpo === undefined ? undefined : (typeof cuerpo === 'string' ? cuerpo : JSON.stringify(cuerpo)) });
   const esperar = async () => { for (let i = 0; i < 200; i++) { const d = await (await llamar('/api/estado')).json(); if (!d.refrescando) return d; await new Promise((r) => setTimeout(r, 25)); } throw new Error('refresh did not finish'); };
   // One search per repo and refresh: it counts the refreshes of the single configured repo.
-  const refrescos = () => gh.llamadas().filter((c) => c.includes('review-requested:@me')).length;
+  const refrescos = () => gh.llamadas().filter((c) => c.includes('user-review-requested:yo')).length;
   return { p, gh, llamar, esperar, refrescos, u, token, cerrar: () => llamar('/api/ceder', {}) };
 }
 
@@ -150,15 +150,59 @@ test('POST /api/revisar/quitar removes a listed PR and refreshes; unknown ids ar
   assert.deepEqual((await (await e.llamar('/api/foto')).json()).prs, []);
 });
 
-test('several additions in a row refresh one after another through the single-flight path', async (t) => {
-  const e = await entorno(rutasBase(vista(1), vista(2), vistaCompleta(1), vistaCompleta(2)));
+// Routes for a project with repos r and s whose refresh searches take `espera` ms, so refreshes can be told apart.
+const rutasDosRepos = (espera, ...mas) => [
+  { patron: '^api user$', json: { login: 'yo' } },
+  ...mas,
+  { patron: '^pr list .*--search user-review-requested:yo', esperaMs: espera, json: [] },
+  { patron: '^pr list ', json: [] },
+  { patron: '^api repos/o/[rs]/pulls\\?base=', json: [] },
+  { patron: '^api --paginate --slurp repos/o/[rs]/pulls/\\d+/(files|commits)', json: [[]] },
+];
+const vistaDe = (repo, num) => ({ patron: `^pr view ${num} -R o/${repo} --json state$`, json: { state: 'OPEN', number: num } });
+const completaDe = (repo, num) => ({ patron: `^pr view ${num} -R o/${repo} --json number,title,.*,state$`, json: ghPr(num) });
+const busquedas = (e) => e.gh.llamadas().filter((c) => c.includes('--search') && c.some((a) => a.startsWith('user-review-requested:')));
+const idsDeFoto = async (e) => (await (await e.llamar('/api/foto')).json()).prs.map((x) => x.id).sort();
+async function hastaQue(cond) { for (let i = 0; i < 300 && !(await cond()); i++) await new Promise((r) => setTimeout(r, 40)); }
+
+test('overlapping list changes merge into one pending refresh; no change is answered by a refresh of other repos', async (t) => {
+  const e = await entorno(rutasDosRepos(200, vistaDe('r', 1), vistaDe('s', 2), vistaDe('r', 3), completaDe('r', 1), completaDe('s', 2), completaDe('r', 3)), { repos: ['r', 's'] });
   t.after(e.cerrar);
-  const rs = await Promise.all([e.llamar('/api/revisar', { enlace: 'r#1' }), e.llamar('/api/revisar', { enlace: 'r#2' })]);
-  assert.deepEqual(rs.map((r) => r.status), [202, 202]);
-  for (let i = 0; i < 100 && (await (await e.llamar('/api/foto')).json()).prs.length < 2; i++) await new Promise((r) => setTimeout(r, 50));
+  assert.equal((await e.llamar('/api/revisar', { enlace: 'r#1' })).status, 202);
+  assert.equal((await e.llamar('/api/revisar', { enlace: 's#2' })).status, 202);
+  assert.equal((await e.llamar('/api/revisar', { enlace: 'r#3' })).status, 202);
+  await hastaQue(async () => (await idsDeFoto(e)).length === 3);
   await e.esperar();
-  assert.deepEqual((await (await e.llamar('/api/foto')).json()).prs.map((x) => x.id).sort(), ['r#1', 'r#2']);
-  assert.ok(e.refrescos() <= 2);
+  assert.deepEqual(await idsDeFoto(e), ['r#1', 'r#3', 's#2']);
+  // One refresh of r, then one refresh of both repos for the two later changes.
+  assert.equal(busquedas(e).length, 3);
+  assert.ok(e.gh.maxSimultaneas() <= 2, 'only the two searches of the merged refresh run together');
+});
+
+test('a list change made while a full refresh runs gets its own refresh afterwards', async (t) => {
+  const e = await entorno(rutasDosRepos(200, vistaDe('r', 4), completaDe('r', 4)), { repos: ['r'] });
+  t.after(e.cerrar);
+  assert.equal((await e.llamar('/api/refrescar', {})).status, 202);
+  assert.equal((await e.llamar('/api/revisar', { enlace: 'r#4' })).status, 202);
+  await hastaQue(async () => (await idsDeFoto(e)).includes('r#4'));
+  await e.esperar();
+  assert.deepEqual(await idsDeFoto(e), ['r#4']);
+  assert.equal(busquedas(e).length, 2);
+  assert.equal(e.gh.maxSimultaneas(), 1);
+});
+
+test('an entry added from outside the dashboard (the chat tool) is refreshed on the next watcher probe', async (t) => {
+  const e = await entorno(rutasDosRepos(0, completaDe('r', 12)), { repos: ['r'], servidor: { intervaloVigiaMs: 60 } });
+  t.after(e.cerrar);
+  const { agregarRevisar } = await import('../mcp/lib/revisar.mjs');
+  await new Promise((r) => setTimeout(r, 5));
+  agregarRevisar(e.p, { repo: 'r', numero: 12, origen: 'enlace' });
+  // The watcher only runs while a board is open.
+  for (let i = 0; i < 100 && !(await idsDeFoto(e)).includes('r#12'); i++) {
+    await e.llamar('/api/estado', undefined, { 'x-seki-tablero': '1' });
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  assert.deepEqual(await idsDeFoto(e), ['r#12']);
 });
 
 // The board part, evaluated with minimal stubs like the Ultra renderer.
@@ -265,4 +309,27 @@ test('a card without author omits the author and the static board drops the past
   const html = tablero().seccionParaRevisar([{ id: 'r#1', repo: 'r', repoEtiqueta: 'r', numero: 1, titulo: 'T', autor: null, paraRevisar: 'enlace', soloRevision: true }]);
   assert.doesNotMatch(html, /autor-revisar|@null|@undefined/);
   assert.equal(tablero({ API: null }).mensajeRutaDesconocida('api#1'), 'This PR is not in the dashboard.');
+});
+
+test('the remove action also appears on the owner PRs that are listed, only with the API', () => {
+  const propia = { id: 'r#1', repo: 'r', numero: 1, paraRevisar: 'enlace' };
+  const html = tablero().conQuitarRevisar(propia, '<button class="fila"></button>');
+  assert.match(html, /data-quitar-revisar="r#1"/);
+  assert.equal(tablero().conQuitarRevisar({ id: 'r#2' }, 'X'), 'X');
+  assert.equal(tablero({ API: null }).conQuitarRevisar(propia, 'X'), 'X');
+});
+
+test('a PR waiting from a route is selected when it arrives, unless another PR is already open', () => {
+  const elegidos = [];
+  const base = (seleccion) => tablero({ FOTO: { prs: [{ id: 'r#9' }] }, seleccionar: (id) => elegidos.push(id), estado: { cerrados: new Set(), seleccion, seleccionPendiente: 'r#9', pendienteDeRuta: true, refrescando: false } });
+  base(null).seleccionarPendiente();
+  assert.deepEqual(elegidos, ['r#9']);
+  base('r#1').seleccionarPendiente();
+  assert.deepEqual(elegidos, ['r#9']);
+  // Not yet in the snapshot: it keeps waiting, with no message, even when no refresh is running.
+  const avisos = [];
+  const espera = tablero({ FOTO: { prs: [] }, avisar: (m) => avisos.push(m), estado: { cerrados: new Set(), seleccionPendiente: 'r#9', pendienteDeRuta: true, refrescando: false } });
+  espera.seleccionarPendiente();
+  assert.equal(espera.estado.seleccionPendiente, 'r#9');
+  assert.deepEqual(avisos, []);
 });

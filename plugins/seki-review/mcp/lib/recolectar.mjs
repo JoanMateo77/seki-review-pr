@@ -13,9 +13,9 @@ import { agrupar } from './entregas.mjs';
 import { construirEntregas } from './etapas.mjs';
 import { eventosDe, registrarEventos } from './eventos.mjs';
 import { leerGuias, qaDeEventos } from './qa-guia.mjs';
-import { agregarRevisar, leerRevisar, podarRevisar } from './revisar.mjs';
+import { agregarRevisar, idDe, leerRevisar, podarRevisar } from './revisar.mjs';
 
-export const CAMPOS = 'number,title,url,baseRefName,headRefName,createdAt,updatedAt,additions,deletions,changedFiles,isDraft,headRefOid,author,reviewDecision,body';
+const CAMPOS = 'number,title,url,baseRefName,headRefName,createdAt,updatedAt,additions,deletions,changedFiles,isDraft,headRefOid,author,reviewDecision,body';
 
 export const ACCIONES = {
   pruebas_sin_prod: 'In testing with no PR to production',
@@ -276,11 +276,11 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
   const marcas = new Map();
   const ajenas = [];
   {
-    const propios = new Set(abiertas.map(({ repo, pr }) => `${repo}#${pr.number}`));
+    const propios = new Set(abiertas.map(({ repo, pr }) => idDe({ repo, numero: pr.number })));
     const sinBusqueda = new Set();
     const pedidas = (await Promise.all(nombres.map(async (repo) => {
       try {
-        const args = ['pr', 'list', '-R', `${p.owner}/${repo}`, '--state', 'open', '--limit', String(LIMITE_PEDIDAS), '--search', 'review-requested:@me', '--json', CAMPOS];
+        const args = ['pr', 'list', '-R', `${p.owner}/${repo}`, '--state', 'open', '--limit', String(LIMITE_PEDIDAS), '--search', `user-review-requested:${login || '@me'}`, '--json', CAMPOS];
         const lista = await ghJson(args);
         if (lista.length >= LIMITE_PEDIDAS) console.error(`[seki-review/revisar] The requested search of ${repo} reached its limit of ${LIMITE_PEDIDAS}; older requests may be missing`);
         return lista.map((pr) => ({ repo, pr }));
@@ -291,14 +291,14 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
       }
     }))).flat();
     if (pedidas.length) agregarRevisar(p, pedidas.map(({ repo, pr }) => ({ repo, numero: pr.number, origen: 'solicitada' })));
-    const abiertasPedidas = new Map(pedidas.map(({ repo, pr }) => [`${repo}#${pr.number}`, pr]));
-    const salen = new Set();
+    const abiertasPedidas = new Map(pedidas.map(({ repo, pr }) => [idDe({ repo, numero: pr.number }), pr]));
+    const salen = new Map();
     const todas = leerRevisar(p, { todas: true }).filter((e) => nombres.includes(e.repo) && p.repos[e.repo]);
     // A dismissed entry only matters while GitHub still lists the PR as requested (judged only where the search worked).
-    for (const e of todas) if (e.descartada && !sinBusqueda.has(e.repo) && !abiertasPedidas.has(`${e.repo}#${e.numero}`)) salen.add(`${e.repo}#${e.numero}`);
+    for (const e of todas) if (e.descartada && !sinBusqueda.has(e.repo) && !abiertasPedidas.has(idDe(e))) salen.set(idDe(e), e);
     const lista = todas.filter((e) => !e.descartada);
     await enParalelo(lista, 6, async (e) => {
-      const id = `${e.repo}#${e.numero}`;
+      const id = idDe(e);
       if (propios.has(id)) { marcas.set(id, e.origen); return; }
       let pr = abiertasPedidas.get(id);
       if (!pr) {
@@ -308,7 +308,7 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
           console.error(`[seki-review/revisar] ${id} was not read: ${err?.code ?? 'error'}`);
           return;
         }
-        if (pr.state !== 'OPEN') { salen.add(id); return; }
+        if (pr.state !== 'OPEN') { salen.set(id, e); return; }
       }
       ajenas.push({ repo: e.repo, pr, origen: e.origen, solo: true });
     });
@@ -316,7 +316,7 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
   }
 
   const prs = await enParalelo(
-    [...abiertas.map((x) => ({ ...x, origen: marcas.get(`${x.repo}#${x.pr.number}`) })), ...ajenas.sort((x, y) => x.repo.localeCompare(y.repo) || x.pr.number - y.pr.number)],
+    [...abiertas.map((x) => ({ ...x, origen: marcas.get(idDe({ repo: x.repo, numero: x.pr.number })) })), ...ajenas.sort((x, y) => x.repo.localeCompare(y.repo) || x.pr.number - y.pr.number)],
     6,
     procesarPr,
   );

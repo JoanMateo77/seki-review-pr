@@ -124,8 +124,8 @@ estimate (median of earlier reviews, or the cost caps when there are fewer than 
 "Ultra review" tab; the tool `pr_ultra` reads it without spending AI, and the link `#/pr/<repo>/<n>?ultra=1` opens the confirmation.
 Ultra is suggested when a changed path matches `ia.rutasSensibles` or the PR is flagged as security.
 
-**PRs to review.** Besides the PRs of `autor`, each refresh collects the open PRs of the configured repos where the owner is requested as
-reviewer (`review-requested:@me`) and remembers them in `salida/datos/revisar.json`, so a PR stays after the owner reviews it on GitHub until it
+**PRs to review.** Besides the PRs of `autor`, each refresh collects the open PRs of the configured repos where the owner is requested directly as
+reviewer (`user-review-requested:<login>`; team requests are not included) and remembers them in `salida/datos/revisar.json`, so a PR stays after the owner reviews it on GitHub until it
 is merged, closed or removed. A PR can also be added by link: the "Review a PR" field of the top bar (Enter) or the tool `pr_revisar` accept
 `https://github.com/<owner>/<repo>/pull/<n>`, `<repo>#<n>` or `<repo> <n>`; the repository must be configured and the PR open. These PRs go through the
 same pipeline as the others (summary, files, checks, how to test, comments, AI, Ultra) and appear first in a "To review" section, grouped by the

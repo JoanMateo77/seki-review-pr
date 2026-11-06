@@ -95,7 +95,7 @@ test('quitar and podar remove only what they are given; a corrupt file reads as 
   agregarRevisar(p, [{ repo: 'api', numero: 1, origen: 'enlace' }, { repo: 'api', numero: 2, origen: 'solicitada' }, { repo: 'web', numero: 3, origen: 'solicitada' }]);
   assert.equal(quitarRevisar(p, 'api#9'), false);
   assert.equal(quitarRevisar(p, 'api#1'), true);
-  assert.equal(podarRevisar(p, new Set(['web#3', 'zzz#1'])), 1);
+  assert.equal(podarRevisar(p, new Map([['web#3', { repo: 'web', numero: 3, origen: 'solicitada' }], ['zzz#1', { repo: 'zzz', numero: 1, origen: 'enlace' }]])), 1);
   assert.deepEqual(leerRevisar(p).map((e) => e.numero), [2]);
   mkdirSync(join(p.salida, 'datos'), { recursive: true });
   writeFileSync(rutaRevisar(p.salida), '{ no json');
@@ -137,7 +137,7 @@ test('nothing is rewritten when the call changes nothing', () => {
   assert.equal(agregarRevisar(p, [{ repo: 'api', numero: 1, origen: 'solicitada' }, { repo: 'api', numero: 2, origen: 'solicitada' }]), 'ya_estaba');
   assert.equal(statSync(rutaRevisar(p.salida)).ino, antes);
   assert.equal(quitarRevisar(p, 'api#9'), false);
-  assert.equal(podarRevisar(p, new Set(['api#9'])), 0);
+  assert.equal(podarRevisar(p, new Map([['api#9', { repo: 'api', numero: 9, origen: 'enlace' }]])), 0);
   assert.equal(statSync(rutaRevisar(p.salida)).ino, antes);
 });
 
@@ -167,4 +167,17 @@ for (let i = 0; i < 25; i++) agregarRevisar({ salida }, { repo: 'api', numero: N
   });
   await Promise.all([correr(1), correr(1000)]);
   assert.equal(leerRevisar(p).length, 50);
+});
+
+test('podar only drops entries unchanged since the refresh read them', () => {
+  const p = proyecto();
+  agregarRevisar(p, [{ repo: 'api', numero: 1, origen: 'solicitada' }, { repo: 'api', numero: 2, origen: 'solicitada' }]);
+  quitarRevisar(p, 'api#2');
+  const leidas = new Map(leerRevisar(p, { todas: true }).map((e) => [`${e.repo}#${e.numero}`, e]));
+  // While the refresh ran, the owner added both PRs by link.
+  agregarRevisar(p, [{ repo: 'api', numero: 1, origen: 'enlace' }, { repo: 'api', numero: 2, origen: 'enlace' }]);
+  assert.equal(podarRevisar(p, leidas), 0);
+  assert.deepEqual(leerRevisar(p).map((e) => [e.numero, e.origen]), [[1, 'enlace'], [2, 'enlace']]);
+  // Unchanged entries do go.
+  assert.equal(podarRevisar(p, new Map(leerRevisar(p).map((e) => [`${e.repo}#${e.numero}`, e]))), 2);
 });

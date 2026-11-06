@@ -48,11 +48,9 @@ export function parsearEnlacePr(texto, p) {
   return { repo: clave, numero };
 }
 
-const idDe = (e) => `${e.repo}#${e.numero}`;
+export const idDe = (e) => `${e.repo}#${e.numero}`;
 const valida = (e) => e && typeof e.repo === 'string' && Number.isInteger(e.numero) && (e.origen === 'solicitada' || e.origen === 'enlace');
 
-// Entries the owner dismissed stay (hidden) while GitHub still lists the PR as requested, so the next refresh
-// does not bring it back; the collector drops them once the search stops returning the PR.
 const registrar = (mensaje) => console.error(`[seki-review/revisar] ${mensaje}`);
 
 function leerCrudo(ruta) {
@@ -61,6 +59,8 @@ function leerCrudo(ruta) {
   return datos.prs.filter(valida);
 }
 
+// Entries the owner dismissed stay (hidden) while GitHub still lists the PR as requested, so the next refresh
+// does not bring it back; the collector drops them once the search stops returning the PR.
 export function leerRevisar(p, { todas = false } = {}) {
   const ruta = rutaRevisar(p.salida);
   let prs = [];
@@ -78,7 +78,8 @@ function modificar(p, fn) {
     let actual = [];
     if (existsSync(ruta)) {
       try { actual = leerCrudo(ruta); } catch (e) {
-        const copia = `${ruta}.corrupt-${Date.now()}`;
+        let copia = `${ruta}.corrupt-${Date.now()}`;
+        for (let i = 1; existsSync(copia); i++) copia = `${ruta}.corrupt-${Date.now()}-${i}`;
         copyFileSync(ruta, copia);
         registrar(`${basename(ruta)} could not be read (${e?.code ?? e?.name ?? 'error'}); it was copied to ${basename(copia)} and a new list starts`);
       }
@@ -97,7 +98,7 @@ export function agregarRevisar(p, entradas) {
     const porId = new Map(actual.map((e) => [idDe(e), e]));
     let cambios = 0;
     for (const { repo, numero, origen } of lista) {
-      const id = `${repo}#${numero}`;
+      const id = idDe({ repo, numero });
       const previa = porId.get(id);
       if (!previa) {
         porId.set(id, { repo, numero, origen, agregada: new Date().toISOString() });
@@ -130,16 +131,18 @@ export const quitarRevisar = (p, id) => modificar(p, (actual) => {
   return { prs, resultado: true };
 });
 
-// Drops entries by id (GitHub reports them closed or merged, or no longer requested); the caller checked each PR.
-export const podarRevisar = (p, ids) => modificar(p, (actual) => {
-  const prs = actual.filter((e) => !ids.has(idDe(e)));
+// Drops entries the refresh judged gone, but only if they are unchanged since it read them (same origin and same
+// dismissal): an entry added by link or restored meanwhile is kept. `vistas` maps id -> the entry that was read.
+export const podarRevisar = (p, vistas) => modificar(p, (actual) => {
+  const sigue = (e) => { const v = vistas.get(idDe(e)); return v && v.origen === e.origen && !!v.descartada === !!e.descartada; };
+  const prs = actual.filter((e) => !sigue(e));
   return prs.length === actual.length ? { prs: null, resultado: 0 } : { prs, resultado: actual.length - prs.length };
 });
 
 // Link -> validated PR -> one `gh pr view` to check it is open -> list. No AI and no write to GitHub.
 export async function incorporarEnlace(p, enlace) {
   const { repo, numero } = parsearEnlacePr(enlace, p);
-  const id = `${repo}#${numero}`;
+  const id = idDe({ repo, numero });
   let pr;
   try {
     pr = await ghJson(['pr', 'view', String(numero), '-R', `${p.owner}/${repo}`, '--json', 'state']);

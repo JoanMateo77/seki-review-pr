@@ -19,17 +19,21 @@ function agruparParaRevisar(prs) {
   return grupos;
 }
 
+// The remove action sits beside the row, not inside it: a button cannot hold a button. It also appears on the owner's own
+// PRs that are listed.
+function conQuitarRevisar(pr, filaHtml) {
+  if (!pr.paraRevisar || !API) return filaHtml;
+  return `<div class="fila-revisar">${filaHtml}<button type="button" class="btn-texto quitar-revisar" data-quitar-revisar="${esc(pr.id)}" title="Only removes it from this list; nothing changes on GitHub">Remove from To review</button></div>`;
+}
+
 function filaParaRevisar(pr) {
   const origen = ORIGEN_PARA_REVISAR[pr.paraRevisar] ?? '';
-  return `<div class="fila-revisar">
-    <button class="fila" data-id="${esc(pr.id)}" aria-current="${estado.seleccion === pr.id}">
+  return conQuitarRevisar(pr, `<button class="fila" data-id="${esc(pr.id)}" aria-current="${estado.seleccion === pr.id}">
       <span class="punto ${tono(pr)}"></span>
       <span class="id mono">${esc(pr.repoEtiqueta)} #${pr.numero}</span>
       <span class="titulo" title="${esc(pr.titulo)}">${esc(pr.titulo)}</span>
       <span class="senales"><span class="etiqueta-revisar">${esc(origen)}</span>${pr.autor ? `<span class="autor-revisar" title="Author">@${esc(pr.autor)}</span>` : ''}${senales(pr)}</span>
-    </button>
-    ${API ? `<button type="button" class="btn-texto quitar-revisar" data-quitar-revisar="${esc(pr.id)}" title="Only removes it from this list; nothing changes on GitHub">Remove from To review</button>` : ''}
-  </div>`;
+    </button>`);
 }
 
 // Empty when nothing is listed: users with no requested PRs see no change.
@@ -80,8 +84,14 @@ function errorRevisar(texto) {
 function seleccionarPendiente() {
   const id = estado.seleccionPendiente;
   if (!id) return;
-  if (FOTO.prs.some((p) => p.id === id)) { estado.seleccionPendiente = null; return seleccionar(id); }
-  if (!estado.refrescando) { estado.seleccionPendiente = null; avisar(`${id} was added, but the refresh did not bring it in. Refresh the status to try again.`); }
+  if (FOTO.prs.some((p) => p.id === id)) {
+    const deRuta = estado.pendienteDeRuta;
+    estado.seleccionPendiente = null;
+    estado.pendienteDeRuta = false;
+    // A route that arrives late never takes the selection from a PR the person already opened.
+    return deRuta && estado.seleccion ? undefined : seleccionar(id);
+  }
+  if (!estado.refrescando && !estado.pendienteDeRuta) { estado.seleccionPendiente = null; avisar(`${id} was added, but the refresh did not bring it in. Refresh the status to try again.`); }
 }
 
 async function agregarPorEnlace() {
@@ -94,6 +104,7 @@ async function agregarPorEnlace() {
     const r = await api('/api/revisar', { enlace: texto });
     campo.value = '';
     estado.seleccionPendiente = r.id;
+    estado.pendienteDeRuta = false;
     estado.refrescando = true;
     pintarBarra();
     seleccionarPendiente();
