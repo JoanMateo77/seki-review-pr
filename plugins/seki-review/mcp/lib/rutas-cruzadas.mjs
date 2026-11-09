@@ -8,7 +8,7 @@ const RUTA = /\.(?:get|post|put|patch|delete|all|use)\(\s*(["'`])(\/[^"'`\s]{5,2
 const MAX_RUTAS = 20;
 const MAX_COINCIDENCIAS = 3;
 const TITULO = 'Route used by another repository';
-const ORIGEN = 'Incident: a backend PR added a route that the checkout production branch already called, so deploying checkout first returned 404.';
+const ORIGEN = 'Incident: a backend PR added a route that the frontend production branch already called, so deploying the frontend first returned 404.';
 
 const estatica = (ruta) => !/^[:*]/.test(ruta.split('/').pop());
 

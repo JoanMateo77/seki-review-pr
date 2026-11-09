@@ -19,12 +19,12 @@ Rutas relativas a `plugins/seki-review/`.
    - `existeCita` comprueba que archivo y línea existan (`ultra.mjs:102-123`).
    - El schema no pide el fragmento literal, así que una línea real con un texto inventado pasa.
 5. **El proceso real es pregunta libre más copia manual.**
-   - Hoy se escribe "revisa si está en buenas prácticas y seguridad" y llega prosa libre (`REVAL/revision-prs/comentarios/core-mainback-482.json`). La cobertura depende de cómo se pregunte.
+   - Hoy se escribe "revisa si está en buenas prácticas y seguridad" y llega prosa libre (en una PR real; la prueba se guarda fuera del repo). La cobertura depende de cómo se pregunte.
    - "Copy review" arma Markdown que se pega a mano en GitHub (`mcp/tablero/partes/05-script-2.js:81`).
-   - Ese Markdown no usa Conventional Comments, aunque la skill `paymentsway-code-review` los exige (SKILL.md:29-44).
+   - Ese Markdown no usa Conventional Comments, aunque la guía de revisión del equipo los exige.
 6. **Las plantillas ya están pensadas, no construidas.**
    - Están en `PRODUCT.md:48-60`, con las reglas de evidencia, determinismo, un solo modelo y aprobación humana.
-   - También en la memoria `REVAL/memory/plugin-pw-revision.md` (27-10). No existe `~/.config/seki-review/plantillas/`.
+   - También en notas del equipo, fuera del repo. No existe `~/.config/seki-review/plantillas/`.
 
 ## 2. Propuesta por piezas
 
@@ -45,7 +45,7 @@ Rutas relativas a `plugins/seki-review/`.
       evidencia: "middleware de montaje y verificación de permisos en el handler"
       siFalla: { severidad: alta, bloqueante: true }
   ```
-- Juego inicial: `ligera` (siempre), `owasp-web`, `pci-dss` (datos de pago, 6.2.4), `integraciones` (timeouts, reintentos, idempotencia, firma de callbacks), `pantallas-textos` (copy, "recaudador", accesibilidad) y `sql-ddl`.
+- Juego inicial: `ligera` (siempre), `owasp-web`, `pci-dss` (datos de pago, 6.2.4), `integraciones` (timeouts, reintentos, idempotencia, firma de callbacks), `pantallas-textos` (copy, terminología del producto, accesibilidad) y `sql-ddl`.
   - `sql-ddl` tendrá reglas deterministas al estilo squawk/strong_migrations. Hoy no hay PR abierta para probarla.
 
 **B. Selector por rutas, con composición explícita**

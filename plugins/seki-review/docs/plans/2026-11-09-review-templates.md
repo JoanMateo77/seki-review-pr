@@ -9,7 +9,7 @@
 
 The result includes ready Conventional Comments that "Copy review" appends.
 
-**Spec:** `docs/specs/2026-11-09-plantillas-revision-propuesta.md` (proposal) and the dry run on a real PR. The dry run is kept outside the repo: `REVAL/revision-prs/plantillas/core-mainback-491.md`. Its lessons are the rulings 6-8 below.
+**Spec:** `docs/specs/2026-11-09-plantillas-revision-propuesta.md` (proposal) and the dry run on a real PR; the dry run is kept outside the repo. Its lessons are the rulings 6-8 below.
 
 **Why (evidence, 2026-11-09):**
 - Ultra runs three fixed lenses (`mcp/lib/ultra.mjs:27`), and one security prompt for every PR (`mcp/prompts/ultra-seguridad.md:3-4`).
@@ -235,7 +235,7 @@ All paths are relative to `plugins/seki-review/`.
 - Consumes: `git` from `proceso.mjs`.
 
 - [ ] **Step 1: Failing tests:**
-  - `added and removed express routes are read from the diff`. Patch `+router.post(\n+    "/CrearTransaccionMicrositio",` written on one line as `+router.post("/CrearTransaccionMicrositio", mw, ctl);`, plus `-router.get('/viejaRuta', ctl);`. Expect one entry in each list, with the new and old line numbers.
+  - `added and removed express routes are read from the diff`. Patch `+router.post(\n+    "/v1/crear-orden",` written on one line as `+router.post("/v1/crear-orden", mw, ctl);`, plus `-router.get('/viejaRuta', ctl);`. Expect one entry in each list, with the new and old line numbers.
   - `a route moved within the PR, a param-only route and a test file are ignored`. Inputs: `/:id`, `/a/:id`, and a route in `x.spec.ts`.
   - `an added route already called in another repo is high and a removed one still called is blocking`. With an injected `grep`, expect the severities `alto` and `bloqueante` and the message text from Ruling 8.
   - `at most 3 hits per route and repo and 20 routes per PR`.

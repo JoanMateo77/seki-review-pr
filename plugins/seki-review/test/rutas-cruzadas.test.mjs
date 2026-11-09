@@ -12,7 +12,7 @@ const patch = [
   ' ctx',
   "-router.get('/viejaRuta', ctl);",
   ' ctx2',
-  '+router.post("/CrearTransaccionMicrositio", mw, ctl);',
+  '+router.post("/v1/crear-orden", mw, ctl);',
   '@@ -40,2 +40,2 @@',
   '-const a = 1;',
   '+const a = 2;',
@@ -24,7 +24,7 @@ test('added and removed express routes are read from the diff', () => {
     { linea: 40, texto: 'const a = 1;' },
   ]);
   const r = rutasDelDiff([{ filename: 'src/r.ts', status: 'modified', patch }]);
-  assert.deepEqual(r.agregadas, [{ ruta: '/CrearTransaccionMicrositio', archivo: 'src/r.ts', linea: 12 }]);
+  assert.deepEqual(r.agregadas, [{ ruta: '/v1/crear-orden', archivo: 'src/r.ts', linea: 12 }]);
   assert.deepEqual(r.quitadas, [{ ruta: '/viejaRuta', archivo: 'src/r.ts', linea: 11 }]);
 });
 
@@ -38,7 +38,7 @@ test('a route moved within the PR, a param-only route and a test file are ignore
 });
 
 const otros = [
-  { repo: 'core-checkout', rama: 'main', dir: '/x' },
+  { repo: 'web', rama: 'main', dir: '/x' },
   { repo: 'roto', rama: 'main', dir: '/y', falla: 'no clone' },
 ];
 
@@ -53,10 +53,10 @@ test('an added route already called in another repo is high and a removed one st
   assert.ok(llamadas.every(([d]) => d === '/x'));
   const alto = h.find((x) => x.severidad === 'alto');
   const bloq = h.find((x) => x.severidad === 'bloqueante');
-  assert.equal(alto.mensaje, 'core-checkout (main) already calls /nueva/ruta at src/api.ts:7; this PR must be deployed first.');
-  assert.equal(bloq.mensaje, 'core-checkout (main) still calls /vieja/ruta at src/api.ts:7.');
+  assert.equal(alto.mensaje, 'web (main) already calls /nueva/ruta at src/api.ts:7; this PR must be deployed first.');
+  assert.equal(bloq.mensaje, 'web (main) still calls /vieja/ruta at src/api.ts:7.');
   assert.deepEqual([alto.regla, alto.archivo, alto.linea, alto.texto, alto.repoOtro, alto.rama, alto.archivoOtro, alto.lineaOtro],
-    ['rutas-en-otros-repos', 'r.ts', 3, '/nueva/ruta', 'core-checkout', 'main', 'src/api.ts', 7]);
+    ['rutas-en-otros-repos', 'r.ts', 3, '/nueva/ruta', 'web', 'main', 'src/api.ts', 7]);
   assert.ok(alto.titulo && alto.origen);
   assert.equal(bloq.linea, 9);
 });
@@ -83,10 +83,10 @@ test('grepGit finds literal hits, and no match is an empty list', async () => {
 });
 
 test('routes declared across lines are read at the literal line', () => {
-  const p = '@@ -5,3 +5,5 @@\n+router.post(\n+    "/CrearTransaccionReferenciaMicrositio",\n+    verificarCaptcha("x"),\n';
+  const p = '@@ -5,3 +5,5 @@\n+router.post(\n+    "/v1/crear-orden-ref",\n+    verificarCaptcha("x"),\n';
   const q = '@@ -20,3 +20,1 @@\n-router.delete(  \n-    \'/borrarAlgoViejo\',\n-    mw,\n';
   const r = rutasDelDiff([{ filename: 'r.ts', status: 'modified', patch: `${p}${q}` }]);
-  assert.deepEqual(r.agregadas, [{ ruta: '/CrearTransaccionReferenciaMicrositio', archivo: 'r.ts', linea: 6 }]);
+  assert.deepEqual(r.agregadas, [{ ruta: '/v1/crear-orden-ref', archivo: 'r.ts', linea: 6 }]);
   assert.deepEqual(r.quitadas, [{ ruta: '/borrarAlgoViejo', archivo: 'r.ts', linea: 21 }]);
 });
 
