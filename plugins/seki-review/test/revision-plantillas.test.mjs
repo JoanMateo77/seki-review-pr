@@ -176,7 +176,7 @@ test('without the other repositories the deployment item is not verifiable', asy
   const otro = mkdtempSync(join(tmpdir(), 'seki-otro-'));
   const busquedas = [];
   const con = entorno({ plantillas, diff: quita, otras: async () => ({ ambiente: 'pruebas', lista: [{ repo: 'web', portal: 'w', rama: 'develop', sha: 'c'.repeat(40), dir: otro }] }),
-    grep: async (dir, ruta) => { busquedas.push([dir, ruta]); return [{ archivo: 'src/cliente.js', linea: 9 }]; } });
+    grep: async (dir, ruta) => { busquedas.push([dir, ruta]); return [{ archivo: 'src/cliente.js', linea: 9, texto: `get('${ruta}')` }]; } });
   const r2 = await revisarPlantillas(con.p, pr, con.deps);
   const l4b = item(r2, 'ligera', 'L4-despliegue');
   assert.deepEqual(busquedas, [[otro, '/v1/pagos/lista']]);

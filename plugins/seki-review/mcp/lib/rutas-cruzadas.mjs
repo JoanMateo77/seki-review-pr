@@ -26,7 +26,8 @@ const declaradas = (texto) => [...texto.matchAll(RUTA)].map((m) => m[2]).filter(
 
 // The route ends at a segment boundary: not followed by a name character, nor by `/` and the start of another
 // segment (a name, `$`, `:` or `{`), so `/v2/orders` is not `/v2/ordersBulk` or `/v2/orders/${id}`.
-const esUso = (texto, ruta) => new RegExp(`${ruta.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w-]|\\/[\\w$:{])`).test(texto);
+// A route that already ends in `/` has no further `/` to look for: the next character decides.
+const esUso = (texto, ruta) => new RegExp(`${ruta.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${ruta.endsWith('/') ? '(?![\\w$:{-])' : '(?![\\w-]|\\/[\\w$:{])'}`).test(texto);
 
 // A call may open on one line and carry the literal on the next consecutive line, after any consecutive blank or
 // comment lines.
@@ -87,7 +88,7 @@ export async function buscarRutas({ rutas, otros, grep = grepGit }) {
   for (const r of pendientes) {
     for (const o of otros.filter((x) => !x.falla)) {
       const usos = (await grep(o.dir, r.ruta))
-        .filter((h) => typeof h.texto !== 'string' || (esUso(h.texto, r.ruta) && !declaradas(h.texto).includes(r.ruta)))
+        .filter((h) => esUso(h.texto ?? '', r.ruta) && !declaradas(h.texto ?? '').includes(r.ruta))
         .map((h) => ({ ...h, soloPruebas: SOLO_PRUEBAS.test(h.archivo) }));
       // Real uses are taken before test and doc ones when the cap cuts.
       const hits = [...usos.filter((h) => !h.soloPruebas), ...usos.filter((h) => h.soloPruebas)].slice(0, MAX_COINCIDENCIAS);

@@ -44,7 +44,7 @@ const otros = [
 
 test('an added route already called in another repo is high and a removed one still called is blocking', async () => {
   const llamadas = [];
-  const grep = async (dir, ruta) => { llamadas.push([dir, ruta]); return [{ archivo: 'src/api.ts', linea: 7 }]; };
+  const grep = async (dir, ruta) => { llamadas.push([dir, ruta]); return [{ archivo: 'src/api.ts', linea: 7, texto: `get('${ruta}')` }]; };
   const h = await buscarRutas({
     rutas: { agregadas: [{ ruta: '/nueva/ruta', archivo: 'r.ts', linea: 3 }], quitadas: [{ ruta: '/vieja/ruta', archivo: 'r.ts', linea: 9 }] },
     otros, grep,
@@ -62,7 +62,7 @@ test('an added route already called in another repo is high and a removed one st
 });
 
 test('at most 3 hits per route and repo and 20 routes per PR', async () => {
-  const cinco = async () => Array.from({ length: 5 }, (_, i) => ({ archivo: `f${i}.ts`, linea: i + 1 }));
+  const cinco = async (d, ruta) => Array.from({ length: 5 }, (_, i) => ({ archivo: `f${i}.ts`, linea: i + 1, texto: `get('${ruta}')` }));
   const una = await buscarRutas({ rutas: { agregadas: [{ ruta: '/una/ruta', archivo: 'r.ts', linea: 1 }], quitadas: [] }, otros, grep: cinco });
   assert.equal(una.length, 3);
   const muchas = Array.from({ length: 25 }, (_, i) => ({ ruta: `/ruta/n${i}`, archivo: 'r.ts', linea: i + 1 }));
@@ -178,4 +178,16 @@ test('router.route(...) declares the route whatever verb is chained, also across
 
 test('a hit that declares the route with .route() is not a call', async () => {
   assert.deepEqual(await usosDe('/v2/orders', ["router.route('/v2/orders').post(h);"]), []);
+});
+
+test('a hit without text is not a finding', async () => {
+  const h = await buscarRutas({ rutas: { agregadas: [{ ruta: '/v2/orders', archivo: 'r.ts', linea: 1 }], quitadas: [] }, otros, grep: async () => [{ archivo: 'src/api.ts', linea: 7 }] });
+  assert.deepEqual(h, []);
+});
+
+test('a route ending in a slash does not match a longer segment, and a regex metacharacter is literal', async () => {
+  assert.deepEqual(await usosDe('/v2/orders/', ['get(`/v2/orders/${id}`)', "get('/v2/orders/abc')", "get('/v2/orders/:id')"]), []);
+  assert.equal((await usosDe('/v2/orders/', ["get('/v2/orders/')"])).length, 1);
+  assert.equal((await usosDe('/v2/items.json', ['get("/v2/items.json")'])).length, 1);
+  assert.deepEqual(await usosDe('/v2/items.json', ["get('/v2/itemsXjson')"]), []);
 });
