@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MODOS, PERFILES, estimarCosto, modoDe, perfil, sugerirUltra, topeDeTrabajo, topeRevisarUltra } from '../mcp/lib/perfiles.mjs';
+import { MODOS, PERFILES, estimarCosto, modoDe, perfil, sugerirUltra, topeDeTrabajo, topeRevisarPlantillas, topeRevisarUltra } from '../mcp/lib/perfiles.mjs';
 import { TOPES, TURNOS, costosDelDia, registrarCosto, resumenCostos } from '../mcp/lib/ia.mjs';
 import { requiereSegundaPasada } from '../mcp/lib/explicar.mjs';
 import { filtrarPrs } from '../mcp/lib/filtrar.mjs';
@@ -231,4 +231,11 @@ test('sugerirUltra matches under a time limit: a catastrophic pattern cannot han
   const t0 = Date.now();
   assert.equal(sugerirUltra(p, {}, [`${'a'.repeat(40)}!`]).sugerida, false);
   assert.ok(Date.now() - t0 < 2000);
+});
+
+test('topeRevisarPlantillas(2) equals 2 * plantilla cap + ultra_verificar cap', () => {
+  for (const modo of MODOS) assert.deepEqual(perfil({ tipo: 'plantilla', modo }), { modo, modelo: 'sonnet', topeUsd: 1, turnos: 25, segundaPasada: false });
+  assert.equal(topeRevisarPlantillas(2), 2 * perfil({ tipo: 'plantilla', modo: 'normal' }).topeUsd + perfil({ tipo: 'ultra_verificar', modo: 'normal' }).topeUsd);
+  assert.equal(topeRevisarPlantillas(2), 3);
+  assert.equal(topeRevisarPlantillas(0), 0);
 });

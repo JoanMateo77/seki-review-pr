@@ -11,6 +11,7 @@ const NORMAL = {
   filtrar: { modelo: 'sonnet', topeUsd: 0.5, turnos: 3, segundaPasada: false },
   ultra_lente: { modelo: 'sonnet', topeUsd: 1.5, turnos: 25, segundaPasada: false },
   ultra_verificar: { modelo: 'sonnet', topeUsd: 1, turnos: 30, segundaPasada: false },
+  plantilla: { modelo: 'sonnet', topeUsd: 1, turnos: 25, segundaPasada: false },
 };
 
 const AHORRO = Object.fromEntries(Object.entries(NORMAL).map(([tipo, f]) => [tipo, {
@@ -42,6 +43,10 @@ export function elegirModelo({ tipo, pr = {}, lineasSeleccionadas = 0 }) {
 
 // Worst case of one Ultra review: three lenses and one verification.
 export const topeRevisarUltra = () => 3 * perfil({ tipo: 'ultra_lente', modo: 'ultra' }).topeUsd + perfil({ tipo: 'ultra_verificar', modo: 'ultra' }).topeUsd;
+
+// Worst case of one template review: one call per active template with AI items and one verification.
+// Without AI items nothing is called, so the cap is 0.
+export const topeRevisarPlantillas = (n) => (n > 0 ? n * perfil({ tipo: 'plantilla', modo: 'normal' }).topeUsd + perfil({ tipo: 'ultra_verificar', modo: 'normal' }).topeUsd : 0);
 
 const VENTANA_DIAS = 30;
 const MIN_MUESTRAS = 3;

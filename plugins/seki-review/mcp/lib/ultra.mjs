@@ -37,7 +37,7 @@ const SCHEMA_LENTE = {
   }, required: ['archivo', 'linea', 'severidad', 'titulo', 'detalle'] } } },
   required: ['hallazgos'],
 };
-const SCHEMA_VERIFICAR = {
+export const SCHEMA_VERIFICAR = {
   type: 'object',
   properties: { veredictos: { type: 'array', items: { type: 'object', properties: {
     id: { type: 'string' }, veredicto: { type: 'string', enum: ['CONFIRMED', 'PLAUSIBLE', 'REJECTED'] }, razon: { type: 'string' },
@@ -100,7 +100,7 @@ function normalizar(lente, salida) {
 }
 
 // A finding survives only if its file exists inside a directory the AI was given and its line is within the file.
-function existeCita(raices, cuentas, h) {
+export function existeCita(raices, cuentas, h) {
   try {
     const base = raices.get(h.repo ?? '');
     if (!base) return 'The cited repository is not available';

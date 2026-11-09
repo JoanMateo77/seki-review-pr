@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const DIR_BASE = join(dirname(fileURLToPath(import.meta.url)), '../../plantillas');
+export const DIR_BASE = join(dirname(fileURLToPath(import.meta.url)), '../../plantillas');
 const MAX_BYTES = 64 * 1024;
 const MAX_ITEMS = 30;
 const MAX_GLOBS = 40;
