@@ -36,7 +36,7 @@ const globs = (v) => Array.isArray(v) && v.length <= MAX_GLOBS && v.every((g) =>
 
 function motivoItem(it, i) {
   if (!objeto(it)) return `items[${i}] is not an object`;
-  if (!/^[A-Za-z0-9-]{1,40}$/.test(it.id ?? '')) return `items[${i}].id is invalid`;
+  if (typeof it.id !== 'string' || !/^[A-Za-z0-9-]{1,40}$/.test(it.id)) return `items[${i}].id is invalid`;
   if (!texto(it.pregunta)) return `${it.id}: pregunta is required`;
   if (!texto(it.evidencia)) return `${it.id}: evidencia is required`;
   if (it.reglas !== undefined && !(Array.isArray(it.reglas) && it.reglas.every(texto))) return `${it.id}: reglas must be a list of rule ids`;
@@ -51,7 +51,7 @@ function motivoItem(it, i) {
 export function validarPlantilla(obj) {
   const no = (motivo) => ({ ok: false, motivo });
   if (!objeto(obj)) return no('the file is not a JSON object');
-  if (!/^[a-z0-9-]{1,40}$/.test(obj.id ?? '')) return no('id must match ^[a-z0-9-]{1,40}$');
+  if (typeof obj.id !== 'string' || !/^[a-z0-9-]{1,40}$/.test(obj.id)) return no('id must match ^[a-z0-9-]{1,40}$');
   if (!Number.isInteger(obj.version) || obj.version < 1) return no('version must be a positive integer');
   if (!texto(obj.titulo)) return no('titulo is required');
   if (obj.idioma !== undefined && !['es', 'en'].includes(obj.idioma)) return no('idioma must be "es" or "en"');

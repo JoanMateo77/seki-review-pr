@@ -104,6 +104,9 @@ test('validarPlantilla rejects each malformed field with a reason', () => {
     null,
     [],
     valida({ id: 'Bad Id' }),
+    valida({ id: 5 }),
+    valida({ id: ['mia'] }),
+    valida({ items: [item(7)] }),
     valida({ version: 0 }),
     valida({ version: 1.5 }),
     valida({ titulo: '' }),
@@ -146,7 +149,7 @@ test('selection reports the first matching file and the files covered only by th
 
 test('payment-like paths activate pci-dss in both cases', () => {
   const { plantillas } = cargarPlantillas({});
-  for (const ruta of ['lib/PagoService.ts', 'lib/pagos.ts', 'src/PaymentRoutes.ts', 'src/checkout.ts', 'src/Merchant.ts', 'src/transaccion.ts']) {
+  for (const ruta of ['lib/PagoService.ts', 'lib/pagos.ts', 'src/PaymentRoutes.ts', 'src/checkout.ts', 'src/Merchant.ts', 'src/transaccion.ts', 'src/transaction.ts', 'src/TransactionService.ts', 'src/pagos/x.ts', 'src/Payment/x.ts', 'a/merchants/b/c.ts', 'src/Checkout/x.ts', 'src/transactions/x.ts']) {
     assert.ok(seleccionarPlantillas(plantillas, [ruta]).activas.some((t) => t.id === 'pci-dss'), ruta);
   }
   assert.ok(!seleccionarPlantillas(plantillas, ['README.md']).activas.some((t) => t.id === 'pci-dss'));
