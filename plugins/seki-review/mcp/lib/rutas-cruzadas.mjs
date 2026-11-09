@@ -12,11 +12,19 @@ const ORIGEN = 'Incident: a backend PR added a route that the checkout productio
 
 const estatica = (ruta) => !/^[:*]/.test(ruta.split('/').pop());
 
+const ABRE = /\.(?:get|post|put|patch|delete|all|use)\(\s*$/;
+
+// A call may open on one line and carry the literal on the next consecutive line of the same kind.
 function leer(lineas, archivo) {
   const salida = [];
-  for (const { linea, texto } of lineas) {
+  lineas.forEach(({ linea, texto }, i) => {
     for (const m of texto.matchAll(RUTA)) if (estatica(m[2])) salida.push({ ruta: m[2], archivo, linea });
-  }
+    const sig = lineas[i + 1];
+    if (ABRE.test(texto) && sig?.linea === linea + 1) {
+      const m = new RegExp(RUTA.source).exec(`${texto.trimEnd()}${sig.texto.trimStart()}`);
+      if (m && estatica(m[2])) salida.push({ ruta: m[2], archivo, linea: sig.linea });
+    }
+  });
   return salida;
 }
 
@@ -52,10 +60,11 @@ export async function grepGit(dir, ruta) {
 }
 
 export async function buscarRutas({ rutas, otros, grep = grepGit }) {
+  const vistas = new Set();
   const pendientes = [
     ...rutas.quitadas.map((r) => ({ ...r, quitada: true })),
     ...rutas.agregadas.map((r) => ({ ...r, quitada: false })),
-  ].slice(0, MAX_RUTAS);
+  ].filter((r) => !vistas.has(r.ruta) && vistas.add(r.ruta)).slice(0, MAX_RUTAS);
   const hallazgos = [];
   for (const r of pendientes) {
     for (const o of otros.filter((x) => !x.falla)) {

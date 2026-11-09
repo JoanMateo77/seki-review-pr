@@ -81,3 +81,20 @@ test('grepGit finds literal hits, and no match is an empty list', async () => {
   assert.deepEqual(await grepGit(dir, '/v1/pagoXx'), []);
   assert.deepEqual(await grepGit(dir, '-e /v1'), []);
 });
+
+test('routes declared across lines are read at the literal line', () => {
+  const p = '@@ -5,3 +5,5 @@\n+router.post(\n+    "/CrearTransaccionReferenciaMicrositio",\n+    verificarCaptcha("x"),\n';
+  const q = '@@ -20,3 +20,1 @@\n-router.delete(  \n-    \'/borrarAlgoViejo\',\n-    mw,\n';
+  const r = rutasDelDiff([{ filename: 'r.ts', status: 'modified', patch: `${p}${q}` }]);
+  assert.deepEqual(r.agregadas, [{ ruta: '/CrearTransaccionReferenciaMicrositio', archivo: 'r.ts', linea: 6 }]);
+  assert.deepEqual(r.quitadas, [{ ruta: '/borrarAlgoViejo', archivo: 'r.ts', linea: 21 }]);
+});
+
+test('duplicate routes are searched once, before the 20-route cap', async () => {
+  const dup = Array.from({ length: 30 }, (_, i) => ({ ruta: `/ruta/n${i % 2}`, archivo: `f${i}.ts`, linea: i }));
+  const resto = Array.from({ length: 19 }, (_, i) => ({ ruta: `/otra/n${i}`, archivo: 'r.ts', linea: i }));
+  const buscadas = [];
+  await buscarRutas({ rutas: { agregadas: [...dup, ...resto], quitadas: [] }, otros, grep: async (d, r) => { buscadas.push(r); return []; } });
+  assert.equal(buscadas.length, 20);
+  assert.equal(new Set(buscadas).size, 20);
+});
