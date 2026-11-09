@@ -1,0 +1,100 @@
+{
+  "id": "owasp-web",
+  "version": 1,
+  "titulo": "OWASP web",
+  "idioma": "en",
+  "siempre": false,
+  "aplicaA": [
+    "**/routes/**",
+    "**/Routes/**",
+    "**/middleware/**",
+    "**/Middleware/**",
+    "**/controllers/**",
+    "**/Controllers/**",
+    "**/*.routes.*",
+    "**/*.ejs"
+  ],
+  "excluir": [
+    "**/__tests__/**",
+    "**/*.spec.*",
+    "**/*.test.*"
+  ],
+  "items": [
+    {
+      "id": "W1-authn",
+      "pregunta": "Does every new or changed route require authentication, considering the middleware of the mount point?",
+      "evidencia": "Mount point plus the order of the route's middlewares",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "W2-tenant",
+      "pregunta": "Does the authenticated identity scope the data (no crossing between tenants; if it is not theirs, 404)?",
+      "evidencia": "A `where` on the tenant id derived from the credential, not from the body",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "W3-anti-automatizacion",
+      "pregunta": "In public operations that create rows or call third parties, is there a captcha or rate limit, and is it bound to the action?",
+      "evidencia": "Middleware and validation of the action or the threshold",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "W4-falla-cerrada",
+      "pregunta": "If configuration is missing (env, secret), does the control fail closed instead of letting the request through?",
+      "evidencia": "The branch that runs when the configuration is absent",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "suggestion",
+        "bloqueante": false,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "W5-bypass",
+      "pregunta": "Is there another route that does the same without the new control? Who can call it?",
+      "evidencia": "Sibling routes and the origin of the credential they require",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "question",
+        "bloqueante": false,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "W6-entrada",
+      "pregunta": "Is the body validated at the boundary before it is used?",
+      "evidencia": "Validation or parser of the body",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "suggestion",
+        "bloqueante": false
+      }
+    },
+    {
+      "id": "W7-errores",
+      "pregunta": "Do error responses avoid revealing internals (stack, SQL, other users' ids)?",
+      "evidencia": "The `catch` branch and the messages",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    }
+  ]
+}

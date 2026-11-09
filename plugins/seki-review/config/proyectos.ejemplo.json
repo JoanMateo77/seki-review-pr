@@ -20,6 +20,7 @@
     "secretos": [
       "config/local.json"
     ],
+    "plantillas": "~/seki-review/demo/plantillas",
     "entregas": {
       "sufijosRama": [
         "-pruebas",

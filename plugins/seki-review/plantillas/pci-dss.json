@@ -1,0 +1,89 @@
+{
+  "id": "pci-dss",
+  "version": 1,
+  "titulo": "PCI DSS",
+  "idioma": "en",
+  "siempre": false,
+  "aplicaA": [
+    "**/*Pago*",
+    "**/*pago*",
+    "**/*Payment*",
+    "**/*payment*",
+    "**/*Transacc*",
+    "**/*transacc*",
+    "**/*Merchant*",
+    "**/*merchant*",
+    "**/*Checkout*",
+    "**/*checkout*"
+  ],
+  "excluir": [
+    "**/__tests__/**",
+    "**/*.spec.*",
+    "**/*.test.*"
+  ],
+  "items": [
+    {
+      "id": "P1-credenciales",
+      "pregunta": "Do API keys, secrets and tokens stay server-side (never in the browser, a URL or a log)?",
+      "evidencia": "Where the credential is obtained and how it travels",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "P2-monto",
+      "pregunta": "Does the server decide the amount (not the client)?",
+      "evidencia": "Origin of the value that is charged or settled",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "P3-idempotencia",
+      "pregunta": "Does repeating the request create a second transaction?",
+      "evidencia": "Duplicate guard or idempotency key",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true
+      }
+    },
+    {
+      "id": "P4-logs",
+      "pregunta": "Do the new or touched logs avoid PAN, CVV, API keys and full personal data?",
+      "evidencia": "The log line",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "P5-trazabilidad",
+      "pregunta": "Is the origin of the operation recorded (merchant, channel, the payer's real IP)?",
+      "evidencia": "Log or audit row",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "suggestion",
+        "bloqueante": false
+      }
+    },
+    {
+      "id": "P6-control-de-cambio",
+      "pregunta": "Is the change tied to a finding or ticket, with a deployment and rollback plan?",
+      "evidencia": "The PR description",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "suggestion",
+        "bloqueante": false
+      }
+    }
+  ]
+}

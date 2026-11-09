@@ -1,7 +1,7 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { proyecto, QA_DEFECTO } from '../mcp/lib/config.mjs';
 import { reglasDeConfig } from '../mcp/lib/reglas.mjs';
@@ -207,4 +207,20 @@ test('ia.rutasSensibles drops invalid, oversized and nested-quantifier patterns'
   const ia = proyecto('a').ia;
   assert.deepEqual(ia.rutasSensibles, ['ok']);
   assert.equal(ia.patronesSensibles.length, 1);
+});
+
+test('plantillas is a path with ~ expanded; a non-string value is ignored with a warning', () => {
+  config({ a: { salida: '/s/a', repos: {}, plantillas: '~/seki/plantillas' }, b: { salida: '/s/b', repos: {}, plantillas: 5 }, c: { salida: '/s/c', repos: {} } });
+  assert.equal(proyecto('a').plantillas, join(homedir(), 'seki/plantillas'));
+  const previo = console.error;
+  const avisos = [];
+  console.error = (m) => avisos.push(m);
+  try {
+    assert.equal(proyecto('b').plantillas, undefined);
+  } finally {
+    console.error = previo;
+  }
+  assert.equal(avisos.length, 1);
+  assert.match(avisos[0], /plantillas/);
+  assert.equal(proyecto('c').plantillas, undefined);
 });
