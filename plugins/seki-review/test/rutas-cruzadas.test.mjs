@@ -77,7 +77,7 @@ test('grepGit finds literal hits, and no match is an empty list', async () => {
   writeFileSync(join(dir, 'api.ts'), 'a\nfetch("/v1/pago.x")\n');
   sh(dir, 'add', '.');
   sh(dir, 'commit', '-qm', 'c');
-  assert.deepEqual(await grepGit(dir, '/v1/pago.x'), [{ archivo: 'api.ts', linea: 2 }]);
+  assert.deepEqual(await grepGit(dir, '/v1/pago.x'), [{ archivo: 'api.ts', linea: 2, texto: 'fetch("/v1/pago.x")' }]);
   assert.deepEqual(await grepGit(dir, '/v1/pagoXx'), []);
   assert.deepEqual(await grepGit(dir, '-e /v1'), []);
 });
@@ -97,4 +97,37 @@ test('duplicate routes are searched once, before the 20-route cap', async () => 
   await buscarRutas({ rutas: { agregadas: [...dup, ...resto], quitadas: [] }, otros, grep: async (d, r) => { buscadas.push(r); return []; } });
   assert.equal(buscadas.length, 20);
   assert.equal(new Set(buscadas).size, 20);
+  const hallazgos = await buscarRutas({ rutas: { agregadas: dup.slice(0, 4), quitadas: [] }, otros, grep: async () => [{ archivo: 'w.ts', linea: 1, texto: 'x' }] });
+  assert.deepEqual(hallazgos.map((x) => [x.texto, x.archivo, x.linea]), [['/ruta/n0', 'f0.ts', 0], ['/ruta/n1', 'f1.ts', 1]]);
+});
+
+const agregadasDe = (lineas) => rutasDelDiff([{ filename: 'src/x.ts', status: 'modified', patch: `@@ -1,1 +1,${lineas.length} @@\n${lineas.map((l) => `+${l}`).join('\n')}\n` }]).agregadas;
+
+test('client calls and mounted prefixes are not route declarations', () => {
+  assert.deepEqual(agregadasDe(["axios.post('/v1/crear-orden', datos);", "fetch('/v1/crear-orden');", "api.get('/v1/lista-ordenes');", "app.use('/api/v1', router);", "router.use('/v1/ordenes', r);"]), []);
+  assert.deepEqual(agregadasDe(['axios.post(', "  '/v1/crear-orden',"]), []);
+});
+
+test('express receivers declare routes: app, router, *Router, routes and rutas*', () => {
+  const r = agregadasDe(["app.get('/v1/uno-a', c);", "ordenesRouter.post('/v1/dos-b', c);", "this.router.put('/v1/tres-c', c);", "routes.patch('/v1/cuatro', c);",
+    "route.delete('/v1/cinco-e', c);", "rutasPago.all('/v1/seis-f', c);", "miRouter .get('/v1/siete', c);"]);
+  assert.deepEqual(r.map((x) => x.ruta), ['/v1/uno-a', '/v1/dos-b', '/v1/tres-c', '/v1/cuatro', '/v1/cinco-e', '/v1/seis-f', '/v1/siete']);
+});
+
+test('a multi-line declaration skips blank and comment lines before the literal', () => {
+  const r = agregadasDe(['router.post(', '', '  // crea la orden', '  /* nota */', '   * sigue', '  "/v1/crear-orden",', '  ctl);', 'router.get(', '  mw,', "  '/v1/no-leida',"]);
+  assert.deepEqual(r, [{ ruta: '/v1/crear-orden', archivo: 'src/x.ts', linea: 6 }]);
+});
+
+test('a hit that declares the same route in the other repo is not a call; a client call is', async () => {
+  const hits = [
+    { archivo: 'src/rutas.ts', linea: 4, texto: "router.post('/v1/crear-orden', ctl);" },
+    { archivo: 'src/api.ts', linea: 9, texto: 'axios.post(`${API}/v1/crear-orden`, datos);' },
+  ];
+  const h = await buscarRutas({ rutas: { agregadas: [{ ruta: '/v1/crear-orden', archivo: 'r.ts', linea: 1 }], quitadas: [] }, otros, grep: async () => hits });
+  assert.deepEqual(h.map((x) => [x.archivoOtro, x.lineaOtro]), [['src/api.ts', 9]]);
+});
+
+test('a line that declares one route and opens another reads each once', () => {
+  assert.deepEqual(agregadasDe(["router.get('/v1/primera', c); router.post(", "  '/v1/segunda',"]).map((x) => [x.ruta, x.linea]), [['/v1/primera', 1], ['/v1/segunda', 2]]);
 });
