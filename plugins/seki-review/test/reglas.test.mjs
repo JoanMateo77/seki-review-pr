@@ -115,3 +115,40 @@ test('tipo-any leaves logical and alone', () => {
   });
   assert.equal(hallazgos.some((h) => h.regla === 'tipo-any'), false);
 });
+
+test('tipo-any flags aliases whose type parameters contain nested angle brackets or defaults', () => {
+  const { hallazgos } = verificar({
+    repo: 'demo',
+    archivos: [archivo('src/a.ts', [
+      'type X<T extends Record<string, unknown>> = any;',
+      'type X<T = {a:1}> = any;',
+      'export type X<T> = any;',
+      'export declare type Z = any',
+    ])],
+  });
+  assert.deepEqual(hallazgos.filter((h) => h.regla === 'tipo-any').map((h) => h.linea), [1, 2, 3, 4]);
+});
+
+test('tipo-any alias form does not fire on an arrow function type returning any', () => {
+  const { hallazgos } = verificar({
+    repo: 'demo',
+    archivos: [archivo('src/a.ts', [
+      'type Fn = (x: T) => any',
+      'type Fn2<T> = (x: T) => any;',
+    ])],
+  });
+  assert.equal(hallazgos.some((h) => h.regla === 'tipo-any'), false);
+});
+
+test('tipo-any stays linear on long adversarial lines', () => {
+  const t = Date.now();
+  verificar({
+    repo: 'demo',
+    archivos: [archivo('src/a.ts', [
+      `type ${'a'.repeat(40000)} = ${'= '.repeat(20000)}`,
+      `type X<${'='.repeat(40000)}`,
+      `${' '.repeat(40000)}x`,
+    ])],
+  });
+  assert.ok(Date.now() - t < 1000);
+});

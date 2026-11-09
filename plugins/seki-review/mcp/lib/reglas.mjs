@@ -102,7 +102,9 @@ export const REGLAS = [
     // The `as any` cast is left to as-any: the lookbehinds keep `as any[]` and `as any |` out, so a mixed
     // line such as `(y as any) as Map<string, any>` still reports its type-position any.
     // `||` and `&&` are not members: the lookarounds skip them. No nested or overlapping quantifiers: the
-    // only repeats are the bounded `\w{1,80}` and `[^>=]{0,200}` and single `\s*`/`\s+` runs.
+    // only repeats are the bounded `\w{1,80}` and `.{0,300}` and single `\s*`/`\s+` runs. The alias form matches
+    // the whole statement (`[export] [declare] type Name<...> = any;`) instead of parsing the parameter list, so
+    // nested `>` and `=` in the parameters are fine; `=> any` is not an alias because `=` must be followed by `any`.
     patron: new RegExp([
       String.raw`:\s*any\b`,
       String.raw`(?<!\bas\s+)\bany\[\]`,
@@ -111,7 +113,7 @@ export const REGLAS = [
       String.raw`(?<!\bas\s+)\bany\s*\|(?!\|)`,
       String.raw`(?<!&)&\s*any\b`,
       String.raw`(?<!\bas\s+)\bany\s*&(?!&)`,
-      String.raw`\btype\s+\w{1,80}(?:<[^>=]{0,200}>)?\s*=\s*any\b`,
+      String.raw`^\s*(?:export\s+)?(?:declare\s+)?type\s+\w{1,80}.{0,300}=\s*any\s*;?\s*$`,
       String.raw`\bextends\s+any\b`,
     ].join('|')),
     mensaje: 'Use `unknown` and narrow it, or the real type.',
