@@ -2,19 +2,38 @@
 const TOPE_POR_PLANTILLA = 5;
 const ENCABEZADO = { en: 'Not verifiable from the diff', es: 'No se pudo verificar desde el diff' };
 
+const TOPE_VINETAS = 10;
+const RECORTE = {
+  en: (n) => `${n} more comments were left out (at most ${TOPE_POR_PLANTILLA} per template).`,
+  es: (n) => `Quedaron fuera ${n} comentarios más (máximo ${TOPE_POR_PLANTILLA} por plantilla).`,
+};
+
 const una = (s) => String(s).replace(/\s*[\r\n]+\s*/g, ' ').trim();
 const hay = (v) => v !== undefined && v !== null && v !== '';
+
+// The other findings of a deterministic item, one bullet per distinct message.
+function vinetas(hallazgos) {
+  const vistos = new Set([hallazgos[0]?.mensaje]);
+  const otros = hallazgos.slice(1).filter((x) => !vistos.has(x.mensaje) && vistos.add(x.mensaje));
+  const lineas = otros.slice(0, TOPE_VINETAS).map((x) => `- ${una(x.mensaje)}${hay(x.archivo) ? ` (\`${x.archivo}${hay(x.linea) ? `:${x.linea}` : ''}\`)` : ''}`);
+  if (otros.length > TOPE_VINETAS) lineas.push(`- and ${otros.length - TOPE_VINETAS} more`);
+  return lineas.join('\n');
+}
 
 function comentarioDe(plantilla, item) {
   const h = item.hallazgos?.[0];
   const determinista = item.origen === 'determinista';
+  const soloPruebas = determinista && Boolean(item.hallazgos?.length) && item.hallazgos.every((x) => x.soloPruebas);
   const etiqueta = item.siFalla?.etiqueta ?? 'issue';
-  const bloquea = etiqueta !== 'nitpick' && Boolean(item.siFalla?.bloqueante) && (determinista || item.veredicto === 'CONFIRMED');
+  const bloquea = etiqueta !== 'nitpick' && Boolean(item.siFalla?.bloqueante) && !soloPruebas && (determinista || item.veredicto === 'CONFIRMED');
   const decoraciones = [];
   if (bloquea) decoraciones.push('blocking');
   else if (etiqueta !== 'nitpick') decoraciones.push('non-blocking');
   if (item.siFalla?.tema) decoraciones.push(item.siFalla.tema);
   const cita = item.cita ?? (determinista ? h?.texto : undefined);
+  const detalle = determinista
+    ? [item.detalle, soloPruebas ? 'Only in tests or docs.' : '', vinetas(item.hallazgos ?? [])].filter(Boolean)
+    : [item.detalle ?? ''];
   return {
     etiqueta,
     decoraciones,
@@ -22,7 +41,7 @@ function comentarioDe(plantilla, item) {
     archivo: item.archivo ?? h?.archivo ?? null,
     linea: item.linea ?? h?.linea ?? null,
     cita: hay(cita) ? una(cita) : null,
-    detalle: item.detalle ?? '',
+    detalle: detalle.join('\n\n'),
     ref: `${plantilla.id}/${item.id}`,
     bloqueante: bloquea,
   };
@@ -74,5 +93,6 @@ export function comentariosDePlantillas(resultado) {
     const idioma = plantillas[0]?.idioma === 'es' ? 'es' : 'en';
     partes.push([`**${ENCABEZADO[idioma]}**`, ...sinVerificar.map((i) => `- ${i.pregunta} — ${i.pedido}`)].join('\n'));
   }
+  if (recortados > 0) partes.push(RECORTE[plantillas[0]?.idioma === 'es' ? 'es' : 'en'](recortados));
   return { comentarios, markdown: partes.join('\n\n'), recortados };
 }

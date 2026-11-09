@@ -97,7 +97,7 @@ test('duplicate routes are searched once, before the 20-route cap', async () => 
   await buscarRutas({ rutas: { agregadas: [...dup, ...resto], quitadas: [] }, otros, grep: async (d, r) => { buscadas.push(r); return []; } });
   assert.equal(buscadas.length, 20);
   assert.equal(new Set(buscadas).size, 20);
-  const hallazgos = await buscarRutas({ rutas: { agregadas: dup.slice(0, 4), quitadas: [] }, otros, grep: async () => [{ archivo: 'w.ts', linea: 1, texto: 'x' }] });
+  const hallazgos = await buscarRutas({ rutas: { agregadas: dup.slice(0, 4), quitadas: [] }, otros, grep: async (d, r) => [{ archivo: 'w.ts', linea: 1, texto: `get('${r}')` }] });
   assert.deepEqual(hallazgos.map((x) => [x.texto, x.archivo, x.linea]), [['/ruta/n0', 'f0.ts', 0], ['/ruta/n1', 'f1.ts', 1]]);
 });
 
@@ -130,4 +130,52 @@ test('a hit that declares the same route in the other repo is not a call; a clie
 
 test('a line that declares one route and opens another reads each once', () => {
   assert.deepEqual(agregadasDe(["router.get('/v1/primera', c); router.post(", "  '/v1/segunda',"]).map((x) => [x.ruta, x.linea]), [['/v1/primera', 1], ['/v1/segunda', 2]]);
+});
+
+const usosDe = async (ruta, textos, archivo = 'src/api.ts') => buscarRutas({
+  rutas: { agregadas: [{ ruta, archivo: 'r.ts', linea: 1 }], quitadas: [] }, otros,
+  grep: async () => textos.map((texto, i) => ({ archivo, linea: i + 1, texto })),
+});
+
+test('a route that is a prefix of another is not a use of it, unless a whole segment ends it', async () => {
+  const sin = ['fetch(`${API}/v2/ordersBulk`);', 'fetch(`${API}/v2/orders/${id}`);', "fetch('/v2/orders/:id');", 'fetch(`/v2/orders/{id}`);', 'fetch("/v2/orders-old");'];
+  assert.deepEqual(await usosDe('/v2/orders', sin), []);
+  for (const texto of ["fetch('/v2/orders');", 'fetch(`${API}/v2/orders?x=1`);', "fetch('/v2/orders/');", "x = '/v2/orders'", 'get("/v2/orders", {})']) {
+    assert.equal((await usosDe('/v2/orders', [texto])).length, 1, texto);
+  }
+  assert.equal((await usosDe('/v2/orders', ['a("/v2/ordersBulk"); b("/v2/orders");'])).length, 1);
+});
+
+test('hits in tests and docs are flagged and real hits come first within the cap of 3', async () => {
+  const hits = [
+    { archivo: 'docs/api.md', linea: 1, texto: 'GET /v2/orders' },
+    { archivo: 'openapi.test.ts', linea: 2, texto: "get('/v2/orders')" },
+    { archivo: 'src/__mocks__/a.ts', linea: 3, texto: "'/v2/orders'" },
+    { archivo: 'src/real.ts', linea: 4, texto: "fetch('/v2/orders')" },
+    { archivo: 'e2e/x.ts', linea: 5, texto: "'/v2/orders'" },
+    { archivo: 'src/real2.ts', linea: 6, texto: "fetch('/v2/orders')" },
+  ];
+  const h = await buscarRutas({ rutas: { agregadas: [], quitadas: [{ ruta: '/v2/orders', archivo: 'r.ts', linea: 9 }] }, otros, grep: async () => hits });
+  assert.deepEqual(h.map((x) => [x.archivoOtro, Boolean(x.soloPruebas)]), [['src/real.ts', false], ['src/real2.ts', false], ['docs/api.md', true]]);
+  assert.ok(!('soloPruebas' in h[0]));
+  assert.equal(h[2].severidad, 'bloqueante');
+  assert.equal(h[2].mensaje, 'web (main) still calls /v2/orders at docs/api.md:1, a test or documentation file.');
+  const solo = await usosDe('/v2/orders', ["x('/v2/orders')"], 'spec/api.spec.ts');
+  assert.equal(solo[0].soloPruebas, true);
+  assert.equal(solo[0].mensaje, 'web (main) references /v2/orders at spec/api.spec.ts:1, a test or documentation file.');
+  for (const archivo of ['a/test/x.js', 'a/tests/x.js', 'a/mock/x.js', 'a/doc/x.js', 'x.test.mjs', 'x.spec.tsx', 'README.md', 'a.mdx', 'n.txt']) {
+    assert.equal((await usosDe('/v2/orders', ["x('/v2/orders')"], archivo))[0].soloPruebas, true, archivo);
+  }
+  assert.ok(!(await usosDe('/v2/orders', ["x('/v2/orders')"], 'src/contest/x.ts'))[0].soloPruebas);
+});
+
+test('router.route(...) declares the route whatever verb is chained, also across lines', () => {
+  assert.deepEqual(agregadasDe(["router.route('/v2/orders').post(h);"]), [{ ruta: '/v2/orders', archivo: 'src/x.ts', linea: 1 }]);
+  assert.deepEqual(agregadasDe(["app.route('/v2/cuentas')", '  .get(a)', '  .delete(b);']).map((x) => x.ruta), ['/v2/cuentas']);
+  assert.deepEqual(agregadasDe(['this.api.route(', "  '/v2/multi-linea',", ').put(h);']).map((x) => [x.ruta, x.linea]), [['/v2/multi-linea', 2]]);
+  assert.deepEqual(agregadasDe(["router.route('/v2/a-uno').get(h).route('/v2/b-dos').post(h);"]).map((x) => x.ruta), ['/v2/a-uno', '/v2/b-dos']);
+});
+
+test('a hit that declares the route with .route() is not a call', async () => {
+  assert.deepEqual(await usosDe('/v2/orders', ["router.route('/v2/orders').post(h);"]), []);
 });

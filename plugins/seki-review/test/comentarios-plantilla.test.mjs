@@ -117,3 +117,50 @@ test('praise falls back to the question when there is no title', () => {
   ]));
   assert.equal(r.markdown.split('\n')[0], '**praise: Is it fine?**');
 });
+
+const det = (hs, o = {}) => falla({ origen: 'determinista', veredicto: undefined, titulo: undefined, cita: undefined, detalle: '', hallazgos: hs, ...o });
+const hz = (n, o = {}) => ({ regla: 'r', mensaje: `Finding ${n}`, archivo: `src/f${n}.ts`, linea: n, texto: 'bad()', ...o });
+
+test('a deterministic failure lists the other findings as bullets', () => {
+  const c = comentariosDePlantillas(res([det([hz(1), hz(2), hz(3)])])).comentarios[0];
+  assert.equal(c.asunto, 'Finding 1');
+  assert.equal(c.detalle, '- Finding 2 (`src/f2.ts:2`)\n- Finding 3 (`src/f3.ts:3`)');
+  const md = comentariosDePlantillas(res([det([hz(1), hz(2)])])).markdown;
+  assert.ok(md.includes('\n\n- Finding 2 (`src/f2.ts:2`)\n_[t/S1]_'));
+  const solo = comentariosDePlantillas(res([det([hz(1)])])).comentarios[0];
+  assert.equal(solo.detalle, '');
+});
+
+test('the bullets are unique by message and capped at 10 with a count of the rest', () => {
+  const trece = Array.from({ length: 13 }, (_, i) => hz(i + 1));
+  const lineas = comentariosDePlantillas(res([det(trece)])).comentarios[0].detalle.split('\n');
+  assert.equal(lineas.length, 11);
+  assert.equal(lineas[0], '- Finding 2 (`src/f2.ts:2`)');
+  assert.equal(lineas[9], '- Finding 11 (`src/f11.ts:11`)');
+  assert.equal(lineas[10], '- and 2 more');
+  const repetidos = comentariosDePlantillas(res([det([hz(1), hz(1), hz(2), hz(2)])])).comentarios[0].detalle;
+  assert.equal(repetidos, '- Finding 2 (`src/f2.ts:2`)');
+});
+
+test('findings only in tests or docs fail without blocking and say so', () => {
+  const r = comentariosDePlantillas(res([det([hz(1, { soloPruebas: true }), hz(2, { soloPruebas: true })])]));
+  const c = r.comentarios[0];
+  assert.equal(c.bloqueante, false);
+  assert.deepEqual(c.decoraciones, ['non-blocking', 'security']);
+  assert.ok(c.detalle.startsWith('Only in tests or docs.'));
+  assert.ok(c.detalle.endsWith('- Finding 2 (`src/f2.ts:2`)'));
+  const mezcla = comentariosDePlantillas(res([det([hz(1, { soloPruebas: true }), hz(2)])])).comentarios[0];
+  assert.equal(mezcla.bloqueante, true);
+  assert.ok(!mezcla.detalle.includes('Only in tests'));
+});
+
+test('a trimmed result ends with a note in the language of the first template, and none when nothing was cut', () => {
+  const seis = Array.from({ length: 6 }, (_, i) => falla({ id: `N${i}`, veredicto: null }));
+  const en = comentariosDePlantillas(res(seis));
+  assert.equal(en.recortados, 1);
+  assert.ok(en.markdown.endsWith('\n\n1 more comments were left out (at most 5 per template).'));
+  const es = comentariosDePlantillas(res(seis, { idioma: 'es' }));
+  assert.ok(es.markdown.endsWith('\n\nQuedaron fuera 1 comentarios más (máximo 5 por plantilla).'));
+  const ninguna = comentariosDePlantillas(res(seis.slice(0, 5)));
+  assert.ok(!ninguna.markdown.includes('left out'));
+});

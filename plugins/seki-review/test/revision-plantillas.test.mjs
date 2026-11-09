@@ -189,6 +189,21 @@ test('without the other repositories the deployment item is not verifiable', asy
   assert.equal(item(r3, 'ligera', 'L4-despliegue').estado, 'no_verificable');
 });
 
+test('a removed route used only in the other repository spec fails the item without blocking', async () => {
+  const L4 = it('L4-despliegue', { reglas: ['rutas-en-otros-repos'], siFalla: { etiqueta: 'issue', bloqueante: true } });
+  const quita = [{ filename: 'src/rutas.js', status: 'modified', additions: 0, deletions: 1, patch: "@@ -3,1 +3,0 @@\n-router.get('/v2/orders', h);" }];
+  const otro = mkdtempSync(join(tmpdir(), 'seki-otro-'));
+  const e = entorno({ plantillas: [tpl('ligera', [L4])], diff: quita,
+    otras: async () => ({ ambiente: 'pruebas', lista: [{ repo: 'web', portal: 'w', rama: 'develop', sha: 'c'.repeat(40), dir: otro }] }),
+    grep: async () => [{ archivo: 'test/orders.spec.ts', linea: 4, texto: "get('/v2/orders')" }, { archivo: 'src/bulk.ts', linea: 2, texto: "get('/v2/ordersBulk')" }] });
+  const r = await revisarPlantillas(e.p, pr, e.deps);
+  const l4 = item(r, 'ligera', 'L4-despliegue');
+  assert.equal(l4.estado, 'falla');
+  assert.deepEqual(l4.hallazgos.map((h) => h.soloPruebas), [true]);
+  assert.equal(r.resultado.comentarios[0].bloqueante, false);
+  assert.ok(r.resultado.comentarios[0].detalle.startsWith('Only in tests or docs.'));
+});
+
 test('a rejected failure becomes not verifiable with the reason and a confirmed blocking one stays blocking', async () => {
   const registro = [];
   const plantillas = [tpl('ligera', [it('L1'), it('L2'), it('L3'), it('L5'), it('L6')])];
