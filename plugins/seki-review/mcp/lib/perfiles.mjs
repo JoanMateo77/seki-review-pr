@@ -41,8 +41,8 @@ export function elegirModelo({ tipo, pr = {}, lineasSeleccionadas = 0 }) {
   return 'sonnet';
 }
 
-// Worst case of one Ultra review: three lenses and one verification.
-export const topeRevisarUltra = () => 3 * perfil({ tipo: 'ultra_lente', modo: 'ultra' }).topeUsd + perfil({ tipo: 'ultra_verificar', modo: 'ultra' }).topeUsd;
+// Worst case of one Ultra review: `n` lenses (all three unless templates cover some) and one verification.
+export const topeRevisarUltra = (n = 3) => n * perfil({ tipo: 'ultra_lente', modo: 'ultra' }).topeUsd + perfil({ tipo: 'ultra_verificar', modo: 'ultra' }).topeUsd;
 
 // Worst case of one template review: one call per active template with AI items and one verification.
 // Without AI items nothing is called, so the cap is 0.

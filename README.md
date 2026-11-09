@@ -123,6 +123,7 @@ citing files or lines that do not exist, one verification call and the project c
 estimate (median of earlier reviews, or the cost caps when there are fewer than three). The result is stored per commit and shown in the
 "Ultra review" tab; the tool `pr_ultra` reads it without spending AI, and the link `#/pr/<repo>/<n>?ultra=1` opens the confirmation.
 Ultra is suggested when a changed path matches `ia.rutasSensibles` or the PR is flagged as security.
+A template may declare `"cubre": ["seguridad"]` (lens names `correccion`, `seguridad`, `lineamientos`); `owasp-web` and `pci-dss` do. When the stored template review of the same commit has such a template with a successful result, Ultra skips that lens (recorded as skipped, no call), and the dialog, the cap and the estimate count the lenses that will run (the history estimate is scaled by that share of three). Running again does not bring the lens back.
 
 **PRs to review.** Besides the PRs of `autor`, each refresh collects the open PRs of the configured repos where the owner is requested directly as
 reviewer (`user-review-requested:<login>`; team requests are not included) and remembers them in `salida/datos/revisar.json`, so a PR stays after the owner reviews it on GitHub until it

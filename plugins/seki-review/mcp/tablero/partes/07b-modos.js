@@ -116,6 +116,7 @@ async function abrirUltra(prId) {
     <p><strong>Estimated cost: ${usd(d.estimacion.usd)}</strong> <span class="tenue">(${textoBase(d.estimacion)})</span></p>
     ${b?.limite ? `<p class="tenue">Spent today: ${usd(b.gastado)} of ${usd(b.limite)}.${cabe ? '' : ' Does not fit in the remaining budget: it stays blocked until run anyway or the budget allows it.'}</p>` : ''}
     ${d.sugerida ? `<div class="seccion"><span class="estado violeta">${icono('chispa')} Ultra suggested</span><ul class="lista-modal">${d.motivos.map((m) => `<li>${esc(m)}</li>`).join('')}</ul></div>` : ''}
+    ${(d.lentesCubiertas ?? []).length ? `<p class="tenue">${d.lentesCubiertas.map((l) => `${esc(LENTES_ULTRA[l] ?? l)} lens skipped: covered by the template review of this commit`).join('. ')}.</p>` : ''}
     ${actual ? `<p class="tenue">A result for this commit already exists. Running again repeats the analysis and spends the estimate.</p>` : ''}
     <div class="modal-pie">
       <button type="button" class="btn" data-modal-cerrar>Cancel</button>

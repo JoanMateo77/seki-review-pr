@@ -7,6 +7,8 @@ const MAX_BYTES = 64 * 1024;
 const MAX_ITEMS = 30;
 const MAX_GLOBS = 40;
 const MAX_GLOB = 200;
+// The Ultra lenses a template may declare it covers (`cubre`); Ultra runs these names.
+export const LENTES_ULTRA = ['correccion', 'seguridad', 'lineamientos'];
 const ETIQUETAS = ['issue', 'suggestion', 'question', 'nitpick', 'todo'];
 
 // Glob to regular expression: `**`, `*`, `?` and literals, case-sensitive, anchored on the whole path.
@@ -56,6 +58,7 @@ export function validarPlantilla(obj) {
   if (!texto(obj.titulo)) return no('titulo is required');
   if (obj.idioma !== undefined && !['es', 'en'].includes(obj.idioma)) return no('idioma must be "es" or "en"');
   if (obj.siempre !== undefined && typeof obj.siempre !== 'boolean') return no('siempre must be true or false');
+  if (obj.cubre !== undefined && !(Array.isArray(obj.cubre) && obj.cubre.every((l) => LENTES_ULTRA.includes(l)) && new Set(obj.cubre).size === obj.cubre.length)) return no(`cubre must be a list of distinct lens names from ${LENTES_ULTRA.join(', ')}`);
   for (const k of ['aplicaA', 'excluir']) if (obj[k] !== undefined && !globs(obj[k])) return no(`${k} must hold at most ${MAX_GLOBS} globs of up to ${MAX_GLOB} characters`);
   if (!Array.isArray(obj.items) || obj.items.length < 1 || obj.items.length > MAX_ITEMS) return no(`items must have 1 to ${MAX_ITEMS} entries`);
   for (const [i, it] of obj.items.entries()) {
@@ -64,7 +67,7 @@ export function validarPlantilla(obj) {
   }
   if (new Set(obj.items.map((it) => it.id)).size !== obj.items.length) return no('item ids must be unique');
   const items = obj.items.map((it) => ({ id: it.id, pregunta: it.pregunta, evidencia: it.evidencia, reglas: it.reglas ?? [], siFalla: { etiqueta: it.siFalla.etiqueta, bloqueante: it.siFalla.bloqueante, ...(it.siFalla.tema ? { tema: it.siFalla.tema } : {}) } }));
-  return { ok: true, plantilla: { id: obj.id, version: obj.version, titulo: obj.titulo, idioma: obj.idioma ?? 'en', siempre: obj.siempre ?? false, aplicaA: obj.aplicaA ?? [], excluir: obj.excluir ?? [], items } };
+  return { ok: true, plantilla: { id: obj.id, version: obj.version, titulo: obj.titulo, idioma: obj.idioma ?? 'en', siempre: obj.siempre ?? false, aplicaA: obj.aplicaA ?? [], excluir: obj.excluir ?? [], cubre: obj.cubre ?? [], items } };
 }
 
 // A configured project folder that does not exist is reported, so a typo in `plantillas` is not silently ignored.

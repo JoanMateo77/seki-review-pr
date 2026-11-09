@@ -23,6 +23,7 @@ Each version has its `seki-review-vX.Y.Z` tag on the commit that releases it.
 - Template runs unchanged since the stored result are reused: a template whose version, items and activating patches (`huella`) did not change keeps its answers (`reutilizada`, cost 0) as long as every quote it holds is still in the code of the new commit, and only new failures are verified; `repetir` calls everything, and a run where all templates are reused makes no AI call and no cost record.
 - The cost record and each step of `revisar_plantillas` carry the token usage (`uso`); the estimate is the sum of the median cost of each AI template over past steps, then the per-template run median, then the cap.
 - The result stores the other branches it read (`ramas`; a reused answer keeps the commit it was given at); `GET /api/plantillas` and `pr_plantillas` report `ramasMovidas` when the local copy of one of them is at another commit (no fetch).
+- Ultra review skips the security lens when the template review of the same commit covers it: templates declare `cubre` (optional list of lens names, validated; `owasp-web` and `pci-dss` declare `seguridad`), the skipped lens is recorded with the reason "Covered by the template review of this commit" and makes no call, `GET /api/ultra` and `pr_ultra` return `lentesCubiertas`, and the cap (`topeRevisarUltra(n)`), the estimate (history median times n/3) and the confirmation dialog count the lenses that will run.
 - Nothing is published to GitHub: comments are only copied by hand.
 
 ### 0.24.0 (2026-11-06)

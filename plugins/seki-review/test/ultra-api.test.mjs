@@ -5,7 +5,8 @@ import { request } from 'node:http';
 import { createContext, runInContext, Script } from 'node:vm';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { escribirJson, rutaDiff, rutaExplicacion, rutaInstantanea, rutaUltra } from '../mcp/lib/cache.mjs';
+import { escribirJson, rutaDiff, rutaExplicacion, rutaInstantanea, rutaPlantillas, rutaUltra } from '../mcp/lib/cache.mjs';
+import { registrarCosto } from '../mcp/lib/ia.mjs';
 import { proyecto as cargarProyecto } from '../mcp/lib/config.mjs';
 import { detenerServidores, iniciarServidor } from '../mcp/lib/servidor-web.mjs';
 import { construirHtml } from '../mcp/lib/tablero.mjs';
@@ -270,4 +271,56 @@ test('the built page carries the AI mode controls', () => {
     assert.ok(html.includes(marca), `the built page lacks ${marca}`);
   }
   for (const codigo of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) assert.doesNotThrow(() => new Script(codigo[1]));
+});
+
+const guardarPlantillas = (p, plantillas, headSha = SHA) => escribirJson(rutaPlantillas(p.salida, 'r', 1), { headSha, plantillas });
+
+test('GET /api/ultra lists the lenses covered by the template review of the commit and sizes the cap for the rest', async (t) => {
+  const e = await entorno();
+  t.after(e.cerrar);
+  assert.deepEqual((await (await e.llamar('/api/ultra?repo=r&numero=1')).json()).lentesCubiertas, []);
+  guardarPlantillas(e.p, [{ id: 'owasp-web', ok: true }]);
+  const d = await (await e.llamar('/api/ultra?repo=r&numero=1')).json();
+  assert.deepEqual(d.lentesCubiertas, ['seguridad']);
+  assert.deepEqual([d.estimacion.usd, d.estimacion.base, d.topeUsd], [4, 'topes', 4]);
+  guardarPlantillas(e.p, [{ id: 'owasp-web', ok: true }], 'b'.repeat(40));
+  const otro = await (await e.llamar('/api/ultra?repo=r&numero=1')).json();
+  assert.deepEqual([otro.lentesCubiertas, otro.topeUsd], [[], 5.5]);
+});
+
+test('the history estimate is scaled to the lenses that will run', async (t) => {
+  const e = await entorno();
+  t.after(e.cerrar);
+  for (const c of [2, 3, 4]) registrarCosto(e.p, { tipo: 'revisar_ultra', modo: 'ultra', prId: 'r#1', costo: c, ok: true });
+  guardarPlantillas(e.p, [{ id: 'pci-dss', ok: true }]);
+  const d = await (await e.llamar('/api/ultra?repo=r&numero=1')).json();
+  assert.equal(d.estimacion.base, 'historial');
+  assert.ok(Math.abs(d.estimacion.usd - 2) < 1e-9);
+});
+
+test('POST /api/ultra queues the job with the cap of the lenses that will run', async (t) => {
+  const e = await entorno({ ia: { presupuestoDiarioUsd: 4.5 } });
+  t.after(e.cerrar);
+  guardarPlantillas(e.p, [{ id: 'owasp-web', ok: true }]);
+  // 4 fits in 4.5; the full 5.5 would stay blocked.
+  assert.equal((await e.llamar('/api/ultra', { repo: 'r', numero: 1, confirmar: true })).status, 202);
+  assert.equal((await e.llamar('/api/ultra', { repo: 'r', numero: 2, confirmar: true })).status, 202);
+  const ts = (await (await e.llamar('/api/estado')).json()).trabajos.filter((x) => x.tipo === 'revisar_ultra');
+  assert.notEqual(ts.find((x) => x.id === 'r#1:ultra').estado, 'bloqueado_presupuesto');
+  assert.equal(ts.find((x) => x.id === 'r#2:ultra').estado, 'bloqueado_presupuesto');
+});
+
+test('the Ultra dialog says which lens is skipped, and the result names it', async () => {
+  const ctx = tablero();
+  const prDialogo = { id: 'r#1', repo: 'r', numero: 1 };
+  const abiertos = [];
+  Object.assign(ctx, { FOTO: { prs: [prDialogo] }, $: (id) => (id === 'modalIa' ? {} : null), abrirModal: (h) => abiertos.push(h) });
+  const abrir = async (datos) => { ctx.api = async () => datos; abiertos.length = 0; await ctx.abrirUltra('r#1'); return abiertos.at(-1); };
+  const base = { estimacion: { usd: 4, base: 'topes', muestras: 0 }, topeUsd: 4, sugerida: false, motivos: [], resultado: null };
+  assert.match(await abrir({ ...base, lentesCubiertas: ['seguridad'] }), /Security lens skipped: covered by the template review of this commit/);
+  assert.doesNotMatch(await abrir({ ...base, lentesCubiertas: [] }), /lens skipped/);
+  assert.doesNotMatch(await abrir(base), /lens skipped/);
+  assert.match(await abrir({ ...base, lentesCubiertas: ['<img src=x>'] }), /&lt;img src=x&gt; lens skipped/);
+  const html = ctx.resultadoUltra({ url: 'u' }, { headSha: 'abc1234', hallazgos: [], lentes: [{ nombre: 'seguridad', ok: false, omitida: true, motivo: 'Covered by the template review of this commit', costo: 0, hallazgos: 0 }] });
+  assert.match(html, /Security lens skipped: Covered by the template review of this commit/);
 });

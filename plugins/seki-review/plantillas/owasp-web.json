@@ -4,6 +4,7 @@
   "titulo": "OWASP web",
   "idioma": "en",
   "siempre": false,
+  "cubre": ["seguridad"],
   "aplicaA": [
     "**/routes/**",
     "**/Routes/**",

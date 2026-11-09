@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { readFileSync as leerArchivo } from 'node:fs';
 import { archivosDePlantilla, cargarPlantillas, globARegex, itemsDeterministas, itemsIa, seleccionarPlantillas, validarPlantilla } from '../mcp/lib/plantillas.mjs';
 
 const temporales = [];
@@ -165,4 +166,23 @@ test('archivosDePlantilla gives the changed paths that activate a template, all 
   assert.deepEqual(archivosDePlantilla({ ...base, siempre: false, aplicaA: ['src/**'], excluir: ['**/*.spec.ts'] }, rutas), ['src/pagos/a.ts']);
   assert.deepEqual(archivosDePlantilla({ ...base, siempre: false, aplicaA: ['api/**'] }, rutas), []);
   assert.deepEqual(archivosDePlantilla({ ...base, siempre: true, aplicaA: ['api/**'] }, rutas), rutas);
+});
+
+test('cubre is optional and accepts only a list of known Ultra lens names', () => {
+  const ok = validarPlantilla(valida({ cubre: ['seguridad'] }));
+  assert.deepEqual([ok.ok, ok.plantilla.cubre], [true, ['seguridad']]);
+  assert.deepEqual(validarPlantilla(valida()).plantilla.cubre, []);
+  for (const mala of ['seguridad', [1], ['security'], ['seguridad', 'seguridad'], [{}]]) {
+    const r = validarPlantilla(valida({ cubre: mala }));
+    assert.equal(r.ok, false, JSON.stringify(mala));
+    assert.match(r.motivo, /cubre/);
+  }
+});
+
+test('owasp-web and pci-dss declare that they cover the security lens', () => {
+  for (const id of ['owasp-web', 'pci-dss']) {
+    const t = JSON.parse(leerArchivo(new URL(`../plantillas/${id}.json`, import.meta.url), 'utf8'));
+    assert.deepEqual(t.cubre, ['seguridad'], id);
+    assert.deepEqual(validarPlantilla(t).plantilla.cubre, ['seguridad'], id);
+  }
 });

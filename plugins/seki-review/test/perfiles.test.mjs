@@ -214,6 +214,12 @@ test('topeDeTrabajo: cambiar reserves two calls for each change request of the j
   assert.equal(topeDeTrabajo({ tipo: 'cambiar', modo: 'normal' }), 3);
 });
 
+test('topeRevisarUltra(n) counts n lenses and the verification', () => {
+  assert.equal(topeRevisarUltra(2), 4);
+  assert.equal(topeRevisarUltra(3), topeRevisarUltra());
+  assert.equal(topeRevisarUltra(0), 1);
+});
+
 test('topeRevisarUltra honours the cap variables of the Ultra steps', () => {
   const antes = [process.env.SEKI_IA_TOPE_ULTRA_LENTE, process.env.SEKI_IA_TOPE_ULTRA_VERIFICAR];
   try {

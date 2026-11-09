@@ -4,6 +4,7 @@
   "titulo": "PCI DSS",
   "idioma": "en",
   "siempre": false,
+  "cubre": ["seguridad"],
   "aplicaA": [
     "**/*pago*",
     "**/*Pago*",

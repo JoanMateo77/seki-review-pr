@@ -3,7 +3,7 @@
 import { mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, isAbsolute, resolve, sep } from 'node:path';
-import { escribirJson, leerJson, rutaUltra } from './cache.mjs';
+import { escribirJson, leerJson, rutaPlantillas, rutaUltra } from './cache.mjs';
 import { comprobar } from './calidad.mjs';
 import { expandir } from './config.mjs';
 import { crearCopia, mergeBaseFresca, ramasEquivalentes, reiniciarCopia } from './copias.mjs';
@@ -11,6 +11,7 @@ import { asegurarDiff } from './diffs.mjs';
 import { prioridad } from './explicar.mjs';
 import { argsClaude, ejecutarClaude, leerCostos, MOTIVO_FORMATO, reglasSecretos, registrarCosto, sistemaDe } from './ia.mjs';
 import { estimarCosto, perfil, sugerirUltra, topeRevisarUltra } from './perfiles.mjs';
+import { cargarPlantillas, LENTES_ULTRA } from './plantillas.mjs';
 import { otrasRamas } from './preguntas.mjs';
 import { enParalelo, git } from './proceso.mjs';
 import { lineamientos } from './propuestas.mjs';
@@ -24,9 +25,10 @@ const MAX_ARCHIVOS_LISTA = 300;
 const MAX_BYTES_ARCHIVO = 2 * 1024 * 1024;
 const SEVERIDADES = new Set(['alta', 'media', 'baja']);
 const VEREDICTOS = new Set(['CONFIRMED', 'PLAUSIBLE', 'REJECTED']);
-const LENTES = ['correccion', 'seguridad', 'lineamientos'];
+const LENTES = LENTES_ULTRA;
 const MOTIVO_GENERICO = 'The job failed';
 const MOTIVO_SIN_GUIAS = 'The project guidelines are not available';
+const MOTIVO_CUBIERTA = 'Covered by the template review of this commit';
 const MOTIVO_NO_EXISTE = 'The cited file does not exist';
 
 const SCHEMA_LENTE = {
@@ -52,10 +54,26 @@ export function leerUltra(p, repo, numero, headSha) {
   return headSha && guardado.headSha !== headSha ? { ...guardado, desactualizada: true } : guardado;
 }
 
+// Lenses that the stored template review of this very commit already covers (a template declares `cubre`). Read here and
+// not through revision-plantillas.mjs, which imports this module. A result of the same commit counts even when other
+// branches moved since; a template that failed does not cover anything.
+export function lentesCubiertas(p, repo, numero, headSha) {
+  const guardado = leerJson(rutaPlantillas(p.salida, repo, numero));
+  if (!headSha || guardado?.headSha !== headSha || !Array.isArray(guardado.plantillas)) return [];
+  const buenas = new Set(guardado.plantillas.filter((t) => t?.ok !== false).map((t) => t?.id));
+  if (!buenas.size) return [];
+  const cubiertas = new Set(cargarPlantillas(p).plantillas.filter((t) => buenas.has(t.id)).flatMap((t) => t.cubre));
+  return LENTES.filter((l) => cubiertas.has(l));
+}
+
 // What the board and the chat show before an Ultra review: estimate and its base, whether it is suggested and the stored result.
+// The cap and the estimate are those of the lenses that will run; a history median covers all three, hence the scale.
 export function datosUltra(p, pr, archivos = []) {
-  const { usd, base, muestras } = estimarCosto(leerCostos(p), { tipo: 'revisar_ultra', modo: 'ultra', topeUsd: topeRevisarUltra() });
-  return { estimacion: { usd, base, muestras }, topeUsd: topeRevisarUltra(), ...sugerirUltra(p, pr, archivos), resultado: leerUltra(p, pr.repo, pr.numero, pr.headSha) };
+  const cubiertas = lentesCubiertas(p, pr.repo, pr.numero, pr.headSha);
+  const n = LENTES.length - cubiertas.length;
+  const tope = topeRevisarUltra(n);
+  const { usd, base, muestras } = estimarCosto(leerCostos(p), { tipo: 'revisar_ultra', modo: 'ultra', multiplicador: n / LENTES.length, topeUsd: tope });
+  return { estimacion: { usd, base, muestras }, topeUsd: tope, lentesCubiertas: cubiertas, ...sugerirUltra(p, pr, archivos), resultado: leerUltra(p, pr.repo, pr.numero, pr.headSha) };
 }
 
 // The cached diff holds GitHub patches without headers or final newline; the checks parse and `git apply` a git diff.
@@ -167,6 +185,7 @@ export async function revisarUltra(p, pr, {
   const otros = lista.filter((o) => !o.falla);
   const archivos = await diff(p, pr.repo, pr.numero, pr.headSha);
   const patch = parcheUnido(archivos);
+  const cubiertas = lentesCubiertas(p, pr.repo, pr.numero, pr.headSha);
   const reglasGuia = guias(p);
   const dirGuias = reglasGuia && p.lineamientos ? expandir(p.lineamientos) : null;
 
@@ -203,6 +222,7 @@ export async function revisarUltra(p, pr, {
   let resultado = null;
   try {
     const lentes = await enParalelo(LENTES, limite, async (nombre) => {
+      if (cubiertas.includes(nombre)) return { nombre, ok: false, omitida: true, motivo: MOTIVO_CUBIERTA, costo: 0, hallazgos: [] };
       if (nombre === 'lineamientos' && !reglasGuia) return { nombre, ok: false, omitida: true, motivo: MOTIVO_SIN_GUIAS, costo: 0, hallazgos: [] };
       const extra = nombre === 'lineamientos' ? `\n\nProject guidelines:\n${reglasGuia}` : '';
       const r = await llamar(nombre, 'ultra_lente', `Lens: ${nombre}. Review this PR.\n\n${contexto}${extra}`, SCHEMA_LENTE, nombre === 'lineamientos' && dirGuias ? [...dirsOtros, dirGuias] : dirsOtros);

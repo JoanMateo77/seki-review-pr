@@ -19,7 +19,7 @@ import { avances } from './avance.mjs';
 import { filtrarPrs } from './filtrar.mjs';
 import { costosDelDia, registrarCosto, resumenCostos } from './ia.mjs';
 import { modoDe, topeDeTrabajo, topeRevisarUltra } from './perfiles.mjs';
-import { datosUltra, leerUltra, revisarUltra } from './ultra.mjs';
+import { datosUltra, lentesCubiertas, leerUltra, revisarUltra } from './ultra.mjs';
 import { datosPlantillas, leerPlantillasPr, revisarPlantillas } from './revision-plantillas.mjs';
 import { crearPresupuesto, crearReservas, gastoMaquina } from './presupuesto.mjs';
 import { estadoServidor, pedirCeder, tokenDe } from './acceso.mjs';
@@ -570,7 +570,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         // A stored result for this commit is returned as is: no job, no reservation, no spend.
         const guardado = repetir === true ? null : leerUltra(p, pr.repo, pr.numero, pr.headSha);
         if (guardado && !guardado.desactualizada) return responder(res, 200, { desdeCache: true, resultado: guardado });
-        const n = cola.encolar([{ id: `${pr.id}:ultra`, tipo: 'revisar_ultra', prId: pr.id, topeUsd: topeRevisarUltra(), ejecutar: () => ejecutarUltra(p, pr, { repetir: repetir === true }) }]);
+        const n = cola.encolar([{ id: `${pr.id}:ultra`, tipo: 'revisar_ultra', prId: pr.id, topeUsd: topeRevisarUltra(3 - lentesCubiertas(p, pr.repo, pr.numero, pr.headSha).length), ejecutar: () => ejecutarUltra(p, pr, { repetir: repetir === true }) }]);
         if (!n) throw Object.assign(new Error('An Ultra review of this PR is already queued'), { codigo: 409 });
         return responder(res, 202, { encolado: `${pr.id}:ultra` });
       }
