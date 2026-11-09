@@ -10,7 +10,7 @@ import { AGOTADO, compilarPatron, probarSeguro } from './patrones.mjs';
 
 const VISTAS = /\.(ejs|html)$/;
 const CODIGO = /\.(ts|js|mjs|cjs)$/;
-const PRUEBAS = /(__tests__|\.spec\.|\.test\.)/;
+export const PRUEBAS = /(__tests__|\.spec\.|\.test\.)/;
 const FRAGMENTO_SQL = /^(filtro|filtros|where|condicion\w*|clausula\w*|orden|order\w*|limit\w*|offset|paginacion|sql\w*|campos?|columnas?|placeholders?|tabla|schema|esquema)$/i;
 
 export const SEVERIDADES = ['bloqueante', 'alto', 'medio', 'aviso'];
