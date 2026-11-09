@@ -47,7 +47,7 @@ Unlike GitHub's PR list, it checks with git whether the code is already in testi
 
 ## Future improvements
 
-- **Rules for review templates (PCI DSS and others), noted 2026-10-28 from the ai-coding wiki.** Each item
+- **Rules for review templates (PCI DSS and others), noted 2026-10-28 from the ai-coding wiki. Delivered in 0.25.0.** Each item
   of a template carries cited evidence (file and line) or the status "not verifiable from the diff"; checking an item
   is not the same as having seen the behavior. Whatever can be checked with a fixed rule goes to `pr_verificaciones`,
   not to the model. The same template is not run with several models hoping for consensus: agreement between models gives
@@ -58,3 +58,6 @@ Unlike GitHub's PR list, it checks with git whether the code is already in testi
   security, OWASP web, SQL/DDL migration, screens and copy, integrations, lightweight) that can be shared
   from a repository instead of living only in each machine's `~/.config/seki-review/plantillas/`. This means
   versioning the templates and making the project configuration independent of machine-specific paths.
+
+- **Ultra security lens as templates (pending the owner's decision).** Splitting the security lens of the Ultra review
+  into review templates is not done; it needs the owner's decision.

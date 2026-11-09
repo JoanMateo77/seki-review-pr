@@ -4,6 +4,18 @@ Each version has its `seki-review-vX.Y.Z` tag on the commit that releases it.
 
 ## seki-review
 
+### 0.25.0 (2026-11-09)
+- Review templates: JSON checklists in `plugins/seki-review/plantillas/` (`ligera`, `owasp-web`, `pci-dss`) selected by the files a PR changes (`siempre` or the `aplicaA` globs minus `excluir`); the light baseline always applies. Each item has a question, the evidence it needs, the fixed rules that decide it (`reglas`) and what a failure means (`siFalla`: Conventional Comments label, blocking or not, topic). Invalid template files are skipped with a warning.
+- Fixed rules: `tipo-any` (`any` in type positions: annotations, generic arguments, unions, aliases) and `rutas-en-otros-repos`, which finds the routes a PR adds or removes in the other configured repositories, including routes declared across lines.
+- Template review job `revisar_plantillas`: explicit, confirmed, one read-only AI call per active template with a per-item state (`cumple`, `falla`, `no_aplica`, `no_verificable`); a state of `cumple` or `falla` needs a quote that exists in the cited file and line, otherwise the item becomes `no_verificable`. Items with fixed rules are decided without AI (a selection with no AI items runs at cap 0). One verification call judges the failures (`CONFIRMED`, `PLAUSIBLE`, `REJECTED`); a rejected failure becomes a question for the author. Runs in every AI mode with its own profile and cap, and respects the daily budget.
+- Conventional Comments are built from the results (at most 5 per template; only confirmed or fixed-rule failures marked as blocking can block; `nitpick` never blocks) and stored per commit in `salida/plantillas/<repo>-<n>.json`, marked outdated after newer commits.
+- New endpoints `GET /api/plantillas?repo=&numero=` (selection, estimate and stored result) and `POST /api/plantillas` (`confirmar: true`, `repetir`; a stored result for the commit is returned without a job).
+- Dashboard: "Templates" tab with the selection and why each template applies, confirmation with the estimate, job status, checklist and comments preview; "Copy review" appends the template comments of the current commit.
+- New read-only MCP tool `pr_plantillas` and skill argument `templates <repo>#<n>` (Spanish `plantillas`).
+- Config: `plantillas` per project is a folder of your own templates (a file with the same `id` replaces the built-in one); an invalid value is ignored with a warning. Shown in `config/proyectos.ejemplo.json`.
+- Fix: every copy button shares one feedback helper, so the "Copied" label no longer stays stuck; "Copy review" works inside the click gesture and has fallbacks when the clipboard is refused.
+- Nothing is published to GitHub: comments are only copied by hand.
+
 ### 0.24.0 (2026-11-06)
 - Review intake: the open PRs where the owner is requested directly as reviewer (`user-review-requested:<login>`; team requests are not included) reach the snapshot on every refresh and are remembered in `salida/datos/revisar.json`, so they stay after the owner reviews them on GitHub until they are merged, closed or removed. Items carry `paraRevisar` (`solicitada` or `enlace`); those that are not the owner's own also carry `soloRevision` and stay out of deliveries, merge and new-PR events, the QA guide and the orphan and recent lists.
 - A PR can be added by link without spending AI and without writing to GitHub: `https://github.com/<owner>/<repo>/pull/<n>` with any suffix, `<owner>/<repo>#<n>`, `<repo>#<n>` or `<repo> <n>`. The link is parsed and validated against the project (owner, configured repo, number, 500 characters) before any `gh` call; a closed or merged PR is refused.
