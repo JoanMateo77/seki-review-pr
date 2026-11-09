@@ -19,6 +19,10 @@ Each version has its `seki-review-vX.Y.Z` tag on the commit that releases it.
 - New read-only MCP tool `pr_plantillas` and skill argument `templates <repo>#<n>` (Spanish `plantillas`).
 - Config: `plantillas` per project is a folder of your own templates (a file with the same `id` replaces the built-in one); an invalid value is ignored with a warning, and a folder that does not exist is reported with the invalid templates. Shown in `config/proyectos.ejemplo.json`.
 - Fix: every copy button shares one feedback helper, so the "Copied" label no longer stays stuck; "Copy review" works inside the click gesture and has fallbacks when the clipboard is refused.
+- Template runs share the cached prefix: each call starts with the same context (PR, repositories, changed files, diff) and ends with its items, and the first call is awaited alone so the rest read the prompt cache.
+- Template runs unchanged since the stored result are reused: a template whose version, items and activating patches (`huella`) did not change keeps its answers (`reutilizada`, cost 0) and only new failures are verified; `repetir` calls everything, and a run where all templates are reused makes no AI call and no cost record.
+- The cost record and each step of `revisar_plantillas` carry the token usage (`uso`); the estimate is the sum of the median cost of each AI template over past steps, then the per-template run median, then the cap.
+- The result stores the other branches it read (`ramas`); `GET /api/plantillas` and `pr_plantillas` report `ramasMovidas` when the local copy of one of them is at another commit (no fetch).
 - Nothing is published to GitHub: comments are only copied by hand.
 
 ### 0.24.0 (2026-11-06)

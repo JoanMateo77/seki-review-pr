@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { cargarPlantillas, globARegex, itemsDeterministas, itemsIa, seleccionarPlantillas, validarPlantilla } from '../mcp/lib/plantillas.mjs';
+import { archivosDePlantilla, cargarPlantillas, globARegex, itemsDeterministas, itemsIa, seleccionarPlantillas, validarPlantilla } from '../mcp/lib/plantillas.mjs';
 
 const temporales = [];
 afterEach(() => {
@@ -157,4 +157,12 @@ test('payment-like paths activate pci-dss in both cases', () => {
     assert.ok(seleccionarPlantillas(plantillas, [ruta]).activas.some((t) => t.id === 'pci-dss'), ruta);
   }
   assert.ok(!seleccionarPlantillas(plantillas, ['README.md']).activas.some((t) => t.id === 'pci-dss'));
+});
+
+test('archivosDePlantilla gives the changed paths that activate a template, all of them for an always template', () => {
+  const rutas = ['src/pagos/a.ts', 'src/pagos/a.spec.ts', 'docs/x.md'];
+  const base = { id: 't', version: 1, titulo: 'T', idioma: 'en', excluir: [], items: [] };
+  assert.deepEqual(archivosDePlantilla({ ...base, siempre: false, aplicaA: ['src/**'], excluir: ['**/*.spec.ts'] }, rutas), ['src/pagos/a.ts']);
+  assert.deepEqual(archivosDePlantilla({ ...base, siempre: false, aplicaA: ['api/**'] }, rutas), []);
+  assert.deepEqual(archivosDePlantilla({ ...base, siempre: true, aplicaA: ['api/**'] }, rutas), rutas);
 });

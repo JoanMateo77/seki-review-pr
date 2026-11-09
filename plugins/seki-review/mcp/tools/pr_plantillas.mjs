@@ -29,7 +29,7 @@ export default {
     return {
       repo, numero, headSha: pr.headSha,
       disponible: pr.estadoPr === 'OPEN',
-      ...datosPlantillas(p, pr, nombresDeArchivos(p, pr)),
+      ...await datosPlantillas(p, pr, nombresDeArchivos(p, pr)),
       enlace: `#/pr/${repo}/${numero}?plantillas=1`,
     };
   },

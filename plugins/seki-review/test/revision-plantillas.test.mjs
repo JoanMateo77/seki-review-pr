@@ -14,7 +14,8 @@ const it = (id, extra = {}) => ({ id, pregunta: `Question ${id}?`, evidencia: `E
 const tpl = (id, items, extra = {}) => ({ id, version: 1, titulo: `Template ${id}`, idioma: 'en', siempre: true, aplicaA: ['**'], excluir: [], items, ...extra });
 const ARCHIVO = ['import { suma } from "./suma";', 'const valor = suma(1,   2);', '  return valor;', 'l4', 'l5', 'l6', 'l7', ''].join('\n');
 const DIFF = [{ filename: 'src/a.ts', status: 'modified', additions: 1, deletions: 0, patch: '@@ -1 +1,2 @@\n l1\n+const valor = suma(1,   2);' }];
-const ok = (salida, costo = 0.5) => ({ ok: true, costo, modelo: 'claude-sonnet-5-5', salida });
+const USO = { entrada: 10, cacheCreada: 5, cacheLeida: 2, salida: 3 };
+const ok = (salida, costo = 0.5) => ({ ok: true, costo, modelo: 'claude-sonnet-5-5', uso: USO, salida });
 const cita = (id, estado, linea, texto, extra = {}) => ({ id, estado, archivo: 'src/a.ts', linea, cita: texto, titulo: `Title ${id}`, detalle: `Detail ${id}`, ...extra });
 
 function entorno({ plantillas, respuestas = {}, verificar, registro = [], diff = DIFF, otras, grep, commits } = {}) {
@@ -27,11 +28,13 @@ function entorno({ plantillas, respuestas = {}, verificar, registro = [], diff =
   let maximo = 0;
   const ejecutar = async (args, { cwd }) => {
     const prompt = args[args.indexOf('-p') + 1];
-    registro.push({ args, cwd, prompt });
+    const llamada = { args, cwd, prompt, anteriorTerminada: registro.length ? registro[registro.length - 1].terminada : null, terminada: false };
+    registro.push(llamada);
     activos++; maximo = Math.max(maximo, activos);
     await new Promise((r) => setTimeout(r, 5));
     activos--;
-    const id = /^Template: ([\w-]+)/.exec(prompt)?.[1];
+    llamada.terminada = true;
+    const id = /^Template: ([\w-]+)/m.exec(prompt)?.[1];
     if (id) {
       const x = respuestas[id] ?? { items: [] };
       return x instanceof Error ? { ok: false, costo: 0.5, modelo: 'claude-sonnet-5-5', salida: null, motivoSeguro: 'The job exceeded the maximum time' } : ok(x);
@@ -63,7 +66,8 @@ test('only the AI items of each active template are sent and deterministic items
   assert.equal(r.ok, true);
   assert.equal(registro.length, 1);
   const { prompt } = registro[0];
-  assert.match(prompt, /^Template: ligera v1\. Language: en\./);
+  assert.match(prompt, /^PR #7 of api: feat: algo\n/);
+  assert.match(prompt, /\n\nTemplate: ligera v1\. Language: en\.\n\nItems:\n/);
   const enviados = JSON.parse(/Items:\n(\[[^]*?\n\])/.exec(prompt)[1]);
   assert.deepEqual(enviados.map((x) => x.id), ['L1', 'L2']);
   assert.ok(enviados.every((x) => !('reglas' in x)));
@@ -212,7 +216,7 @@ test('a rejected failure becomes not verifiable with the reason and a confirmed 
     cita('L5', 'falla', 2, 'not there'), cita('L6', 'cumple', 1, 'import { suma }'),
   ] } } });
   const r = await revisarPlantillas(p, pr, deps);
-  const verif = registro.find((c) => !c.prompt.startsWith('Template:'));
+  const verif = registro.find((c) => !/^Template: /m.test(c.prompt));
   const fichas = JSON.parse(/Findings:\n([^]*)$/.exec(verif.prompt)[1]);
   assert.deepEqual(fichas.map((f) => f.id), ['ligera/L1', 'ligera/L2', 'ligera/L3']);
   assert.match(verif.args[verif.args.indexOf('--system-prompt') + 1], /verify the findings/);
@@ -270,8 +274,8 @@ test('the result is stored per commit, read back as outdated after a new head, a
   const { p, deps } = entorno({ plantillas, registro, verificar: veredictosDe({}), respuestas: { ligera: { items: [cita('L1', 'falla', 1, 'import { suma }')] } } });
   const r = await revisarPlantillas(p, pr, deps);
   const crudo = JSON.parse(readFileSync(join(p.salida, 'plantillas', 'api-7.json'), 'utf8'));
-  assert.deepEqual(Object.keys(crudo).sort(), ['comentarios', 'fecha', 'headSha', 'markdown', 'plantillas', 'recortados', 'seleccion']);
-  assert.deepEqual(Object.keys(crudo.plantillas[0]).sort(), ['costo', 'id', 'idioma', 'items', 'ok', 'titulo', 'version']);
+  assert.deepEqual(Object.keys(crudo).sort(), ['comentarios', 'fecha', 'headSha', 'markdown', 'plantillas', 'ramas', 'recortados', 'seleccion']);
+  assert.deepEqual(Object.keys(crudo.plantillas[0]).sort(), ['costo', 'huella', 'id', 'idioma', 'items', 'ok', 'titulo', 'version']);
   assert.equal(crudo.headSha, SHA);
   assert.deepEqual(crudo.seleccion.activas, [{ id: 'ligera', version: 1, titulo: 'Template ligera', motivo: 'siempre' }]);
   assert.equal(r.resultado.comentarios.length, 1);
@@ -301,7 +305,7 @@ test('the cost record has tipo revisar_plantillas and one detail per step', asyn
   assert.deepEqual([rec.tipo, rec.modo, rec.prId, rec.costo, rec.ok], ['revisar_plantillas', 'normal', 'api#7', 1.25, true]);
   assert.equal(rec.plantillasIa, 2);
   assert.deepEqual(rec.detalle.map((d) => d.paso), ['ligera', 'owasp-web', 'verificar']);
-  for (const d of rec.detalle) assert.deepEqual(Object.keys(d).sort(), ['costo', 'modelo', 'ok', 'paso']);
+  for (const d of rec.detalle) assert.deepEqual(Object.keys(d).sort(), ['costo', 'modelo', 'ok', 'paso', 'uso']);
   assert.doesNotMatch(readFileSync(join(p.salida, 'datos/costos.jsonl'), 'utf8'), /SECRET|Template:/);
   assert.deepEqual(r.resultado.plantillas.map((t) => t.costo), [0.5, 0.5, 0]);
 });
@@ -348,8 +352,8 @@ test('datosPlantillas gives selection, invalid files, estimate and cap, and warn
   const salida = mkdtempSync(join(tmpdir(), 'seki-plantillas-'));
   const p = { salida, plantillas: propias, repos: { api: {} } };
   const avisos = t.mock.method(console, 'error', () => {});
-  const d = datosPlantillas(p, pr, ['src/pagos/cobro.ts']);
-  datosPlantillas(p, pr, ['src/pagos/cobro.ts']);
+  const d = await datosPlantillas(p, pr, ['src/pagos/cobro.ts']);
+  await datosPlantillas(p, pr, ['src/pagos/cobro.ts']);
   assert.equal(avisos.mock.calls.filter((c) => /rota\.json/.test(c.arguments[0])).length, 1);
   assert.deepEqual(d.invalidas.map((x) => x.archivo), ['rota.json']);
   assert.ok(d.seleccion.activas.some((a) => a.id === 'pagos'));
@@ -360,7 +364,7 @@ test('datosPlantillas gives selection, invalid files, estimate and cap, and warn
   assert.equal(d.resultado, null);
 
   writeFileSync(join(propias, 'rota.json'), JSON.stringify(tpl('rota', [it('X1')])));
-  const d2 = datosPlantillas(p, pr, ['src/pagos/cobro.ts']);
+  const d2 = await datosPlantillas(p, pr, ['src/pagos/cobro.ts']);
   assert.deepEqual(d2.invalidas, []);
   assert.ok(d2.seleccion.activas.some((a) => a.id === 'rota'));
 });
@@ -385,7 +389,7 @@ test('evidence in a listed other repository is accepted with its repo; an unknow
   assert.deepEqual([l2.estado, l2.motivo], ['no_verificable', 'The quote does not match the cited code']);
   const l3 = item(r, 'ligera', 'L3');
   assert.deepEqual([l3.estado, l3.repo], ['cumple', undefined]);
-  const verif = registro.find((c) => !c.prompt.startsWith('Template:'));
+  const verif = registro.find((c) => !/^Template: /m.test(c.prompt));
   const fichas = JSON.parse(/Findings:\n([^]*)$/.exec(verif.prompt)[1]);
   assert.deepEqual(fichas.map((f) => [f.id, f.repo]), [['ligera/L1', 'web']]);
 });
@@ -427,20 +431,185 @@ test('an empty AI title is not stored and the comment falls back to the question
   assert.match(markdown, /\*\*issue \(blocking\): Question L1\?\*\*/);
 });
 
-test('the estimate is the median cost per AI template times the AI templates selected', () => {
+test('the estimate is the median cost per AI template times the AI templates selected', async () => {
   const salida = mkdtempSync(join(tmpdir(), 'seki-plantillas-'));
   const p = { salida, repos: { api: {} } };
   for (const [costo, plantillasIa] of [[1, 2], [3, 3], [0.4, 1]]) registrarCosto(p, { tipo: 'revisar_plantillas', modo: 'normal', costo, ok: true, plantillasIa });
   // Per template: 0.5, 1, 0.4 -> median 0.5. A record without the count is one template.
-  const sin = datosPlantillas(p, pr, []);
+  const sin = await datosPlantillas(p, pr, []);
   const n = sin.seleccion.activas.length;
   assert.equal(sin.estimacion.base, 'historial');
   assert.equal(sin.estimacion.usd, 0.5 * n);
-  const d = datosPlantillas(p, pr, ['src/pagos/cobro.ts', 'src/routes/ordenes.ts']);
+  const d = await datosPlantillas(p, pr, ['src/pagos/cobro.ts', 'src/routes/ordenes.ts']);
   const m = d.seleccion.activas.length;
   assert.ok(m > n);
   assert.equal(d.estimacion.usd, 0.5 * m);
   registrarCosto(p, { tipo: 'revisar_plantillas', modo: 'normal', costo: 9, ok: true });
   registrarCosto(p, { tipo: 'revisar_plantillas', modo: 'normal', costo: 9, ok: true });
-  assert.equal(datosPlantillas(p, pr, []).estimacion.usd, 1 * n);
+  assert.equal((await datosPlantillas(p, pr, [])).estimacion.usd, 1 * n);
+});
+
+const HASH = /^[0-9a-f]{64}$/;
+const NUEVA = 'b'.repeat(40);
+const archivo = (filename, patch) => ({ filename, status: 'modified', additions: 1, deletions: 0, patch });
+const mundo = (extra = {}) => entorno({ plantillas: [
+  tpl('ligera', [it('L1')]), tpl('pci', [it('P1')], { siempre: false, aplicaA: ['src/pci/**'] })],
+  diff: [archivo('src/a.ts', '@@ -1 +1 @@\n+uno'), archivo('src/pci/x.ts', '@@ -1 +1 @@\n+pci')],
+  verificar: veredictosDe({ 'pci/P1': 'PLAUSIBLE' }),
+  respuestas: { ligera: { items: [cita('L1', 'cumple', 1, 'import { suma }')] }, pci: { items: [cita('P1', 'falla', 1, 'import { suma }')] } }, ...extra });
+
+test('every template prompt starts with the same context and ends with its items; the first call finishes before the second starts', async () => {
+  const registro = [];
+  const plantillas = ['a', 'b', 'c'].map((id) => tpl(id, [it(`${id.toUpperCase()}1`)]));
+  const e = entorno({ plantillas, registro });
+  await revisarPlantillas(e.p, pr, { ...e.deps, paralelo: 2 });
+  assert.equal(registro.length, 3);
+  const contextos = registro.map((c) => c.prompt.slice(0, c.prompt.indexOf('\n\nTemplate: ')));
+  assert.ok(contextos[0].length > 0 && contextos.every((c) => c === contextos[0]));
+  registro.forEach((c, i) => {
+    const id = ['a', 'b', 'c'][i];
+    assert.match(c.prompt, new RegExp(`\\n\\nTemplate: ${id} v1\\. Language: en\\.\\n\\nItems:\\n\\[[^]*"id": "${id.toUpperCase()}1"[^]*\\]$`));
+  });
+  assert.equal(registro[1].anteriorTerminada, true);
+  assert.equal(e.maximo(), 2);
+});
+
+test('the cost record and each of its steps carry the token usage', async () => {
+  const e = mundo();
+  await revisarPlantillas(e.p, pr, e.deps);
+  const [rec] = leerCostos(e.p);
+  assert.equal(rec.detalle.length, 3);
+  for (const d of rec.detalle) assert.deepEqual(d.uso, USO);
+  assert.deepEqual(rec.uso, { entrada: 30, cacheCreada: 15, cacheLeida: 6, salida: 9 });
+});
+
+test('a template whose fingerprint did not change is not called again and keeps its verdicts', async () => {
+  const registro = [];
+  const e = mundo({ registro });
+  const primera = await revisarPlantillas(e.p, pr, e.deps);
+  for (const t of primera.resultado.plantillas) assert.match(t.huella, HASH);
+  assert.equal(item(primera, 'pci', 'P1').veredicto, 'PLAUSIBLE');
+  registro.length = 0;
+  // The new commit changes only src/a.ts: ligera (always active) reads every patch, pci only its own file.
+  e.deps.diff = async () => [archivo('src/a.ts', '@@ -1 +1 @@\n+dos'), archivo('src/pci/x.ts', '@@ -1 +1 @@\n+pci')];
+  e.deps.cargar = () => ({ plantillas: [tpl('ligera', [it('L1')]), tpl('pci', [it('P1')], { siempre: false, aplicaA: ['src/pci/**'] })], invalidas: [] });
+  const r = await revisarPlantillas(e.p, { ...pr, headSha: NUEVA }, e.deps);
+  assert.deepEqual(registro.map((c) => /^Template: ([\w-]+)/m.exec(c.prompt)?.[1]), ['ligera']);
+  const p1 = item(r, 'pci', 'P1');
+  assert.deepEqual([p1.estado, p1.veredicto, p1.reutilizada], ['falla', 'PLAUSIBLE', true]);
+  assert.equal(item(r, 'ligera', 'L1').reutilizada, undefined);
+  assert.equal(r.resultado.plantillas.find((t) => t.id === 'pci').costo, 0);
+  assert.equal(r.resultado.headSha, NUEVA);
+  assert.equal(leerCostos(e.p).at(-1).plantillasIa, 1);
+});
+
+test('only new failing items are verified; reused ones are not sent again', async () => {
+  const registro = [];
+  const e = mundo({ registro, respuestas: { ligera: { items: [cita('L1', 'falla', 1, 'import { suma }')] }, pci: { items: [cita('P1', 'falla', 1, 'import { suma }')] } } });
+  await revisarPlantillas(e.p, pr, e.deps);
+  registro.length = 0;
+  e.deps.diff = async () => [archivo('src/a.ts', '@@ -1 +1 @@\n+dos'), archivo('src/pci/x.ts', '@@ -1 +1 @@\n+pci')];
+  e.deps.cargar = () => ({ plantillas: [tpl('ligera', [it('L1')]), tpl('pci', [it('P1')], { siempre: false, aplicaA: ['src/pci/**'] })], invalidas: [] });
+  await revisarPlantillas(e.p, { ...pr, headSha: NUEVA }, e.deps);
+  const verif = registro.find((c) => !/^Template: /m.test(c.prompt));
+  assert.deepEqual(JSON.parse(/Findings:\n([^]*)$/.exec(verif.prompt)[1]).map((f) => f.id), ['ligera/L1']);
+});
+
+test('a changed patch of an activating file, a changed item or repetir call the template again', async () => {
+  const registro = [];
+  const e = mundo({ registro });
+  await revisarPlantillas(e.p, pr, e.deps);
+  const plantillas = [tpl('ligera', [it('L1')]), tpl('pci', [it('P1')], { siempre: false, aplicaA: ['src/pci/**'] })];
+  const llamadas = async (deps, head = NUEVA) => {
+    registro.length = 0;
+    await revisarPlantillas(e.p, { ...pr, headSha: head }, deps);
+    return registro.filter((c) => /^Template: /m.test(c.prompt)).map((c) => /^Template: ([\w-]+)/m.exec(c.prompt)[1]);
+  };
+  const igual = [archivo('src/a.ts', '@@ -1 +1 @@\n+uno'), archivo('src/pci/x.ts', '@@ -1 +1 @@\n+pci')];
+  assert.deepEqual(await llamadas({ ...e.deps, cargar: () => ({ plantillas, invalidas: [] }), diff: async () => igual }), []);
+  const cambiado = [igual[0], archivo('src/pci/x.ts', '@@ -1 +1 @@\n+pci2')];
+  assert.deepEqual(await llamadas({ ...e.deps, cargar: () => ({ plantillas, invalidas: [] }), diff: async () => cambiado }, 'c'.repeat(40)), ['ligera', 'pci']);
+  const otroItem = [tpl('ligera', [it('L1')]), tpl('pci', [it('P1', { pregunta: 'Another question?' })], { siempre: false, aplicaA: ['src/pci/**'] })];
+  assert.deepEqual(await llamadas({ ...e.deps, cargar: () => ({ plantillas: otroItem, invalidas: [] }), diff: async () => cambiado }, 'd'.repeat(40)), ['pci']);
+  assert.deepEqual(await llamadas({ ...e.deps, cargar: () => ({ plantillas: otroItem, invalidas: [] }), diff: async () => cambiado, repetir: true }, 'd'.repeat(40)), ['ligera', 'pci']);
+});
+
+test('a template that failed or has an unjudged failure is not reused', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const registro = [];
+  const e = mundo({ registro, verificar: () => ({ ok: false, costo: 0.1, salida: null, motivoSeguro: 'The job failed' }) });
+  const primera = await revisarPlantillas(e.p, pr, e.deps);
+  assert.equal(primera.resultado.verificacion, 'fallida');
+  registro.length = 0;
+  const r = await revisarPlantillas(e.p, { ...pr, headSha: NUEVA }, e.deps);
+  assert.deepEqual(registro.filter((c) => /^Template: /m.test(c.prompt)).map((c) => /^Template: ([\w-]+)/m.exec(c.prompt)[1]), ['pci']);
+  assert.equal(item(r, 'pci', 'P1').reutilizada, undefined);
+});
+
+test('when everything is reused no AI call and no cost record are made and the result is rewritten for the new commit', async () => {
+  const registro = [];
+  const plantillas = [tpl('pci', [it('P1')], { siempre: false, aplicaA: ['src/pci/**'] })];
+  const diff1 = [archivo('src/pci/x.ts', '@@ -1 +1 @@\n+pci'), archivo('docs/a.md', '@@ -1 +1 @@\n+uno')];
+  const e = entorno({ plantillas, registro, diff: diff1, verificar: veredictosDe({}), respuestas: { pci: { items: [cita('P1', 'falla', 1, 'import { suma }')] } },
+    otras: async () => ({ ambiente: 'pruebas', lista: [{ repo: 'web', rama: 'develop', sha: 'c'.repeat(40), dir: '/tmp/x' }] }) });
+  await revisarPlantillas(e.p, pr, e.deps);
+  const registros = leerCostos(e.p).length;
+  registro.length = 0;
+  let copias = 0;
+  const r = await revisarPlantillas(e.p, { ...pr, headSha: NUEVA }, { ...e.deps, diff: async () => [diff1[0], archivo('docs/a.md', '@@ -1 +1 @@\n+dos')], copiar: async () => { copias++; return e.copia; },
+    otras: async () => { throw new Error('not needed'); } });
+  assert.deepEqual([r.ok, r.costo, r.modelo, registro.length, copias, leerCostos(e.p).length], [true, 0, null, 0, 0, registros]);
+  assert.equal(item(r, 'pci', 'P1').reutilizada, true);
+  assert.equal(leerPlantillasPr(e.p, 'api', 7, NUEVA).headSha, NUEVA);
+  assert.equal(leerPlantillasPr(e.p, 'api', 7, NUEVA).desactualizada, undefined);
+  assert.deepEqual(r.resultado.ramas, [{ repo: 'web', rama: 'develop', sha: 'c'.repeat(40) }]);
+});
+
+test('the result stores the other branches that were read and leaves out those that failed', async () => {
+  const e = entorno({ plantillas: [tpl('ligera', [it('L1')])], otras: async () => ({ ambiente: 'pruebas', lista: [
+    { repo: 'web', rama: 'develop', sha: 'c'.repeat(40), dir: '/tmp/w' }, { repo: 'jobs', rama: 'develop', falla: 'no checkout' }] }) });
+  const r = await revisarPlantillas(e.p, pr, e.deps);
+  assert.deepEqual(r.resultado.ramas, [{ repo: 'web', rama: 'develop', sha: 'c'.repeat(40) }]);
+});
+
+test('datosPlantillas reports the branches whose sha moved; an unreadable sha is not a move', async () => {
+  const lista = [['web', 'develop', 'c'], ['jobs', 'develop', 'd'], ['docs', 'main', 'e'], ['sdk', 'main', 'f']].map(([repo, rama, c]) => ({ repo, rama, sha: c.repeat(40), dir: `/tmp/${repo}` }));
+  const e = entorno({ plantillas: [tpl('ligera', [it('L1')])], otras: async () => ({ ambiente: 'pruebas', lista }) });
+  await revisarPlantillas(e.p, pr, e.deps);
+  const consultas = [];
+  const shaRama = async (_p, repo, rama) => {
+    consultas.push(`${repo}:${rama}`);
+    if (repo === 'web') return 'z'.repeat(40);
+    if (repo === 'jobs') throw new Error('no copy');
+    if (repo === 'docs') return null;
+    return 'f'.repeat(40);
+  };
+  const d = await datosPlantillas(e.p, pr, [], { shaRama });
+  assert.deepEqual(d.resultado.ramasMovidas, [{ repo: 'web', rama: 'develop' }]);
+  assert.equal(consultas.length, 4);
+  const quieta = await datosPlantillas(e.p, pr, [], { shaRama: async (_p, repo) => lista.find((x) => x.repo === repo).sha });
+  assert.equal('ramasMovidas' in quieta.resultado, false);
+  // Default: the local copy of the branch; with no copy on disk nothing moved and git is never reached.
+  const porDefecto = await datosPlantillas(e.p, pr, []);
+  assert.equal('ramasMovidas' in porDefecto.resultado, false);
+  assert.equal((await datosPlantillas({ ...e.p, salida: mkdtempSync(join(tmpdir(), 'seki-vacio-')) }, pr, [])).resultado, null);
+});
+
+test('the estimate sums the per-template median of past steps, then the per-template run median, then the cap', async () => {
+  const salida = mkdtempSync(join(tmpdir(), 'seki-plantillas-'));
+  const p = { salida, repos: { api: {} } };
+  const registrar = (costo, detalle, extra = {}) => registrarCosto(p, { tipo: 'revisar_plantillas', modo: 'normal', costo, ok: true, plantillasIa: detalle.length, detalle, ...extra });
+  const paso = (id, costo, ok = true) => ({ paso: id, modelo: 'm', costo, ok });
+  registrar(0.9, [paso('ligera', 0.1), paso('owasp-web', 0.8)]);
+  registrar(0.7, [paso('ligera', 0.3), paso('owasp-web', 0.4)]);
+  registrar(0.6, [paso('ligera', 0.2), paso('owasp-web', 0.4, false)]);
+  const d = await datosPlantillas(p, pr, ['src/routes/a.ts']);
+  const ids = d.seleccion.activas.map((a) => a.id);
+  assert.deepEqual(ids, ['ligera', 'owasp-web']);
+  // ligera: median(0.1, 0.3, 0.2) = 0.2. owasp-web has two ok steps, so it falls back to the run median
+  // per template: (0.45, 0.35, 0.3) -> 0.35.
+  assert.equal(d.estimacion.base, 'historial');
+  assert.ok(Math.abs(d.estimacion.usd - 0.55) < 1e-9);
+  const vacio = await datosPlantillas({ salida: mkdtempSync(join(tmpdir(), 'seki-plantillas-')), repos: {} }, pr, ['src/routes/a.ts']);
+  assert.deepEqual(vacio.estimacion, { usd: vacio.topeUsd, base: 'topes', muestras: 0 });
 });

@@ -113,20 +113,33 @@ export function cargarPlantillas(p, { dirBase = DIR_BASE } = {}) {
   return { plantillas, invalidas: [...base.invalidas, ...propias.invalidas] };
 }
 
+// First include glob that matches the path unless an exclude glob does; the one rule of "this file activates the template".
+function emparejador(t) {
+  const incluir = t.aplicaA.map((glob) => ({ glob, re: globARegex(glob) }));
+  const excluir = t.excluir.map(globARegex);
+  return (ruta) => (excluir.some((re) => re.test(ruta)) ? null : incluir.find((g) => g.re.test(ruta))?.glob ?? null);
+}
+
+// The changed paths that activate the template: all of them for an `siempre` one.
+export function archivosDePlantilla(t, rutas) {
+  if (t.siempre) return [...rutas];
+  const coincide = emparejador(t);
+  return rutas.filter((ruta) => coincide(ruta) !== null);
+}
+
 // Which templates apply to the changed paths; no AI involved.
 export function seleccionarPlantillas(plantillas, rutas) {
   const activas = [];
   const omitidas = [];
   const cubiertas = new Set();
   for (const t of plantillas) {
-    const incluir = t.aplicaA.map((glob) => ({ glob, re: globARegex(glob) }));
-    const excluir = t.excluir.map(globARegex);
+    const coincide = emparejador(t);
     let motivo = null;
     for (const ruta of rutas) {
-      const hit = incluir.find((g) => g.re.test(ruta));
-      if (!hit || excluir.some((re) => re.test(ruta))) continue;
+      const glob = coincide(ruta);
+      if (glob === null) continue;
       if (!t.siempre) cubiertas.add(ruta);
-      motivo ??= { archivo: ruta, glob: hit.glob };
+      motivo ??= { archivo: ruta, glob };
     }
     if (t.siempre) activas.push({ id: t.id, version: t.version, titulo: t.titulo, motivo: 'siempre' });
     else if (motivo) activas.push({ id: t.id, version: t.version, titulo: t.titulo, motivo });

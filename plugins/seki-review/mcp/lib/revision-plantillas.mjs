@@ -1,18 +1,19 @@
 // Template review of one PR: one read-only AI call per active template answers its items with quoted evidence, the
 // quotes are checked against the code, deterministic items are decided by the fixed rules, one verification call
 // judges the failures, and the result becomes Conventional Comments. Always an explicit, confirmed job.
+import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { escribirJson, leerJson, rutaPlantillas } from './cache.mjs';
 import { comentariosDePlantillas } from './comentarios-plantilla.mjs';
-import { crearCopia } from './copias.mjs';
+import { crearCopia, dirDeRama } from './copias.mjs';
 import { asegurarDiff } from './diffs.mjs';
 import { commitsPr } from './estado.mjs';
 import { argsClaude, ejecutarClaude, leerCostos, MOTIVO_FORMATO, reglasSecretos, registrarCosto, sistemaDe } from './ia.mjs';
-import { estimarCosto, perfil, topeRevisarPlantillas } from './perfiles.mjs';
-import { cargarPlantillas, DIR_BASE, itemsIa, seleccionarPlantillas } from './plantillas.mjs';
+import { estimarCostoPlantillas, perfil, topeRevisarPlantillas } from './perfiles.mjs';
+import { archivosDePlantilla, cargarPlantillas, DIR_BASE, itemsIa, seleccionarPlantillas } from './plantillas.mjs';
 import { otrasRamas } from './preguntas.mjs';
-import { enParalelo } from './proceso.mjs';
+import { enParalelo, git } from './proceso.mjs';
 import { reglasDeConfig, reglasDelRepo } from './reglas.mjs';
 import { buscarRutas, grepGit, rutasDelDiff } from './rutas-cruzadas.mjs';
 import { paralelo as paraleloCola } from './trabajos.mjs';
@@ -79,16 +80,36 @@ export function leerPlantillasPr(p, repo, numero, headSha) {
 
 const activasDe = (plantillas, seleccion) => seleccion.activas.map((a) => plantillas.find((t) => t.id === a.id)).filter(Boolean);
 
+// Current commit of the local copy of a branch, read without fetching; null when there is no copy or it cannot be read.
+async function shaLocalDeRama(p, repo, rama) {
+  const dir = dirDeRama(p, repo, rama);
+  if (!existsSync(join(dir, '.git'))) return null;
+  return (await git(dir, ['rev-parse', 'HEAD'])).trim() || null;
+}
+
+// The other branches the stored result was read from whose current sha is no longer the one it saw. A sha that cannot
+// be read is not a move.
+async function ramasMovidasDe(p, ramas, shaRama) {
+  const movidas = [];
+  for (const r of Array.isArray(ramas) ? ramas : []) {
+    let actual = null;
+    try { actual = await shaRama(p, r.repo, r.rama); } catch { /* unreadable: not moved */ }
+    if (actual && actual !== r.sha) movidas.push({ repo: r.repo, rama: r.rama });
+  }
+  return movidas;
+}
+
 // What the board and the chat show before a template review: selection, broken files, estimate, cap and stored result.
-export function datosPlantillas(p, pr, rutas = []) {
+export async function datosPlantillas(p, pr, rutas = [], { shaRama = shaLocalDeRama } = {}) {
   const { plantillas, invalidas } = plantillasDe(p);
   const seleccion = seleccionarPlantillas(plantillas, rutas);
-  const n = activasDe(plantillas, seleccion).filter((t) => itemsIa(t).length).length;
-  const topeUsd = topeRevisarPlantillas(n);
-  // The history is kept per run; a run's cost over its AI templates (one when a record has no count) is the sample.
-  const porPlantilla = leerCostos(p).map((x) => (x?.tipo === 'revisar_plantillas' && Number.isInteger(x.plantillasIa) && x.plantillasIa > 1 ? { ...x, costo: x.costo / x.plantillasIa } : x));
-  const { usd, base, muestras } = estimarCosto(porPlantilla, { tipo: 'revisar_plantillas', modo: 'normal', multiplicador: n, topeUsd });
-  return { seleccion, invalidas, estimacion: { usd: n ? usd : 0, base, muestras }, topeUsd, resultado: leerPlantillasPr(p, pr.repo, pr.numero, pr.headSha) };
+  const conIa = activasDe(plantillas, seleccion).filter((t) => itemsIa(t).length);
+  const topeUsd = topeRevisarPlantillas(conIa.length);
+  const { usd, base, muestras } = estimarCostoPlantillas(leerCostos(p), conIa.map((t) => t.id), { topeUsd });
+  const guardado = leerPlantillasPr(p, pr.repo, pr.numero, pr.headSha);
+  const movidas = guardado ? await ramasMovidasDe(p, guardado.ramas, shaRama) : [];
+  const resultado = guardado && movidas.length ? { ...guardado, ramasMovidas: movidas } : guardado;
+  return { seleccion, invalidas, estimacion: { usd: conIa.length ? usd : 0, base, muestras }, topeUsd, resultado };
 }
 
 // The whitespace-collapsed quote (8 to 300 characters, not a lone brace) must be inside the collapsed lines
@@ -133,6 +154,28 @@ function itemDeterminista(base, item, { hallazgos, conocidas, reposListos, commi
   return { ...base, estado: 'cumple', detalle: `No added line matches the rules ${activas.join(', ')}` };
 }
 
+const USO_VACIO = { entrada: 0, cacheCreada: 0, cacheLeida: 0, salida: 0 };
+const sumarUso = (a, b) => Object.fromEntries(Object.keys(USO_VACIO).map((k) => [k, (a?.[k] ?? 0) + (b?.[k] ?? 0)]));
+
+// What the AI read of this template: its items and the patches of the files that activate it. The same fingerprint
+// means the same question over the same changes, so the stored answer still holds.
+function huellaDe(t, archivos) {
+  const patches = archivosDePlantilla(t, archivos.map((a) => a.filename))
+    .sort()
+    .map((nombre) => [nombre, archivos.find((a) => a.filename === nombre)?.patch ?? null]);
+  return createHash('sha256').update(JSON.stringify([t.id, t.version, itemsIa(t), patches])).digest('hex');
+}
+
+// A stored template entry can stand in for a new call when nothing it read changed, it succeeded, and it holds an
+// answer for every AI item; a failing item that was never judged (the verification failed) is asked again.
+function reutilizable(entrada, huella, t) {
+  if (!entrada || entrada.ok === false || entrada.huella !== huella) return null;
+  const guardados = new Map((entrada.items ?? []).filter((i) => i.origen === 'ia').map((i) => [i.id, i]));
+  const ia = itemsIa(t).map((i) => guardados.get(i.id));
+  if (ia.some((i) => !i || (i.estado === 'falla' && !i.veredicto))) return null;
+  return new Map(ia.map((i) => [i.id, { ...i, reutilizada: true }]));
+}
+
 export async function revisarPlantillas(p, pr, {
   repetir = false, paralelo = paraleloCola(), ejecutar = ejecutarClaude, copiar = crearCopia, otras = otrasRamas, diff = asegurarDiff,
   commits = (q, r) => commitsPr(q.owner, r.repo, r.numero), grep = grepGit, cargar = plantillasDe,
@@ -148,7 +191,16 @@ export async function revisarPlantillas(p, pr, {
   const { plantillas } = cargar(p);
   const seleccion = seleccionarPlantillas(plantillas, archivos.map((a) => a.filename));
   const activas = activasDe(plantillas, seleccion);
-  const conIa = activas.filter((t) => itemsIa(t).length);
+  const conIaActivas = activas.filter((t) => itemsIa(t).length);
+  const huellas = new Map(conIaActivas.map((t) => [t.id, huellaDe(t, archivos)]));
+  const reusadas = new Map();
+  if (!repetir) {
+    for (const t of conIaActivas) {
+      const items = reutilizable(guardado?.plantillas?.find((x) => x.id === t.id), huellas.get(t.id), t);
+      if (items) reusadas.set(t.id, items);
+    }
+  }
+  const conIa = conIaActivas.filter((t) => !reusadas.has(t.id));
   const dir = conIa.length ? await copiar(p, pr.repo, pr.numero, pr.headSha, { sufijo: '-lectura' }) : null;
   const usa = (regla) => activas.some((t) => t.items.some((i) => i.reglas.includes(regla)));
   // The other repositories serve the AI (read and quoted) and the cross-repo route rule; nothing else needs them.
@@ -198,7 +250,7 @@ export async function revisarPlantillas(p, pr, {
       r = { ok: false, costo: 0, salida: null, motivoSeguro: MOTIVO_GENERICO };
     }
     const modelo = r.modelo ?? f.modelo;
-    pasos.push({ paso, verifica: tipo !== 'plantilla', modelo, costo: redondear(r.costo ?? 0), ok: !!r.ok });
+    pasos.push({ paso, verifica: tipo !== 'plantilla', modelo, costo: redondear(r.costo ?? 0), uso: sumarUso(USO_VACIO, r.uso), ok: !!r.ok });
     return { ...r, modelo };
   };
   const falla = (r, valido) => (r.ok && valido ? null : r.ok ? MOTIVO_FORMATO : r.motivoSeguro ?? MOTIVO_GENERICO);
@@ -208,31 +260,37 @@ export async function revisarPlantillas(p, pr, {
   let motivoFallo = MOTIVO_GENERICO;
   let resultado = null;
   try {
-    const respuestas = new Map(await enParalelo(conIa, limite, async (t) => {
+    // One prompt per template, always the shared context first and the template's own items last, so the calls
+    // share the cached prefix. The first call is awaited alone: it writes the cache the others then read.
+    const consultar = async (t) => {
       const fichas = itemsIa(t).map(({ id, pregunta, evidencia }) => ({ id, pregunta, evidencia }));
-      const prompt = `Template: ${t.id} v${t.version}. Language: ${t.idioma}.\n\nItems:\n${JSON.stringify(fichas, null, 1)}\n\n${contexto}`;
+      const prompt = `${contexto}\n\nTemplate: ${t.id} v${t.version}. Language: ${t.idioma}.\n\nItems:\n${JSON.stringify(fichas, null, 1)}`;
       const r = await llamar(t.id, 'plantilla', prompt, SCHEMA_PLANTILLA);
       const motivo = falla(r, Array.isArray(r.salida?.items));
       if (motivo) aviso(t.id, motivo);
       return [t.id, { motivo, costo: redondear(r.costo ?? 0), items: motivo ? [] : r.salida.items }];
-    }));
+    };
+    const primera = conIa.length ? [await consultar(conIa[0])] : [];
+    const respuestas = new Map([...primera, ...await enParalelo(conIa.slice(1), limite, consultar)]);
 
     const entradas = activas.map((t) => {
       const res = respuestas.get(t.id);
+      const reutilizadas = reusadas.get(t.id);
       const porId = new Map();
       for (const x of res?.items ?? []) if (x && ESTADOS.has(x.estado) && typeof x.id === 'string' && !porId.has(x.id)) porId.set(x.id, x);
       const items = t.items.map((i) => {
         const base = { id: i.id, pregunta: i.pregunta, siFalla: i.siFalla };
         if (i.reglas.length) return itemDeterminista({ ...base, origen: 'determinista' }, i, deterministas);
+        if (reutilizadas) return { ...reutilizadas.get(i.id), ...base, origen: 'ia', reutilizada: true };
         if (res?.motivo) return { ...base, origen: 'ia', estado: 'no_verificable', motivo: MOTIVO_PLANTILLA };
         return itemIa({ ...base, origen: 'ia' }, porId.get(i.id), raices, cuentas, pr.repo);
       });
-      return { id: t.id, version: t.version, titulo: t.titulo, idioma: t.idioma, ok: !res?.motivo, ...(res?.motivo ? { motivo: res.motivo } : {}), costo: res?.costo ?? 0, items };
+      return { id: t.id, version: t.version, titulo: t.titulo, idioma: t.idioma, ...(huellas.has(t.id) ? { huella: huellas.get(t.id) } : {}), ok: !res?.motivo, ...(res?.motivo ? { motivo: res.motivo } : {}), costo: res?.costo ?? 0, items };
     });
 
     motivoFallo = conIa.length > 0 && conIa.every((t) => respuestas.get(t.id).motivo) ? respuestas.get(conIa[0].id).motivo : null;
     let verificacion = null;
-    const candidatas = entradas.flatMap((t) => t.items.filter((i) => i.estado === 'falla' && i.origen === 'ia').map((i) => ({ t, i })));
+    const candidatas = entradas.flatMap((t) => t.items.filter((i) => i.estado === 'falla' && i.origen === 'ia' && !i.reutilizada).map((i) => ({ t, i })));
     if (!motivoFallo && candidatas.length) {
       const fichas = candidatas.map(({ t, i }) => ({ id: `${t.id}/${i.id}`, ...(i.repo ? { repo: i.repo } : {}), archivo: i.archivo, linea: i.linea, cita: i.cita, titulo: i.titulo, detalle: i.detalle }));
       const v = await llamar('verificar', 'ultra_verificar', `Verify these findings.\n\nAvailable repositories (read-only):\n- ${pr.repo}: the current directory.\n${repos}\n\nFindings:\n${JSON.stringify(fichas, null, 1)}`, SCHEMA_VERIFICAR);
@@ -260,6 +318,8 @@ export async function revisarPlantillas(p, pr, {
       resultado = {
         headSha: pr.headSha, fecha: new Date().toISOString(), seleccion,
         ...(reposListos ? {} : { otrosRepos: 'no_disponibles' }), ...(verificacion ? { verificacion } : {}),
+        // The other branches this result was read from; a reuse that read none keeps the ones its answers came from.
+        ramas: conIa.length || usa(REGLA_RUTAS) ? otros.map(({ repo, rama, sha }) => ({ repo, rama, sha })) : guardado?.ramas ?? [],
         plantillas: entradas, ...comentarios,
       };
       escribirJson(rutaPlantillas(p.salida, pr.repo, pr.numero), resultado);
@@ -269,10 +329,10 @@ export async function revisarPlantillas(p, pr, {
     if (pasos.length) {
       // Template steps in template order, then the verification (a template may be called "verificar" too).
       const orden = (x) => (x.verifica ? conIa.length : conIa.findIndex((t) => t.id === x.paso));
-      const detalle = [...pasos].sort((a, b) => orden(a) - orden(b)).map(({ paso, modelo, costo, ok: pok }) => ({ paso, modelo, costo, ok: pok }));
+      const detalle = [...pasos].sort((a, b) => orden(a) - orden(b)).map(({ paso, modelo, costo, uso, ok: pok }) => ({ paso, modelo, costo, uso, ok: pok }));
       registrarCosto(p, {
         tipo: 'revisar_plantillas', modo: 'normal', prId: pr.id, plantillasIa: conIa.length, modelo: detalle.find((x) => x.modelo)?.modelo ?? null,
-        costo: redondear(detalle.reduce((s, x) => s + x.costo, 0)), ok, ...(ok ? {} : { motivo: motivoFallo ?? MOTIVO_GENERICO }), detalle,
+        costo: redondear(detalle.reduce((s, x) => s + x.costo, 0)), uso: detalle.reduce((s, x) => sumarUso(s, x.uso), USO_VACIO), ok, ...(ok ? {} : { motivo: motivoFallo ?? MOTIVO_GENERICO }), detalle,
       });
     }
   }

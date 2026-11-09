@@ -64,6 +64,37 @@ export function estimarCosto(registros, { tipo, modo = 'normal', multiplicador =
   return { usd: mediana * multiplicador, base: 'historial', muestras: costos.length };
 }
 
+// Estimate of a template review: the sum, over the AI templates it will call, of the median cost of that template id in
+// past steps (3 samples at least); without them the median per template of past runs, and without them the template cap.
+// With no history at all the whole review cap stands in, as for every job type.
+export function estimarCostoPlantillas(registros, ids, { topeUsd = 0, ahora = Date.now() } = {}) {
+  const desde = new Date(ahora - VENTANA_DIAS * 86400000).toISOString();
+  const porRun = registros.map((x) => (x?.tipo === 'revisar_plantillas' && Number.isInteger(x.plantillasIa) && x.plantillasIa > 1 ? { ...x, costo: x.costo / x.plantillasIa } : x));
+  const topePlantilla = perfil({ tipo: 'plantilla', modo: 'normal' }).topeUsd;
+  const general = estimarCosto(porRun, { tipo: 'revisar_plantillas', modo: 'normal', topeUsd: topePlantilla, ahora });
+  const pasos = new Map();
+  for (const x of registros) {
+    if (x?.tipo !== 'revisar_plantillas' || (x.modo ?? 'normal') !== 'normal' || !(x.fecha >= desde)) continue;
+    for (const d of Array.isArray(x.detalle) ? x.detalle : []) {
+      if (d?.ok === true && Number.isFinite(d.costo) && ids.includes(d.paso)) pasos.set(d.paso, [...(pasos.get(d.paso) ?? []), d.costo]);
+    }
+  }
+  let usd = 0;
+  let conHistorial = false;
+  for (const id of ids) {
+    const costos = (pasos.get(id) ?? []).sort((a, b) => a - b);
+    if (costos.length >= MIN_MUESTRAS) {
+      const m = costos.length >> 1;
+      usd += costos.length % 2 ? costos[m] : (costos[m - 1] + costos[m]) / 2;
+      conHistorial = true;
+    } else {
+      usd += general.usd;
+      conHistorial ||= general.base === 'historial';
+    }
+  }
+  return conHistorial ? { usd, base: 'historial', muestras: general.muestras } : { usd: topeUsd, base: 'topes', muestras: general.muestras };
+}
+
 // Ultra is suggested when a changed path matches a sensitive pattern or the PR is already flagged as security.
 export function sugerirUltra(p, pr, archivos = []) {
   const rutas = archivos.map((a) => (typeof a === 'string' ? a : a?.filename)).filter(Boolean);
