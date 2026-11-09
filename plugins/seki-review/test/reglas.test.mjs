@@ -65,3 +65,31 @@ test('tipo-any reports a mixed line once', () => {
   const tipos = hallazgos.filter((h) => h.regla === 'tipo-any');
   assert.deepEqual(tipos.map((h) => h.linea), [1]);
 });
+
+test('tipo-any flags any in unions, intersections, aliases and constraints', () => {
+  const { hallazgos } = verificar({
+    repo: 'demo',
+    archivos: [archivo('src/a.ts', [
+      'let s: string | any;',
+      'let n: any | null;',
+      'type U = A & any;',
+      'type X = any;',
+      'function f<T extends any>() {}',
+    ])],
+  });
+  assert.deepEqual(hallazgos.filter((h) => h.regla === 'tipo-any').map((h) => h.linea), [1, 2, 3, 4, 5]);
+});
+
+test('tipo-any leaves identifiers, logical or, and plain assignments alone', () => {
+  const { hallazgos } = verificar({
+    repo: 'demo',
+    archivos: [archivo('src/a.ts', [
+      'const a = anything;',
+      'const m: many[] = [];',
+      'const x = any;',
+      'const q = a || any;',
+      'const z = y as any;',
+    ])],
+  });
+  assert.equal(hallazgos.some((h) => h.regla === 'tipo-any'), false);
+});

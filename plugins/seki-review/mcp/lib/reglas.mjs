@@ -97,10 +97,22 @@ export const REGLAS = [
     titulo: 'Typing with `any`',
     severidad: 'aviso',
     archivos: /\.tsx?$/,
-    // Generic arguments (`Map<K, any>`, `Promise<any>`) and `: any`, `any[]`. The `as any` cast is left to
-    // as-any: the lookbehind keeps `as any[]` out, and the other alternatives cannot match `as any`,
-    // so a mixed line such as `(y as any) as Map<string, any>` still reports its type-position any.
-    patron: /(?::\s*any\b|<any>|(?<!\bas\s+)\bany\[\]|[<,]\s*any\s*[,>])/,
+    // `: any`, `any[]`, generic arguments (`<any>`, `Map<K, any>`), union and intersection members
+    // (`string | any`, `A & any`), aliases and constraints (`type X = any`, `T extends any`).
+    // The `as any` cast is left to as-any: the lookbehinds keep `as any[]` and `as any |` out, so a mixed
+    // line such as `(y as any) as Map<string, any>` still reports its type-position any.
+    // `||` and `&&` are not members: the lookarounds skip them. Every quantifier is bounded.
+    patron: new RegExp([
+      String.raw`:\s*any\b`,
+      String.raw`(?<!\bas\s+)\bany\[\]`,
+      String.raw`[<,]\s*any\s*[,>]`,
+      String.raw`(?<!\|)\|\s*any\b`,
+      String.raw`(?<!\bas\s+)\bany\s*\|(?!\|)`,
+      String.raw`(?<!&)&\s*any\b`,
+      String.raw`(?<!\bas\s+)\bany\s*&(?!&)`,
+      String.raw`\btype\s+\w{1,80}\s*=\s*any\b`,
+      String.raw`\bextends\s+any\b`,
+    ].join('|')),
     mensaje: 'Use `unknown` and narrow it, or the real type.',
     origen: 'The standard bans `any` everywhere, tests included: it turns off type checking for every value that passes through it.',
   },
