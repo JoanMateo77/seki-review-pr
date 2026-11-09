@@ -154,7 +154,7 @@ test('tipo-any keeps aliases followed by a comment or more code on the same line
 });
 
 test('tipo-any stays linear on long adversarial lines', () => {
-  const n = 40000;
+  const n = 200000;
   const t = Date.now();
   verificar({
     repo: 'demo',
@@ -167,7 +167,22 @@ test('tipo-any stays linear on long adversarial lines', () => {
       '|'.repeat(n),
     ])],
   });
-  // A linear pattern takes a few ms here; the quadratic alias form of round 4 took about 600-750 ms.
+  // Linear: about 10 ms here. The quadratic alias form of round 4 (`^\s*…type\s+\w{1,80}.{0,300}=\s*any\s*;?\s*$`)
+  // took about 16 s at this size (measured 2026-11-09), so the threshold is orders of magnitude from both.
   const ms = Date.now() - t;
-  assert.ok(ms < 300, `took ${ms} ms`);
+  assert.ok(ms < 1500, `took ${ms} ms`);
+});
+
+test('tipo-any skips comment lines but not a trailing comment', () => {
+  const { hallazgos } = verificar({
+    repo: 'demo',
+    archivos: [archivo('src/a.ts', [
+      '// type Viejo = any;',
+      '  /* x: any */',
+      '   * @param x: any',
+      'type Nuevo = any; // por qué',
+      'let y: any = 1;',
+    ])],
+  });
+  assert.deepEqual(hallazgos.filter((h) => h.regla === 'tipo-any').map((h) => h.linea), [4, 5]);
 });

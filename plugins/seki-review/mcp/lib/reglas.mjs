@@ -122,6 +122,8 @@ export const REGLAS = [
       String.raw`\btype\s+\w{1,80}(?!\w)[^;]{0,300}?=\s*any(?![\w$])`,
       String.raw`\bextends\s+any\b`,
     ].join('|')),
+    // A line that starts as a comment (`//`, `/*`, `*`) is prose, not a type. Text inside strings is still read.
+    cuando: (linea) => !/^\s*(?:\/\/|\/\*|\*)/.test(linea),
     mensaje: 'Use `unknown` and narrow it, or the real type.',
     origen: 'The standard bans `any` everywhere, tests included: it turns off type checking for every value that passes through it.',
   },

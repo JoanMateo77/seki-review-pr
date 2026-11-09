@@ -85,7 +85,9 @@ export function datosPlantillas(p, pr, rutas = []) {
   const seleccion = seleccionarPlantillas(plantillas, rutas);
   const n = activasDe(plantillas, seleccion).filter((t) => itemsIa(t).length).length;
   const topeUsd = topeRevisarPlantillas(n);
-  const { usd, base, muestras } = estimarCosto(leerCostos(p), { tipo: 'revisar_plantillas', modo: 'normal', topeUsd });
+  // The history is kept per run; a run's cost over its AI templates (one when a record has no count) is the sample.
+  const porPlantilla = leerCostos(p).map((x) => (x?.tipo === 'revisar_plantillas' && Number.isInteger(x.plantillasIa) && x.plantillasIa > 1 ? { ...x, costo: x.costo / x.plantillasIa } : x));
+  const { usd, base, muestras } = estimarCosto(porPlantilla, { tipo: 'revisar_plantillas', modo: 'normal', multiplicador: n, topeUsd });
   return { seleccion, invalidas, estimacion: { usd: n ? usd : 0, base, muestras }, topeUsd, resultado: leerPlantillasPr(p, pr.repo, pr.numero, pr.headSha) };
 }
 
@@ -269,7 +271,7 @@ export async function revisarPlantillas(p, pr, {
       const orden = (x) => (x.verifica ? conIa.length : conIa.findIndex((t) => t.id === x.paso));
       const detalle = [...pasos].sort((a, b) => orden(a) - orden(b)).map(({ paso, modelo, costo, ok: pok }) => ({ paso, modelo, costo, ok: pok }));
       registrarCosto(p, {
-        tipo: 'revisar_plantillas', modo: 'normal', prId: pr.id, modelo: detalle.find((x) => x.modelo)?.modelo ?? null,
+        tipo: 'revisar_plantillas', modo: 'normal', prId: pr.id, plantillasIa: conIa.length, modelo: detalle.find((x) => x.modelo)?.modelo ?? null,
         costo: redondear(detalle.reduce((s, x) => s + x.costo, 0)), ok, ...(ok ? {} : { motivo: motivoFallo ?? MOTIVO_GENERICO }), detalle,
       });
     }

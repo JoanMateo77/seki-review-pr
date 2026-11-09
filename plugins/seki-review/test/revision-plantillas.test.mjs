@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { comentariosDePlantillas } from '../mcp/lib/comentarios-plantilla.mjs';
-import { leerCostos } from '../mcp/lib/ia.mjs';
+import { leerCostos, registrarCosto } from '../mcp/lib/ia.mjs';
 import { topeRevisarPlantillas } from '../mcp/lib/perfiles.mjs';
 import { datosPlantillas, leerPlantillasPr, revisarPlantillas } from '../mcp/lib/revision-plantillas.mjs';
 
@@ -126,7 +126,8 @@ test('items the AI omitted are not verifiable and unknown ids are dropped', asyn
   assert.equal(item(r, 'ligera', 'L5').pedido, 'Which client calls this route?');
   assert.deepEqual(item(r, 'ligera', 'L1').siFalla, { etiqueta: 'issue', bloqueante: true });
   assert.equal(item(r, 'ligera', 'L1').pregunta, 'Question L1?');
-  assert.match(r.resultado.markdown, /Not verifiable from the diff\*\*\n- Question L2\? — The review did not cover this item/);
+  // Ruling Q: only items with a question for the author reach the pasted Markdown.
+  assert.equal(r.resultado.markdown, '**Not verifiable from the diff**\n- Question L5? — Which client calls this route?');
 });
 
 test('deterministic items fail from fixed rule findings and pass with no finding', async () => {
@@ -283,6 +284,7 @@ test('the cost record has tipo revisar_plantillas and one detail per step', asyn
   assert.equal(registros.length, 1);
   const [rec] = registros;
   assert.deepEqual([rec.tipo, rec.modo, rec.prId, rec.costo, rec.ok], ['revisar_plantillas', 'normal', 'api#7', 1.25, true]);
+  assert.equal(rec.plantillasIa, 2);
   assert.deepEqual(rec.detalle.map((d) => d.paso), ['ligera', 'owasp-web', 'verificar']);
   for (const d of rec.detalle) assert.deepEqual(Object.keys(d).sort(), ['costo', 'modelo', 'ok', 'paso']);
   assert.doesNotMatch(readFileSync(join(p.salida, 'datos/costos.jsonl'), 'utf8'), /SECRET|Template:/);
@@ -408,4 +410,22 @@ test('an empty AI title is not stored and the comment falls back to the question
   const { markdown } = comentariosDePlantillas(r.resultado);
   assert.doesNotMatch(markdown, /\*\*issue \([^)]*\): \*\*/);
   assert.match(markdown, /\*\*issue \(blocking\): Question L1\?\*\*/);
+});
+
+test('the estimate is the median cost per AI template times the AI templates selected', () => {
+  const salida = mkdtempSync(join(tmpdir(), 'seki-plantillas-'));
+  const p = { salida, repos: { api: {} } };
+  for (const [costo, plantillasIa] of [[1, 2], [3, 3], [0.4, 1]]) registrarCosto(p, { tipo: 'revisar_plantillas', modo: 'normal', costo, ok: true, plantillasIa });
+  // Per template: 0.5, 1, 0.4 -> median 0.5. A record without the count is one template.
+  const sin = datosPlantillas(p, pr, []);
+  const n = sin.seleccion.activas.length;
+  assert.equal(sin.estimacion.base, 'historial');
+  assert.equal(sin.estimacion.usd, 0.5 * n);
+  const d = datosPlantillas(p, pr, ['src/pagos/cobro.ts', 'src/routes/ordenes.ts']);
+  const m = d.seleccion.activas.length;
+  assert.ok(m > n);
+  assert.equal(d.estimacion.usd, 0.5 * m);
+  registrarCosto(p, { tipo: 'revisar_plantillas', modo: 'normal', costo: 9, ok: true });
+  registrarCosto(p, { tipo: 'revisar_plantillas', modo: 'normal', costo: 9, ok: true });
+  assert.equal(datosPlantillas(p, pr, []).estimacion.usd, 1 * n);
 });

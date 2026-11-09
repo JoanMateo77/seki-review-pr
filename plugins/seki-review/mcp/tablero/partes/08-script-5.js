@@ -74,7 +74,10 @@ async function accionApi(ruta, cuerpo) {
 
 function copiar(boton, texto) {
   const fin = (t) => marcarCopia(boton, t);
-  (navigator.clipboard ? navigator.clipboard.writeText(texto) : Promise.reject()).then(() => fin('Copied'), () => fin('Could not copy'));
+  // writeText may throw before returning a promise (no permission, insecure context): that is a failed copy too.
+  let escrito;
+  try { escrito = navigator.clipboard ? navigator.clipboard.writeText(texto) : Promise.reject(); } catch { escrito = Promise.reject(); }
+  Promise.resolve(escrito).then(() => fin('Copied'), () => fin('Could not copy'));
 }
 
 document.addEventListener('click', (ev) => {

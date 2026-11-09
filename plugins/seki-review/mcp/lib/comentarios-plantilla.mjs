@@ -68,10 +68,11 @@ export function comentariosDePlantillas(resultado) {
     break;
   }
 
-  const sinVerificar = plantillas.flatMap((p) => (p.items ?? []).filter((i) => i.estado === 'no_verificable'));
+  // Only items with a question for the author are pasted; an internal reason (a failed step, a missing rule) stays on the board.
+  const sinVerificar = plantillas.flatMap((p) => (p.items ?? []).filter((i) => i.estado === 'no_verificable' && typeof i.pedido === 'string' && i.pedido.trim()));
   if (sinVerificar.length) {
     const idioma = plantillas[0]?.idioma === 'es' ? 'es' : 'en';
-    partes.push([`**${ENCABEZADO[idioma]}**`, ...sinVerificar.map((i) => `- ${i.pregunta} — ${i.pedido ?? i.motivo ?? ''}`)].join('\n'));
+    partes.push([`**${ENCABEZADO[idioma]}**`, ...sinVerificar.map((i) => `- ${i.pregunta} — ${i.pedido}`)].join('\n'));
   }
   return { comentarios, markdown: partes.join('\n\n'), recortados };
 }

@@ -36,7 +36,7 @@ function tablero({ api = async () => ({}), sinApi = false, revision = null, come
   // The dialog helpers of 07b-modos.js need a DOM: they are replaced by recorders.
   Object.assign(ctx, { abrirModal: (h) => eventos.push(['modal', h]), cerrarModal() {}, modoActual: () => 'normal' });
   // A click on "Copy review", then the queued promise callbacks.
-  const clicCopiar = (boton = { innerHTML: 'Copy review', textContent: '' }) => {
+  const clicCopiar = (boton = { innerHTML: 'Copy review', textContent: '', isConnected: true }) => {
     const ev = { target: { closest: (sel) => (sel === '[data-copiar-revision]' ? boton : null) } };
     for (const f of clics) f(ev);
     return boton;
@@ -210,7 +210,7 @@ test('two quick copies restore the original label, not "Copied"', async () => {
   class ClipboardItem { constructor(datos) { this.datos = datos; } }
   const portapapeles = { ClipboardItem, clipboard: { write: async (items) => { await items[0].datos['text/plain']; } } };
   const t = tablero({ portapapeles, revision: { decision: 'cambios' }, api: async () => ({ seleccion: {}, resultado: resultado() }) });
-  const boton = { innerHTML: '<svg></svg> Copy review', textContent: '' };
+  const boton = { innerHTML: '<svg></svg> Copy review', textContent: '', isConnected: true };
   // Not loaded: both clicks go through the ClipboardItem path and mark the button.
   t.ctx.estado.plantillas = new Map();
   t.clicCopiar(boton);
@@ -293,4 +293,51 @@ test('the built page carries the templates tab and its link', () => {
     assert.ok(html.includes(marca), `the built page lacks ${marca}`);
   }
   for (const codigo of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) assert.doesNotThrow(() => new Script(codigo[1]));
+});
+
+// The plain copy path: `copiar` of 08-script-5.js with the feedback helper of 04-script-1.js.
+function copiaSimple(clipboard) {
+  const relojes = [];
+  const ctx = createContext({ navigator: clipboard ? { clipboard } : {}, setTimeout: (f) => relojes.push(f), clearTimeout: (id) => { relojes[id - 1] = null; } });
+  runInContext(/\nconst marcasCopia[\s\S]*?\n\}\n/.exec(readFileSync(new URL('04-script-1.js', PARTES), 'utf8'))[0], ctx);
+  runInContext(/\nfunction copiar\([\s\S]*?\n\}\n/.exec(readFileSync(new URL('08-script-5.js', PARTES), 'utf8'))[0], ctx);
+  return { ctx, relojes };
+}
+
+test('copy shows "Could not copy" when writeText throws at once', async () => {
+  const { ctx } = copiaSimple({ writeText() { throw new Error('denied'); } });
+  const boton = { innerHTML: 'Copy', textContent: '', isConnected: true };
+  assert.doesNotThrow(() => ctx.copiar(boton, 'x'));
+  await espera();
+  assert.equal(boton.textContent, 'Could not copy');
+});
+
+test('a double click on a plain copy button marks it once and restores the original label', async () => {
+  const escritos = [];
+  const { ctx, relojes } = copiaSimple({ writeText: async (x) => { escritos.push(x); } });
+  const boton = { innerHTML: '<svg></svg> Copy', textContent: '', isConnected: true };
+  ctx.copiar(boton, 'a');
+  await espera();
+  ctx.copiar(boton, 'a');
+  await espera();
+  assert.deepEqual([escritos.length, boton.textContent], [2, 'Copied']);
+  assert.equal(relojes.filter(Boolean).length, 1, 'the earlier restore is cancelled');
+  for (const f of relojes.filter(Boolean)) f();
+  assert.equal(boton.innerHTML, '<svg></svg> Copy');
+});
+
+test('the restore skips a button that was re-rendered away', async () => {
+  const { ctx, relojes } = copiaSimple({ writeText: async () => {} });
+  const boton = { innerHTML: 'Copy', textContent: '', isConnected: true };
+  ctx.copiar(boton, 'a');
+  await espera();
+  boton.isConnected = false;
+  boton.innerHTML = 'stale';
+  for (const f of relojes.filter(Boolean)) f();
+  assert.equal(boton.innerHTML, 'stale');
+  // The entry is dropped, so a later mark on a new button starts clean.
+  const nuevo = { innerHTML: 'Copy', textContent: '', isConnected: true };
+  ctx.marcarCopia(nuevo, 'Copied');
+  relojes.at(-1)();
+  assert.equal(nuevo.innerHTML, 'Copy');
 });

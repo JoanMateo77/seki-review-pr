@@ -57,10 +57,14 @@ test('a project template with the same id replaces the base one, a new id is add
   assert.deepEqual(invalidas, []);
 });
 
-test('a missing project directory means no project templates and no error', () => {
-  const { plantillas, invalidas } = cargarPlantillas({ plantillas: join(dirTemporal(), 'nope') });
+test('a missing project directory keeps the base templates and is reported as invalid', (t) => {
+  const avisos = t.mock.method(console, 'error', () => {});
+  const dir = join(dirTemporal(), 'nope');
+  const { plantillas, invalidas } = cargarPlantillas({ plantillas: dir });
   assert.equal(plantillas.length, 3);
-  assert.deepEqual(invalidas, []);
+  assert.deepEqual(invalidas, [{ archivo: dir, motivo: 'the project template folder does not exist' }]);
+  assert.equal(avisos.mock.calls.length, 1);
+  assert.deepEqual(cargarPlantillas({}).invalidas, []);
 });
 
 test('an invalid project template is skipped and reported', () => {

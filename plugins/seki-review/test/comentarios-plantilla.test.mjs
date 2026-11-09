@@ -62,16 +62,24 @@ test('one praise from the first quoted cumple and one not-verifiable block in th
   ], { idioma: 'es' }));
   assert.equal(r.markdown, [
     '**praise: Bien hecho**\n`x.ts:3`\n> ok()\n_[t/B]_',
-    '**No se pudo verificar desde el diff**\n- d? — Show the config\n- e? — No access',
+    '**No se pudo verificar desde el diff**\n- d? — Show the config',
   ].join('\n\n'));
   assert.equal(r.comentarios.length, 0);
 });
 
 test('not-verifiable heading is English by default', () => {
   const r = comentariosDePlantillas(res([
-    { id: 'D', pregunta: 'd?', siFalla: { etiqueta: 'issue', bloqueante: false }, estado: 'no_verificable', origen: 'ia', motivo: 'm' },
+    { id: 'D', pregunta: 'd?', siFalla: { etiqueta: 'issue', bloqueante: false }, estado: 'no_verificable', origen: 'ia', pedido: 'p' },
   ], { idioma: undefined }));
-  assert.equal(r.markdown, '**Not verifiable from the diff**\n- d? — m');
+  assert.equal(r.markdown, '**Not verifiable from the diff**\n- d? — p');
+});
+
+test('not-verifiable items with only an internal reason are left out of the Markdown', () => {
+  const r = comentariosDePlantillas(res([
+    { id: 'E', pregunta: 'e?', siFalla: { etiqueta: 'issue', bloqueante: false }, estado: 'no_verificable', origen: 'ia', motivo: 'The template review failed' },
+    { id: 'F', pregunta: 'f?', siFalla: { etiqueta: 'issue', bloqueante: false }, estado: 'no_verificable', origen: 'ia', pedido: '  ', motivo: 'x' },
+  ]));
+  assert.equal(r.markdown, '');
 });
 
 test('an empty result produces empty markdown', () => {

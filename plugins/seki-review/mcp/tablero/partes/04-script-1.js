@@ -80,7 +80,8 @@ function marcarCopia(boton, texto) {
   if (previa) clearTimeout(previa.reloj);
   const original = previa?.original ?? boton.innerHTML;
   boton.textContent = texto;
-  marcasCopia.set(boton, { original, reloj: setTimeout(() => { boton.innerHTML = original; marcasCopia.delete(boton); }, 1400) });
+  // A button re-rendered away meanwhile keeps its new markup: the stale original is not written back.
+  marcasCopia.set(boton, { original, reloj: setTimeout(() => { if (boton.isConnected) boton.innerHTML = original; marcasCopia.delete(boton); }, 1400) });
 }
 const usd = (x) => { const n = Number(x) || 0; return `USD ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: n < 0.01 ? 4 : 2 })}`; };
 const nombreModelo = (m) => (m ?? '').replace(/^claude-/, '').replace(/-\d.*$/, '').replace(/^./, (c) => c.toUpperCase());

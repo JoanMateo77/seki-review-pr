@@ -67,14 +67,19 @@ export function validarPlantilla(obj) {
   return { ok: true, plantilla: { id: obj.id, version: obj.version, titulo: obj.titulo, idioma: obj.idioma ?? 'en', siempre: obj.siempre ?? false, aplicaA: obj.aplicaA ?? [], excluir: obj.excluir ?? [], items } };
 }
 
-function leerDir(dir) {
+// A configured project folder that does not exist is reported, so a typo in `plantillas` is not silently ignored.
+function leerDir(dir, { propia = false } = {}) {
   const plantillas = [];
   const invalidas = [];
-  if (!dir || !existsSync(dir)) return { plantillas, invalidas };
   const invalida = (archivo, motivo) => {
     invalidas.push({ archivo, motivo });
     console.error(`[seki-review/plantillas] ${archivo} is skipped: ${motivo}`);
   };
+  if (!dir) return { plantillas, invalidas };
+  if (!existsSync(dir)) {
+    if (propia) invalida(dir, 'the project template folder does not exist');
+    return { plantillas, invalidas };
+  }
   let nombres = [];
   try {
     nombres = readdirSync(dir).filter((n) => n.endsWith('.json')).sort();
@@ -102,7 +107,7 @@ function leerDir(dir) {
 // Order: `siempre` first, then by id.
 export function cargarPlantillas(p, { dirBase = DIR_BASE } = {}) {
   const base = leerDir(dirBase);
-  const propias = leerDir(typeof p?.plantillas === 'string' ? p.plantillas : null);
+  const propias = leerDir(typeof p?.plantillas === 'string' ? p.plantillas : null, { propia: true });
   const porId = new Map([...base.plantillas, ...propias.plantillas].map((t) => [t.id, t]));
   const plantillas = [...porId.values()].sort((a, b) => Number(b.siempre) - Number(a.siempre) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   return { plantillas, invalidas: [...base.invalidas, ...propias.invalidas] };
