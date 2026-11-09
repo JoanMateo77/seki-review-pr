@@ -140,15 +140,34 @@ test('tipo-any alias form does not fire on an arrow function type returning any'
   assert.equal(hallazgos.some((h) => h.regla === 'tipo-any'), false);
 });
 
+test('tipo-any keeps aliases followed by a comment or more code on the same line', () => {
+  const { hallazgos } = verificar({
+    repo: 'demo',
+    archivos: [archivo('src/a.ts', [
+      'type X = any; // TODO',
+      'type X = any /* why */',
+      'namespace N { type X = any; }',
+      'type X = any; const y = 1;',
+    ])],
+  });
+  assert.deepEqual(hallazgos.filter((h) => h.regla === 'tipo-any').map((h) => h.linea), [1, 2, 3, 4]);
+});
+
 test('tipo-any stays linear on long adversarial lines', () => {
+  const n = 40000;
   const t = Date.now();
   verificar({
     repo: 'demo',
     archivos: [archivo('src/a.ts', [
-      `type ${'a'.repeat(40000)} = ${'= '.repeat(20000)}`,
-      `type X<${'='.repeat(40000)}`,
-      `${' '.repeat(40000)}x`,
+      `type a = any${' '.repeat(n)}x`,
+      `type ${'a'.repeat(n)}`,
+      `type a${'<'.repeat(n)}`,
+      `: ${' '.repeat(n)}`,
+      ', '.repeat(n),
+      '|'.repeat(n),
     ])],
   });
-  assert.ok(Date.now() - t < 1000);
+  // A linear pattern takes a few ms here; the quadratic alias form of round 4 took about 600-750 ms.
+  const ms = Date.now() - t;
+  assert.ok(ms < 300, `took ${ms} ms`);
 });

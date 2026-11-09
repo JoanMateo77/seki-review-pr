@@ -101,10 +101,16 @@ export const REGLAS = [
     // (`string | any`, `A & any`), aliases and constraints (`type X = any`, `T extends any`).
     // The `as any` cast is left to as-any: the lookbehinds keep `as any[]` and `as any |` out, so a mixed
     // line such as `(y as any) as Map<string, any>` still reports its type-position any.
-    // `||` and `&&` are not members: the lookarounds skip them. No nested or overlapping quantifiers: the
-    // only repeats are the bounded `\w{1,80}` and `.{0,300}` and single `\s*`/`\s+` runs. The alias form matches
-    // the whole statement (`[export] [declare] type Name<...> = any;`) instead of parsing the parameter list, so
-    // nested `>` and `=` in the parameters are fine; `=> any` is not an alias because `=` must be followed by `any`.
+    // `||` and `&&` are not members: the lookarounds skip them.
+    // Cost: no alternative starts with a repeat, so a match can only begin at a fixed token (`:`, `any`, `<`, `,`,
+    // `|`, `&`, `type`, `extends`), and the `\s*`/`\s+` run right after that token (or before `any`, for the `as`
+    // lookbehinds) is read once from it. The alias form has three more repeats: `\w{1,80}(?!\w)` reads the name
+    // and the lookahead rejects every shorter split in one step; the lazy `[^;]{0,300}?` reads at most 300
+    // characters; the `\s*` after an `=` in that window is read once per `type` whose name ends at most 300
+    // characters before that `=`. So each character is read a bounded number of times and long lines stay linear.
+    // The alias form is not anchored, so a trailing comment or more code (`type X = any; // why`) is still caught.
+    // Its limits: the name has 1-80 word characters, and `= any` must follow within 300 characters with no `;`
+    // between. `=> any` is not an alias: that `=` is followed by `>`, not `any`.
     patron: new RegExp([
       String.raw`:\s*any\b`,
       String.raw`(?<!\bas\s+)\bany\[\]`,
@@ -113,7 +119,7 @@ export const REGLAS = [
       String.raw`(?<!\bas\s+)\bany\s*\|(?!\|)`,
       String.raw`(?<!&)&\s*any\b`,
       String.raw`(?<!\bas\s+)\bany\s*&(?!&)`,
-      String.raw`^\s*(?:export\s+)?(?:declare\s+)?type\s+\w{1,80}.{0,300}=\s*any\s*;?\s*$`,
+      String.raw`\btype\s+\w{1,80}(?!\w)[^;]{0,300}?=\s*any(?![\w$])`,
       String.raw`\bextends\s+any\b`,
     ].join('|')),
     mensaje: 'Use `unknown` and narrow it, or the real type.',
