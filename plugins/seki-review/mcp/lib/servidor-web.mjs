@@ -179,8 +179,8 @@ export async function detenerServidores() {
   await Promise.all([...servidores.values()].map((s) => s.cerrar()));
 }
 
-// intervaloVigiaMs and relojVigia exist for tests only.
-export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true, soloPuerto = false, intervaloVigiaMs = null, relojVigia, ejecutarUltra = revisarUltra, ejecutarPlantillas = revisarPlantillas } = {}) {
+// intervaloVigiaMs, relojVigia, the ejecutar* jobs and diffPlantillas are injected by tests only.
+export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true, soloPuerto = false, intervaloVigiaMs = null, relojVigia, ejecutarUltra = revisarUltra, ejecutarPlantillas = revisarPlantillas, diffPlantillas = asegurarDiff } = {}) {
   if (servidores.has(proyecto)) {
     const s = servidores.get(proyecto);
     if (abrir) execFile('open', [s.url]);
@@ -574,14 +574,12 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         if (!n) throw Object.assign(new Error('An Ultra review of this PR is already queued'), { codigo: 409 });
         return responder(res, 202, { encolado: `${pr.id}:ultra` });
       }
-      // The selection is the core of the templates tab and sets the job reservation: it uses the PR diff (the job
-      // fetches it anyway), and the cached file names only if GitHub cannot be reached.
-      const rutasPlantillas = async (pr) => {
-        try { return (await asegurarDiff(p, pr.repo, pr.numero, pr.headSha)).map((a) => a.filename).filter(Boolean); } catch { return nombresDeArchivos(p, pr); }
-      };
+      // The selection is the core of the templates tab and sets the job reservation: it uses the PR diff, which the job
+      // fetches anyway. The tab falls back to the cached file names when GitHub cannot be reached; the job does not.
+      const rutasPlantillas = async (pr) => (await diffPlantillas(p, pr.repo, pr.numero, pr.headSha)).map((a) => a.filename).filter(Boolean);
       if (req.method === 'GET' && url.pathname === '/api/plantillas') {
         const pr = prDeFoto(`${url.searchParams.get('repo')}#${url.searchParams.get('numero')}`);
-        return responder(res, 200, datosPlantillas(p, pr, await rutasPlantillas(pr)));
+        return responder(res, 200, datosPlantillas(p, pr, await rutasPlantillas(pr).catch(() => nombresDeArchivos(p, pr))));
       }
       // Allowed in every AI mode: the template calls always use their own profile. A selection without AI items
       // is queued too, at cap 0: the job runs only the deterministic part.
@@ -594,7 +592,10 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         // A stored result for this commit is returned as is: no job, no reservation, no spend.
         const guardado = repetir === true ? null : leerPlantillasPr(p, pr.repo, pr.numero, pr.headSha);
         if (guardado && !guardado.desactualizada) return responder(res, 200, { desdeCache: true, resultado: guardado });
-        const { topeUsd } = datosPlantillas(p, pr, await rutasPlantillas(pr));
+        // No reservation from a guess: without the diff the job could select more templates than the cap covers.
+        let rutas;
+        try { rutas = await rutasPlantillas(pr); } catch { throw falloHttp(503, 'The PR diff could not be loaded'); }
+        const { topeUsd } = datosPlantillas(p, pr, rutas);
         const id = `${pr.id}:plantillas`;
         const n = cola.encolar([{ id, tipo: 'revisar_plantillas', prId: pr.id, topeUsd, ejecutar: () => ejecutarPlantillas(p, pr, { repetir: repetir === true }) }]);
         if (!n) throw falloHttp(409, 'A template review of this PR is already queued');

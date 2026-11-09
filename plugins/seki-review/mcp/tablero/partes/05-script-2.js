@@ -74,6 +74,7 @@ function tabProbar(pr) {
 
 function tabRevision(pr) {
   const r = revision(pr) ?? {};
+  if (API) precargarPlantillas(pr);
   return `${sec('Decision', `<div class="decision" role="radiogroup">${Object.entries(DECISIONES).map(([k, [t]]) => `<label><input type="radio" name="decision" value="${k}" ${r.decision === k ? 'checked' : ''}> ${t}</label>`).join('')}</div>`)}
     ${sec('Feedback for the author', `<textarea id="notaRevision" placeholder="What’s missing, what was tested, what needs clarifying">${esc(r.nota ?? '')}</textarea>
       <div class="guardado" id="guardado">${r.fecha ? `Saved ${esc(new Date(r.fecha).toLocaleString('en-US'))}` : ''}</div>`)}

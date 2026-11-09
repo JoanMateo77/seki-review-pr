@@ -30,13 +30,16 @@ async function cargarPlantillas(pr) {
   return promesa;
 }
 
-// Copy review: the stored result, loaded once when it is missing or stale. Never throws: without the API or the data
-// the owner's review is copied alone.
-async function plantillasParaCopiar(pr) {
+// Copy review: the loaded result when it is current (null without the API), or undefined when it must be loaded first.
+function plantillasCargadas(pr) {
   if (!API) return null;
   const d = estado.plantillas?.get(pr.id);
-  const listo = plantillasAlDia(pr, d) && !d.cargando && !d.error ? d : await cargarPlantillas(pr);
-  return listo?.resultado ?? null;
+  return plantillasAlDia(pr, d) && !d.cargando && !d.error ? d.resultado ?? null : undefined;
+}
+
+// The Review tab loads the result ahead, so Copy review can write the clipboard inside the click.
+function precargarPlantillas(pr) {
+  if (plantillasCargadas(pr) === undefined && !estado.plantillas?.get(pr.id)?.cargando) cargarPlantillas(pr);
 }
 
 const motivoPlantilla = (m) => (m === 'siempre' ? 'Always applies' : m?.glob ? `<span class="mono">${esc(m.glob)}</span> matches <span class="mono">${esc(m.archivo)}</span>` : '');
@@ -151,13 +154,14 @@ function tabPlantillas(pr) {
   if (!API) return '<p class="sin-dato">The template review is available when the dashboard is opened from Claude Code.</p>';
   const t = trabajoPlantillas(pr);
   let d = estado.plantillas?.get(pr.id);
-  if (!d?.cargando && !plantillasAlDia(pr, d)) { cargarPlantillas(pr); d = estado.plantillas?.get(pr.id); }
+  // A load error is shown once and retried on the next render (the next poll), never in a loop.
+  if (!d?.cargando && (!plantillasAlDia(pr, d) || (d.error && d.errorVisto))) { cargarPlantillas(pr); d = estado.plantillas?.get(pr.id); }
   const aviso = !t ? '' : t.estado === 'en_curso' ? `<div class="seccion" aria-live="polite"><p class="trabajando">${icono('actualizar', 'girando')}<span>Template review in progress · ${transcurrido(t.inicio)}</span></p><div class="progreso" aria-hidden="true"></div></div>`
     : t.estado === 'en_cola' ? `<div class="seccion"><p class="trabajando">${icono('reloj')} Queued: starts when the current analysis finishes.</p></div>`
     : t.estado === 'bloqueado_presupuesto' ? `<div class="seccion"><p>${icono('alerta')} ${esc(t.mensaje ?? 'Blocked by the daily budget')}</p><button type="button" class="btn chico" data-forzar="${esc(t.id)}">Run anyway</button></div>`
     : t.estado === 'error' ? `<div class="seccion"><span class="estado rojo">${icono('bloqueo')} The template review did not complete</span><p class="tenue">${esc(t.mensaje ?? '')}</p></div>` : '';
   if (!d || d.cargando) return `${aviso}<p class="tenue">Loading</p>`;
-  if (d.error) return `${aviso}<p class="error-texto">${esc(d.error)}</p>`;
+  if (d.error) { d.errorVisto = true; return `${aviso}<p class="error-texto">${esc(d.error)}</p>`; }
   const boton = botonPlantillas(pr, d);
   return `${aviso}<h4>Templates for this PR</h4>${seleccionHtml(d)}
     ${boton ? `<p style="margin-top:12px">${boton}</p>` : ''}

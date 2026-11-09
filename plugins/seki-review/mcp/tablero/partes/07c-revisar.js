@@ -144,12 +144,28 @@ document.addEventListener('click', (ev) => {
   const copia = ev.target.closest?.('[data-copiar-revision]');
   if (!copia) return;
   const pr = FOTO.prs.find((p) => p.id === estado.seleccion);
-  if (!pr) return avisar('There is no decision, comment or note to copy yet.');
+  if (!pr) return avisar(SIN_REVISION);
   copiarRevision(copia, pr);
 });
 
-async function copiarRevision(boton, pr) {
-  const texto = revisionMarkdown(pr, revision(pr), comentarios(pr), await plantillasParaCopiar(pr));
-  if (!texto) return avisar('There is no decision, comment or note to copy yet.');
+const SIN_REVISION = 'There is no decision, comment or note to copy yet.';
+
+function entregarRevision(boton, texto) {
+  if (!texto) return avisar(SIN_REVISION);
   copiar(boton, texto);
+}
+
+// The clipboard is written inside the click: synchronously when the template result is loaded (the Review tab
+// preloads it), or through a ClipboardItem whose content waits for the one GET. Browsers without ClipboardItem
+// copy after the GET.
+function copiarRevision(boton, pr) {
+  const texto = (r) => revisionMarkdown(pr, revision(pr), comentarios(pr), r);
+  const cargado = plantillasCargadas(pr);
+  if (cargado !== undefined) return entregarRevision(boton, texto(cargado));
+  const promesa = cargarPlantillas(pr).then((d) => texto(d?.resultado ?? null), () => texto(null));
+  if (typeof ClipboardItem !== 'function' || !navigator.clipboard?.write) return promesa.then((t) => entregarRevision(boton, t));
+  const contenido = promesa.then((t) => { if (!t) throw new Error(SIN_REVISION); return new Blob([t], { type: 'text/plain' }); });
+  const marcar = (t) => { const original = boton.innerHTML; boton.textContent = t; setTimeout(() => { boton.innerHTML = original; }, 1400); };
+  navigator.clipboard.write([new ClipboardItem({ 'text/plain': contenido })])
+    .then(() => marcar('Copied'), () => contenido.then(() => marcar('Could not copy'), () => avisar(SIN_REVISION)));
 }

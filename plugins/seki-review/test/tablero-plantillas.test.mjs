@@ -10,7 +10,7 @@ const MAL = '<img src=x onerror=alert(1)>';
 
 // The board script parts, evaluated with minimal stubs: the review intake (Copy review) and the templates tab.
 const PARTES = new URL('../mcp/tablero/partes/', import.meta.url);
-function tablero({ api = async () => ({}), sinApi = false, revision = null, comentarios = [], hash = '' } = {}) {
+function tablero({ api = async () => ({}), sinApi = false, revision = null, comentarios = [], hash = '', portapapeles } = {}) {
   const escape = (x) => String(x ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const clics = [];
   const copias = [];
@@ -20,24 +20,29 @@ function tablero({ api = async () => ({}), sinApi = false, revision = null, come
   const ctx = createContext({
     API: sinApi ? null : { token: 't' }, FOTO: { owner: 'o', prs: [PR] }, estado: { cerrados: new Set(), seleccion: 'r#1', trabajos: new Map(), tab: 'plantillas' },
     esc: escape, plural: (a, b, c) => `${a} ${a === 1 ? b : c}`, icono: () => '', usd: (x) => `USD ${x}`, $: (id) => (id === 'modalIa' ? { querySelector: () => null } : null), senales: () => '', tono: () => '',
-    revision: () => revision, comentarios: () => comentarios, copiar: (boton, texto) => copias.push(texto), avisar: (t) => avisos.push(t),
+    revision: () => revision, comentarios: () => comentarios, copiar: (_, texto) => copias.push(texto), avisar: (t) => avisos.push(t),
     DECISIONES: { aprobada: ['Approved', 'verde'], cambios: ['Requests changes', 'rojo'] },
     transcurrido: () => '', sondear() {}, pintarDetalle() {}, repintarDetalle() {}, seleccionar: (id) => eventos.push(['seleccionar', id]), pintarBarra() {}, pintarCola() {},
     api: async (ruta, cuerpo) => { llamadas.push([ruta, cuerpo]); return api(ruta, cuerpo); },
     document: { addEventListener: (tipo, f) => { if (tipo === 'click') clics.push(f); }, activeElement: null }, window: { addEventListener() {} }, location: { hash }, history: { replaceState() {} },
     setTimeout: () => 0, sessionStorage: { getItem: () => null, setItem() {} },
+    ...(portapapeles ? { navigator: { clipboard: portapapeles.clipboard }, ClipboardItem: portapapeles.ClipboardItem, Blob } : { navigator: {} }),
   });
   for (const parte of ['07b-modos.js', '07c-revisar.js', '07d-plantillas.js']) runInContext(readFileSync(new URL(parte, PARTES), 'utf8'), ctx);
   // The dialog helpers of 07b-modos.js need a DOM: they are replaced by recorders.
   Object.assign(ctx, { abrirModal: (h) => eventos.push(['modal', h]), cerrarModal() {}, modoActual: () => 'normal' });
   // A click on "Copy review", then the queued promise callbacks.
-  const copiarRevision = async () => {
-    const boton = {};
+  const clicCopiar = () => {
+    const boton = { innerHTML: 'Copy review', textContent: '' };
     const ev = { target: { closest: (sel) => (sel === '[data-copiar-revision]' ? boton : null) } };
     for (const f of clics) f(ev);
+    return boton;
+  };
+  const copiarRevision = async () => {
+    clicCopiar();
     for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
   };
-  return { ctx, copias, avisos, llamadas, eventos, copiarRevision };
+  return { ctx, copias, avisos, llamadas, eventos, copiarRevision, clicCopiar };
 }
 
 const item = (id, estado, extra = {}) => ({ id, pregunta: `Question ${id}?`, siFalla: { etiqueta: 'issue', bloqueante: true }, estado, origen: 'ia', ...extra });
@@ -147,6 +152,75 @@ test('copy review still works without the API or when the template data cannot b
   const falla = tablero({ revision: { decision: 'aprobada' }, api: async () => { throw new Error('down'); } });
   await falla.copiarRevision();
   assert.deepEqual(falla.copias, ['Decision: Approved']);
+});
+
+const espera = async () => { for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r)); };
+
+test('a loaded current result copies inside the click, with no request before the write', async () => {
+  const t = tablero({ revision: { decision: 'cambios' }, api: async () => ({ seleccion: {}, resultado: resultado() }) });
+  t.ctx.precargarPlantillas(PR);
+  await espera();
+  assert.equal(t.llamadas.length, 1);
+  t.clicCopiar();
+  // Synchronous: the copy is already written when the click handler returns.
+  assert.deepEqual(t.copias, [`Decision: Requests changes\n\n---\n\n${resultado().markdown}`]);
+  assert.equal(t.llamadas.length, 1);
+  // A second preload of a current result asks nothing.
+  t.ctx.precargarPlantillas(PR);
+  assert.equal(t.llamadas.length, 1);
+});
+
+test('without a loaded result the clipboard write starts inside the click and waits for the one request', async () => {
+  const escritos = [];
+  class ClipboardItem { constructor(datos) { this.datos = datos; } }
+  const portapapeles = { ClipboardItem, clipboard: { write: async (items) => { escritos.push(items); await items[0].datos['text/plain']; } } };
+  const t = tablero({ portapapeles, revision: { decision: 'cambios' }, api: async () => ({ seleccion: {}, resultado: resultado() }) });
+  const boton = t.clicCopiar();
+  assert.equal(escritos.length, 1, 'the write is called synchronously in the click');
+  const blob = await escritos[0][0].datos['text/plain'];
+  assert.equal(await blob.text(), `Decision: Requests changes\n\n---\n\n${resultado().markdown}`);
+  await espera();
+  assert.equal(boton.textContent, 'Copied');
+  assert.equal(t.llamadas.length, 1);
+  assert.deepEqual(t.copias, []);
+  // Nothing to copy at all: the write fails and the notice explains why.
+  const vacio = tablero({ portapapeles, api: async () => ({ seleccion: {}, resultado: null }) });
+  vacio.clicCopiar();
+  await espera();
+  assert.equal(vacio.avisos.length, 1);
+});
+
+test('the Review tab preloads the template result', async () => {
+  const fuente = readFileSync(new URL('05-script-2.js', PARTES), 'utf8');
+  const codigo = /function tabRevision\(pr\) \{[\s\S]*?\n\}\n/.exec(fuente)[0];
+  const t = tablero({ api: async () => ({ seleccion: {}, resultado: resultado() }) });
+  Object.assign(t.ctx, { sec: (a, b) => `${a}${b}` });
+  runInContext(codigo, t.ctx);
+  t.ctx.tabRevision(PR);
+  assert.deepEqual(t.llamadas.map((x) => x[0]), ['/api/plantillas?repo=r&numero=1']);
+  await espera();
+  t.ctx.tabRevision(PR);
+  assert.equal(t.llamadas.length, 1);
+  const sinApi = tablero({ sinApi: true });
+  Object.assign(sinApi.ctx, { sec: (a, b) => `${a}${b}` });
+  runInContext(codigo, sinApi.ctx);
+  sinApi.ctx.tabRevision(PR);
+  assert.equal(sinApi.llamadas.length, 0);
+});
+
+test('a load error shows once and is retried on the next render', async () => {
+  let fallar = true;
+  const t = tablero({ api: async () => { if (fallar) throw new Error('down'); return { seleccion: { activas: [] }, resultado: null }; } });
+  t.ctx.tabPlantillas(PR);
+  await espera();
+  assert.match(t.ctx.tabPlantillas(PR), /down/);
+  assert.equal(t.llamadas.length, 1);
+  fallar = false;
+  t.ctx.tabPlantillas(PR);
+  assert.equal(t.llamadas.length, 2);
+  await espera();
+  assert.match(t.ctx.tabPlantillas(PR), /has no template review yet/);
+  assert.equal(t.llamadas.length, 2);
 });
 
 test('the link selects the PR and opens the confirmation without starting the review', async () => {

@@ -21,7 +21,7 @@ const SOLO_REGLAS = { id: 'ligera', version: 2, titulo: 'Rules only', idioma: 'e
 
 let n = 0;
 // The template job never reaches git, gh or claude: the server takes this fake instead.
-async function entorno({ ia, prs = [pr(1), pr(2, { estadoPr: 'CLOSED' })], plantillas, ejecutarPlantillas = async () => ({ ok: true, costo: 0, modelo: null, resultado: null }) } = {}) {
+async function entorno({ ia, prs = [pr(1), pr(2, { estadoPr: 'CLOSED' })], plantillas, diffPlantillas, ejecutarPlantillas = async () => ({ ok: true, costo: 0, modelo: null, resultado: null }) } = {}) {
   const clave = `pa${++n}`;
   const dir = mkdtempSync(join(tmpdir(), 'seki-plantillas-api-'));
   temporales.push(dir);
@@ -40,7 +40,7 @@ async function entorno({ ia, prs = [pr(1), pr(2, { estadoPr: 'CLOSED' })], plant
   escribirJson(rutaInstantanea(salida), { proyecto: clave, generado: new Date().toISOString(), owner: 'o', prs, recientes: [] });
   // The diff is cached for the head commit: the selection never reaches GitHub.
   for (const x of prs) escribirJson(rutaDiff(salida, x.repo, x.numero), { headSha: x.headSha, archivos: [{ filename: 'README.md', status: 'modified', additions: 1, deletions: 0 }] });
-  const { url } = await iniciarServidor({ proyecto: clave, puerto: 0, abrir: false, ejecutarPlantillas });
+  const { url } = await iniciarServidor({ proyecto: clave, puerto: 0, abrir: false, ejecutarPlantillas, ...(diffPlantillas ? { diffPlantillas } : {}) });
   const u = new URL(url);
   const token = u.searchParams.get('t');
   const llamar = (r, cuerpo) => fetch(`${u.origin}${r}`, { method: cuerpo === undefined ? 'GET' : 'POST', headers: { 'x-seki-token': token, 'content-type': 'application/json' }, body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo) });
@@ -107,7 +107,7 @@ test('POST /api/plantillas is allowed in saving mode', async (t) => {
 
 test('a selection without AI items queues a job capped at 0 that runs the deterministic part', async (t) => {
   const pedidos = [];
-  const e = await entorno({ plantillas: [SOLO_REGLAS], ia: { presupuestoDiarioUsd: 0.01 }, ejecutarPlantillas: async (p, x, o) => { pedidos.push([x.id, o]); return { ok: true, costo: 0 }; } });
+  const e = await entorno({ plantillas: [SOLO_REGLAS], ia: { presupuestoDiarioUsd: 0.01 }, ejecutarPlantillas: async (_, x, o) => { pedidos.push([x.id, o]); return { ok: true, costo: 0 }; } });
   t.after(e.cerrar);
   const d = await (await e.llamar('/api/plantillas?repo=r&numero=1')).json();
   assert.equal(d.topeUsd, 0);
@@ -139,6 +139,18 @@ test('an outdated stored template result does not stop a new review', async (t) 
   t.after(e.cerrar);
   escribirJson(rutaPlantillas(e.p.salida, 'r', 1), { headSha: 'b'.repeat(40), plantillas: [], markdown: '' });
   assert.equal((await e.llamar('/api/plantillas', { repo: 'r', numero: 1, confirmar: true })).status, 202);
+});
+
+test('POST /api/plantillas refuses with 503 when the diff cannot be loaded; GET falls back to the cached names', async (t) => {
+  const e = await entorno({ diffPlantillas: async () => { throw new Error('gh is down'); } });
+  t.after(e.cerrar);
+  escribirJson(rutaDiff(e.p.salida, 'r', 1), { headSha: SHA, archivos: [{ filename: 'src/routes/x.ts', status: 'modified' }] });
+  const d = await (await e.llamar('/api/plantillas?repo=r&numero=1')).json();
+  assert.ok(d.seleccion.activas.some((a) => a.id === 'owasp-web'));
+  const r = await e.llamar('/api/plantillas', { repo: 'r', numero: 1, confirmar: true });
+  assert.equal(r.status, 503);
+  assert.match((await r.json()).error, /The PR diff could not be loaded/);
+  assert.equal((await e.trabajos()).length, 0);
 });
 
 const crudo = (e, ruta, { metodo = 'POST', cabeceras = {}, cuerpo = '{}', host } = {}) => new Promise((ok, falla) => {
