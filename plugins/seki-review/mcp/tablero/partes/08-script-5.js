@@ -73,8 +73,7 @@ async function accionApi(ruta, cuerpo) {
 }
 
 function copiar(boton, texto) {
-  const original = boton.innerHTML;
-  const fin = (t) => { boton.textContent = t; setTimeout(() => { boton.innerHTML = original; }, 1400); };
+  const fin = (t) => marcarCopia(boton, t);
   (navigator.clipboard ? navigator.clipboard.writeText(texto) : Promise.reject()).then(() => fin('Copied'), () => fin('Could not copy'));
 }
 

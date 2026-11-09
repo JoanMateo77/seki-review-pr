@@ -165,7 +165,11 @@ function copiarRevision(boton, pr) {
   const promesa = cargarPlantillas(pr).then((d) => texto(d?.resultado ?? null), () => texto(null));
   if (typeof ClipboardItem !== 'function' || !navigator.clipboard?.write) return promesa.then((t) => entregarRevision(boton, t));
   const contenido = promesa.then((t) => { if (!t) throw new Error(SIN_REVISION); return new Blob([t], { type: 'text/plain' }); });
-  const marcar = (t) => { const original = boton.innerHTML; boton.textContent = t; setTimeout(() => { boton.innerHTML = original; }, 1400); };
-  navigator.clipboard.write([new ClipboardItem({ 'text/plain': contenido })])
-    .then(() => marcar('Copied'), () => contenido.then(() => marcar('Could not copy'), () => avisar(SIN_REVISION)));
+  let escritura;
+  try { escritura = navigator.clipboard.write([new ClipboardItem({ 'text/plain': contenido })]); } catch {
+    // A browser that refuses the item or the write at once copies after the GET instead.
+    contenido.catch(() => {});
+    return promesa.then((t) => entregarRevision(boton, t));
+  }
+  escritura.then(() => marcarCopia(boton, 'Copied'), () => contenido.then(() => marcarCopia(boton, 'Could not copy'), () => avisar(SIN_REVISION)));
 }

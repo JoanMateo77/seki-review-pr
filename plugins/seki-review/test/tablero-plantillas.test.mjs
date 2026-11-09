@@ -17,6 +17,7 @@ function tablero({ api = async () => ({}), sinApi = false, revision = null, come
   const avisos = [];
   const llamadas = [];
   const eventos = [];
+  const relojes = [];
   const ctx = createContext({
     API: sinApi ? null : { token: 't' }, FOTO: { owner: 'o', prs: [PR] }, estado: { cerrados: new Set(), seleccion: 'r#1', trabajos: new Map(), tab: 'plantillas' },
     esc: escape, plural: (a, b, c) => `${a} ${a === 1 ? b : c}`, icono: () => '', usd: (x) => `USD ${x}`, $: (id) => (id === 'modalIa' ? { querySelector: () => null } : null), senales: () => '', tono: () => '',
@@ -25,15 +26,17 @@ function tablero({ api = async () => ({}), sinApi = false, revision = null, come
     transcurrido: () => '', sondear() {}, pintarDetalle() {}, repintarDetalle() {}, seleccionar: (id) => eventos.push(['seleccionar', id]), pintarBarra() {}, pintarCola() {},
     api: async (ruta, cuerpo) => { llamadas.push([ruta, cuerpo]); return api(ruta, cuerpo); },
     document: { addEventListener: (tipo, f) => { if (tipo === 'click') clics.push(f); }, activeElement: null }, window: { addEventListener() {} }, location: { hash }, history: { replaceState() {} },
-    setTimeout: () => 0, sessionStorage: { getItem: () => null, setItem() {} },
+    setTimeout: (f) => relojes.push(f), clearTimeout: (id) => { relojes[id - 1] = null; }, sessionStorage: { getItem: () => null, setItem() {} },
     ...(portapapeles ? { navigator: { clipboard: portapapeles.clipboard }, ClipboardItem: portapapeles.ClipboardItem, Blob } : { navigator: {} }),
   });
+  // The copy feedback helper of 04-script-1.js, evaluated alone.
+  runInContext(/\nconst marcasCopia[\s\S]*?\n\}\n/.exec(readFileSync(new URL('04-script-1.js', PARTES), 'utf8'))[0], ctx);
   for (const parte of ['07b-modos.js', '07c-revisar.js', '07d-plantillas.js']) runInContext(readFileSync(new URL(parte, PARTES), 'utf8'), ctx);
+  relojes.length = 0;
   // The dialog helpers of 07b-modos.js need a DOM: they are replaced by recorders.
   Object.assign(ctx, { abrirModal: (h) => eventos.push(['modal', h]), cerrarModal() {}, modoActual: () => 'normal' });
   // A click on "Copy review", then the queued promise callbacks.
-  const clicCopiar = () => {
-    const boton = { innerHTML: 'Copy review', textContent: '' };
+  const clicCopiar = (boton = { innerHTML: 'Copy review', textContent: '' }) => {
     const ev = { target: { closest: (sel) => (sel === '[data-copiar-revision]' ? boton : null) } };
     for (const f of clics) f(ev);
     return boton;
@@ -42,7 +45,7 @@ function tablero({ api = async () => ({}), sinApi = false, revision = null, come
     clicCopiar();
     for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
   };
-  return { ctx, copias, avisos, llamadas, eventos, copiarRevision, clicCopiar };
+  return { ctx, copias, avisos, llamadas, eventos, relojes, copiarRevision, clicCopiar };
 }
 
 const item = (id, estado, extra = {}) => ({ id, pregunta: `Question ${id}?`, siFalla: { etiqueta: 'issue', bloqueante: true }, estado, origen: 'ia', ...extra });
@@ -188,6 +191,36 @@ test('without a loaded result the clipboard write starts inside the click and wa
   vacio.clicCopiar();
   await espera();
   assert.equal(vacio.avisos.length, 1);
+});
+
+test('a ClipboardItem that throws at once falls back to copying after the request', async () => {
+  class ClipboardItem { constructor() { throw new TypeError('not supported'); } }
+  const portapapeles = { ClipboardItem, clipboard: { write: async () => { throw new Error('never reached'); } } };
+  const t = tablero({ portapapeles, revision: { decision: 'cambios' }, api: async () => ({ seleccion: {}, resultado: resultado() }) });
+  t.clicCopiar();
+  await espera();
+  assert.deepEqual(t.copias, [`Decision: Requests changes\n\n---\n\n${resultado().markdown}`]);
+  const escribe = tablero({ portapapeles: { ClipboardItem: class { constructor(d) { this.d = d; } }, clipboard: { write() { throw new Error('denied'); } } }, revision: { decision: 'cambios' }, api: async () => ({ seleccion: {}, resultado: resultado() }) });
+  escribe.clicCopiar();
+  await espera();
+  assert.equal(escribe.copias.length, 1);
+});
+
+test('two quick copies restore the original label, not "Copied"', async () => {
+  class ClipboardItem { constructor(datos) { this.datos = datos; } }
+  const portapapeles = { ClipboardItem, clipboard: { write: async (items) => { await items[0].datos['text/plain']; } } };
+  const t = tablero({ portapapeles, revision: { decision: 'cambios' }, api: async () => ({ seleccion: {}, resultado: resultado() }) });
+  const boton = { innerHTML: '<svg></svg> Copy review', textContent: '' };
+  // Not loaded: both clicks go through the ClipboardItem path and mark the button.
+  t.ctx.estado.plantillas = new Map();
+  t.clicCopiar(boton);
+  t.ctx.estado.plantillas.delete('r#1');
+  t.clicCopiar(boton);
+  await espera();
+  assert.equal(boton.textContent, 'Copied');
+  for (const f of t.relojes.filter(Boolean)) f();
+  assert.equal(boton.innerHTML, '<svg></svg> Copy review');
+  assert.equal(t.relojes.filter(Boolean).length, 1, 'the earlier restore is cancelled');
 });
 
 test('the Review tab preloads the template result', async () => {
