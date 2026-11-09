@@ -7,7 +7,7 @@ const LENTES_ULTRA = { correccion: 'Correctness', seguridad: 'Security', lineami
 const SEVERIDAD_ULTRA = [['alta', 'High', 'rojo'], ['media', 'Medium', 'ambar'], ['baja', 'Low', '']];
 const VEREDICTO_ULTRA = { CONFIRMED: ['Confirmed', 'verde'], PLAUSIBLE: ['Plausible', 'ambar'] };
 const RUTAS_IA = ['/api/analizar', '/api/enviar-revision', '/api/investigar', '/api/filtrar', '/api/propuesta/ajustar', '/api/propuesta/regenerar'];
-const TIPO_TRABAJO = { explicar: 'Analysis', responder: 'Answers', cambiar: 'Change proposal', investigar: 'Investigation', revisar_ultra: 'Ultra review' };
+const TIPO_TRABAJO = { explicar: 'Analysis', responder: 'Answers', cambiar: 'Change proposal', investigar: 'Investigation', revisar_ultra: 'Ultra review', revisar_plantillas: 'Template review' };
 
 function modoActual() {
   let guardado = null;
@@ -46,9 +46,10 @@ function botonUltra(pr) {
   return `<button class="btn" data-ultra-abrir="${esc(pr.id)}" ${ultraActivo(pr) ? 'disabled' : ''} title="Three read-only lenses, a verification pass and the project checks">${ultraActivo(pr) ? `${icono('actualizar', 'girando')} Ultra review in progress` : `${icono('escudo')} Ultra review`}</button>`;
 }
 
-// Jobs that wait for the budget or run outside the per-PR rows: the Ultra reviews and anything blocked.
+// Jobs that wait for the budget or run outside the per-PR rows: the Ultra and template reviews and anything blocked.
+const TIPOS_REVISION = ['revisar_ultra', 'revisar_plantillas'];
 function trabajosIaHtml() {
-  const lista = [...estado.trabajos.values()].filter((t) => t.estado === 'bloqueado_presupuesto' || (t.tipo === 'revisar_ultra' && ['en_cola', 'en_curso'].includes(t.estado)));
+  const lista = [...estado.trabajos.values()].filter((t) => t.estado === 'bloqueado_presupuesto' || (TIPOS_REVISION.includes(t.tipo) && ['en_cola', 'en_curso'].includes(t.estado)));
   if (!lista.length) return '';
   return `<div class="trabajos-ia" role="list" aria-label="Jobs waiting or running">${lista.map((t) => `<div class="trabajo-ia" role="listitem">
     <span class="mono">${esc(t.prId ?? t.id)}</span> <span>${esc(TIPO_TRABAJO[t.tipo] ?? t.tipo)}</span>

@@ -29,7 +29,7 @@ test('the built page scripts compile and include the AI mode parts', async () =>
   const { Script } = await import('node:vm');
   const html = construirHtml({ salida: '/nonexistent' }, { prs: [] }, { token: 't' });
   for (const s of scripts(html)) assert.doesNotThrow(() => new Script(s));
-  for (const marca of ['id="selModo"', 'data-ultra-abrir', 'data-forzar', 'Blocked by the daily budget', 'Not compared with the base branch', 'Other repositories were not available', '?ultra=1']) {
+  for (const marca of ['id="selModo"', 'data-ultra-abrir', 'data-forzar', 'Blocked by the daily budget', 'Not compared with the base branch', 'Other repositories were not available', '?ultra=1', 'data-plantillas-abrir', '?plantillas=1']) {
     assert.ok(html.includes(marca), `the built page lacks ${marca}`);
   }
 });
@@ -45,4 +45,10 @@ test('the review intake part is evaluated after the detail script and before the
   assert.ok(orden.indexOf('07c-revisar.js') > orden.indexOf('07-script-4.js'));
   assert.ok(orden.indexOf('07c-revisar.js') < orden.indexOf('08-script-5.js'));
   assert.ok(orden.includes('02d-revisar.css'));
+});
+
+test('the templates part is evaluated after the review intake and before the first paint', () => {
+  const orden = JSON.parse(readFileSync(new URL('orden.json', PARTES), 'utf8'));
+  assert.ok(orden.indexOf('07d-plantillas.js') > orden.indexOf('07c-revisar.js'));
+  assert.ok(orden.indexOf('07d-plantillas.js') < orden.indexOf('08-script-5.js'));
 });

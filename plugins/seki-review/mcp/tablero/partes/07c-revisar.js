@@ -54,8 +54,12 @@ function seccionParaRevisar(prs) {
 
 const rangoRevision = (c) => (c.desde ? `:L${Number(c.desde)}${c.hasta && Number(c.hasta) !== Number(c.desde) ? `–${Number(c.hasta)}` : ''}` : '');
 
+// A template result counts only for the PR's current commit: an outdated one never reaches the copied review.
+const plantillasVigentes = (pr, r) => !!r && !r.desactualizada && (!pr?.headSha || r.headSha === pr.headSha);
+
 // Plain Markdown to paste on GitHub: decision, the owner's comments on the diff, then the general notes. No escaping.
-function revisionMarkdown(pr, revisionPr, comentariosPr) {
+// The comments of a current template review follow after a rule.
+function revisionMarkdown(pr, revisionPr, comentariosPr, plantillasPr) {
   const partes = [];
   const decision = revisionPr?.decision;
   if (decision) partes.push(`Decision: ${(DECISIONES[decision] ?? [decision])[0]}`);
@@ -65,7 +69,10 @@ function revisionMarkdown(pr, revisionPr, comentariosPr) {
   }
   const nota = (revisionPr?.nota ?? '').trim();
   if (nota) partes.push(`Notes\n${nota}`);
-  return partes.join('\n\n');
+  const propio = partes.join('\n\n');
+  const md = plantillasVigentes(pr, plantillasPr) && typeof plantillasPr.markdown === 'string' && plantillasPr.markdown.trim() ? plantillasPr.markdown : '';
+  if (!md) return propio;
+  return propio ? `${propio}\n\n---\n\n${md}` : md;
 }
 
 function mensajeRutaDesconocida(id) {
@@ -137,7 +144,12 @@ document.addEventListener('click', (ev) => {
   const copia = ev.target.closest?.('[data-copiar-revision]');
   if (!copia) return;
   const pr = FOTO.prs.find((p) => p.id === estado.seleccion);
-  const texto = pr ? revisionMarkdown(pr, revision(pr), comentarios(pr)) : '';
-  if (!texto) return avisar('There is no decision, comment or note to copy yet.');
-  copiar(copia, texto);
+  if (!pr) return avisar('There is no decision, comment or note to copy yet.');
+  copiarRevision(copia, pr);
 });
+
+async function copiarRevision(boton, pr) {
+  const texto = revisionMarkdown(pr, revision(pr), comentarios(pr), await plantillasParaCopiar(pr));
+  if (!texto) return avisar('There is no decision, comment or note to copy yet.');
+  copiar(boton, texto);
+}
