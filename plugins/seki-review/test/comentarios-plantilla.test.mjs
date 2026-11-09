@@ -79,3 +79,33 @@ test('an empty result produces empty markdown', () => {
   assert.deepEqual(comentariosDePlantillas({}), { comentarios: [], markdown: '', recortados: 0 });
   assert.equal(comentariosDePlantillas(res([falla({ estado: 'no_aplica' })])).markdown, '');
 });
+
+test('a nitpick never blocks even when flagged blocking and confirmed', () => {
+  const nit = falla({ id: 'N', siFalla: { etiqueta: 'nitpick', bloqueante: true } });
+  const r = comentariosDePlantillas(res([nit, falla({ id: 'B' })]));
+  assert.equal(r.comentarios.find((c) => c.ref === 't/N').bloqueante, false);
+  assert.deepEqual(r.comentarios.find((c) => c.ref === 't/N').decoraciones, []);
+  assert.equal(r.comentarios[0].ref, 't/B');
+});
+
+test('the cap of five applies per template', () => {
+  const seis = (pre) => Array.from({ length: 6 }, (_, i) => falla({ id: `${pre}${i}`, veredicto: null }));
+  const r = comentariosDePlantillas({ plantillas: [
+    { id: 'a', idioma: 'en', ok: true, items: seis('A') },
+    { id: 'b', idioma: 'en', ok: true, items: seis('B') },
+  ] });
+  assert.equal(r.comentarios.length, 10);
+  assert.equal(r.recortados, 2);
+});
+
+test('a file without line renders only the file', () => {
+  const r = comentariosDePlantillas(res([falla({ linea: undefined })]));
+  assert.equal(r.markdown.split('\n')[1], '`src/a.ts`');
+});
+
+test('praise falls back to the question when there is no title', () => {
+  const r = comentariosDePlantillas(res([
+    { id: 'A', pregunta: 'Is it fine?', siFalla: { etiqueta: 'issue', bloqueante: false }, estado: 'cumple', origen: 'ia', cita: 'ok()' },
+  ]));
+  assert.equal(r.markdown.split('\n')[0], '**praise: Is it fine?**');
+});

@@ -9,7 +9,7 @@ function comentarioDe(plantilla, item) {
   const h = item.hallazgos?.[0];
   const determinista = item.origen === 'determinista';
   const etiqueta = item.siFalla?.etiqueta ?? 'issue';
-  const bloquea = Boolean(item.siFalla?.bloqueante) && (determinista || item.veredicto === 'CONFIRMED');
+  const bloquea = etiqueta !== 'nitpick' && Boolean(item.siFalla?.bloqueante) && (determinista || item.veredicto === 'CONFIRMED');
   const decoraciones = [];
   if (bloquea) decoraciones.push('blocking');
   else if (etiqueta !== 'nitpick') decoraciones.push('non-blocking');
