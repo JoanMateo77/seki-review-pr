@@ -93,6 +93,17 @@ export const REGLAS = [
     origen: '`as any` turns off type checking at that point.',
   },
   {
+    id: 'tipo-any',
+    titulo: 'Typing with `any`',
+    severidad: 'aviso',
+    archivos: /\.tsx?$/,
+    patron: /(?::\s*any\b|<any>|\bany\[\])/,
+    // A line with `as any` is left to the as-any rule.
+    excluir: /\bas any\b/,
+    mensaje: 'Use `unknown` and narrow it, or the real type.',
+    origen: 'The standard bans `any` everywhere, tests included: it turns off type checking for every value that passes through it.',
+  },
+  {
     id: 'log-dato-sensible',
     titulo: 'Log with sensitive data',
     severidad: 'alto',

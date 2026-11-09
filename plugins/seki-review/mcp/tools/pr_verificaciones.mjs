@@ -10,7 +10,7 @@ export default {
   name: 'pr_verificaciones',
   description:
     'Runs the project\'s fixed checks (interpolated SQL, secrets, "comercio" in visible text, unescaped EJS, ' +
-    'as any, sensitive logs, environment variables, DDL, dependencies, AI attribution trailers in commits) on the lines a PR adds, ' +
+    'as any, any in type positions, sensitive logs, environment variables, DDL, dependencies, AI attribution trailers in commits) on the lines a PR adds, ' +
     'or on a local branch before opening the PR (dir + base). No AI involved: the result is reproducible.',
   inputSchema: {
     type: 'object',
