@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { archivosDeDiff } from '../mcp/lib/verificar.mjs';
 import { leerCostos } from '../mcp/lib/ia.mjs';
-import { leerUltra, parcheUnido, revisarUltra } from '../mcp/lib/ultra.mjs';
+import { escribirJson, rutaPlantillas } from '../mcp/lib/cache.mjs';
+import { lentesCubiertas, leerUltra, parcheUnido, revisarUltra } from '../mcp/lib/ultra.mjs';
 
 const SHA = 'a'.repeat(40);
 const pr = { id: 'api#7', repo: 'api', numero: 7, titulo: 'fix: algo', headSha: SHA };
@@ -335,4 +336,57 @@ test('a long file list is capped and the diff is cut at file boundaries in prior
 test('parcheUnido round-trips a rename through archivosDeDiff', () => {
   const t = parcheUnido([{ filename: 'nuevo.ts', previous_filename: 'viejo.ts', status: 'renamed', patch: '@@ -1 +1 @@\n-a\n+b' }]);
   assert.deepEqual(archivosDeDiff(t).map((a) => [a.filename, a.status]), [['nuevo.ts', 'modified']]);
+});
+
+// A stored template result of the PR: `plantillas` is the list of [id, ok] entries.
+const guardarPlantillas = (p, plantillas, headSha = SHA) => escribirJson(rutaPlantillas(p.salida, 'api', 7), { headSha, plantillas: plantillas.map(([id, ok]) => ({ id, ok })) });
+const lentesLlamadas = (registro) => registro.filter((x) => x.prompt.startsWith('Lens:')).map((x) => /^Lens: (\w+)/.exec(x.prompt)[1]).sort();
+
+test('a template result of the same commit with owasp-web ok skips the security lens and runs the others', async () => {
+  const registro = [];
+  const { p, deps } = entorno({ registro, lentes: { correccion: { hallazgos: [h('src/a.ts', 1)] } }, verificar: veredictosDe({}) });
+  guardarPlantillas(p, [['ligera', true], ['owasp-web', true]]);
+  assert.deepEqual(lentesCubiertas(p, 'api', 7, SHA), ['seguridad']);
+  const r = await revisarUltra(p, pr, deps);
+  assert.deepEqual(lentesLlamadas(registro), ['correccion', 'lineamientos']);
+  const l = r.resultado.lentes.find((x) => x.nombre === 'seguridad');
+  assert.deepEqual([l.omitida, l.ok, l.costo, l.motivo, l.hallazgos], [true, false, 0, 'Covered by the template review of this commit', 0]);
+  assert.equal(r.ok, true);
+  assert.equal(r.costo, 0.5 * 2 + 0.25);
+  const [rec] = leerCostos(p).filter((x) => x.tipo === 'revisar_ultra');
+  assert.deepEqual(rec.detalle.map((x) => x.paso), ['correccion', 'lineamientos', 'verificar']);
+});
+
+test('repetir does not bring a covered lens back', async () => {
+  const registro = [];
+  const { p, deps } = entorno({ registro });
+  guardarPlantillas(p, [['pci-dss', true]]);
+  await revisarUltra(p, pr, deps);
+  await revisarUltra(p, pr, { ...deps, repetir: true });
+  assert.equal(registro.filter((x) => x.prompt.startsWith('Lens: seguridad')).length, 0);
+});
+
+test('a template result of another commit, or whose template failed, does not cover the lens', async () => {
+  for (const [plantillas, sha] of [[[['owasp-web', true]], 'b'.repeat(40)], [[['owasp-web', false]], SHA], [[['ligera', true]], SHA]]) {
+    const registro = [];
+    const { p, deps } = entorno({ registro });
+    guardarPlantillas(p, plantillas, sha);
+    assert.deepEqual(lentesCubiertas(p, 'api', 7, SHA), []);
+    await revisarUltra(p, pr, deps);
+    assert.deepEqual(lentesLlamadas(registro), ['correccion', 'lineamientos', 'seguridad'], JSON.stringify(plantillas));
+  }
+});
+
+test('a result of the same commit with moved branches still covers the lens', () => {
+  const { p } = entorno();
+  escribirJson(rutaPlantillas(p.salida, 'api', 7), { headSha: SHA, ramasMovidas: [{ repo: 'web', rama: 'main' }], plantillas: [{ id: 'owasp-web', ok: true }] });
+  assert.deepEqual(lentesCubiertas(p, 'api', 7, SHA), ['seguridad']);
+});
+
+test('all other lenses failing with the security lens covered ends the job on that failure', async () => {
+  const { p, deps } = entorno({ lentes: { correccion: new Error('x'), lineamientos: new Error('x') } });
+  guardarPlantillas(p, [['owasp-web', true]]);
+  const r = await revisarUltra(p, pr, deps);
+  assert.equal(r.ok, false);
+  assert.equal(r.motivo, 'The job exceeded the maximum time');
 });

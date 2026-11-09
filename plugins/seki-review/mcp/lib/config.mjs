@@ -167,7 +167,10 @@ export function proyecto(clave) {
   const sensibles = rutasSensibles(ia.rutasSensibles);
   ia.rutasSensibles = sensibles.validas;
   ia.patronesSensibles = sensibles.patrones;
-  return { clave: elegida, ...p, qa, ia, entregas: conDefectos(ENTREGAS_DEFECTO, p.entregas, 'entregas'), vigia, salida: expandir(p.salida), copias: expandir(p.copias ?? `~/.cache/seki-review/copias/${elegida}`) };
+  let plantillas;
+  if (typeof p.plantillas === 'string' && p.plantillas) plantillas = expandir(p.plantillas);
+  else if (p.plantillas !== undefined) avisar(`plantillas of project "${elegida}" must be a folder path (or start with ~/); it is ignored`);
+  return { clave: elegida, ...p, qa, ia, plantillas, entregas: conDefectos(ENTREGAS_DEFECTO, p.entregas, 'entregas'), vigia, salida: expandir(p.salida), copias: expandir(p.copias ?? `~/.cache/seki-review/copias/${elegida}`) };
 }
 
 // Locates a base branch within the repo's deployment lines.

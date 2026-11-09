@@ -74,11 +74,12 @@ function tabProbar(pr) {
 
 function tabRevision(pr) {
   const r = revision(pr) ?? {};
+  if (API) precargarPlantillas(pr);
   return `${sec('Decision', `<div class="decision" role="radiogroup">${Object.entries(DECISIONES).map(([k, [t]]) => `<label><input type="radio" name="decision" value="${k}" ${r.decision === k ? 'checked' : ''}> ${t}</label>`).join('')}</div>`)}
     ${sec('Feedback for the author', `<textarea id="notaRevision" placeholder="What’s missing, what was tested, what needs clarifying">${esc(r.nota ?? '')}</textarea>
       <div class="guardado" id="guardado">${r.fecha ? `Saved ${esc(new Date(r.fecha).toLocaleString('en-US'))}` : ''}</div>`)}
     <p class="tenue">The review stays in this browser. To send it to the author:</p>
-    <div class="acciones"><button class="btn" data-accion="exportar">${icono('descargar')} Export review</button><button class="btn" data-accion="copiarResumen">${icono('copiar')} Copy summary</button><button class="btn" data-copiar-revision title="Decision, comments on the diff and notes as Markdown, to paste on GitHub">${icono('copiar')} Copy review</button></div>`;
+    <div class="acciones"><button class="btn" data-accion="exportar">${icono('descargar')} Export review</button><button class="btn" data-accion="copiarResumen">${icono('copiar')} Copy summary</button><button class="btn" data-copiar-revision title="Decision, comments on the diff, notes and the comments of a current template review as Markdown, to paste on GitHub">${icono('copiar')} Copy review</button></div>`;
 }
 
 const ESTADO_ARCHIVO = { added: 'Added', removed: 'Removed', modified: 'Modified', renamed: 'Renamed', copied: 'Copied', changed: 'Changed' };

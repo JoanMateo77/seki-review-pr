@@ -100,8 +100,9 @@ const TABS = [
   ['probar', 'How to test', (pr) => pr.explicacion?.como_probar?.length || null],
   ['revision', 'Review', () => null],
   ['ultra', 'Ultra review', (pr) => (API ? estado.ultra?.get(pr.id)?.resultado?.hallazgos?.length || null : null)],
+  ['plantillas', 'Templates', (pr) => (API ? fallasPlantillas(estado.plantillas?.get(pr.id)?.resultado) || null : null)],
 ];
-const CUERPOS = { resumen: tabResumen, descripcion: tabDescripcion, archivos: tabArchivos, verificaciones: tabVerificaciones, probar: tabProbar, revision: tabRevision, ultra: tabUltra };
+const CUERPOS = { resumen: tabResumen, descripcion: tabDescripcion, archivos: tabArchivos, verificaciones: tabVerificaciones, probar: tabProbar, revision: tabRevision, ultra: tabUltra, plantillas: tabPlantillas };
 
 function pintarDetalle() {
   leerCaja();

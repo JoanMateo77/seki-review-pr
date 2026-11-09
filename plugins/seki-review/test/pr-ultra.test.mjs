@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { escribirJson, rutaDiff, rutaInstantanea, rutaUltra } from '../mcp/lib/cache.mjs';
+import { escribirJson, rutaDiff, rutaInstantanea, rutaPlantillas, rutaUltra } from '../mcp/lib/cache.mjs';
 import { registrarCosto } from '../mcp/lib/ia.mjs';
 import { proyecto as cargarProyecto } from '../mcp/lib/config.mjs';
 import herramienta from '../mcp/tools/pr_ultra.mjs';
@@ -67,4 +67,11 @@ test('pr_ultra ignores a cached diff of another commit when it looks for sensiti
   const r = await herramienta.handler({ proyecto: e.clave, repo: 'r', numero: 1 });
   assert.equal(r.sugerida, false);
   assert.equal(r.topeUsd, 5.5);
+});
+
+test('pr_ultra reports the covered lenses and the estimate of the lenses that will run', async () => {
+  const e = entorno();
+  escribirJson(rutaPlantillas(e.salida, 'r', 1), { headSha: SHA, plantillas: [{ id: 'owasp-web', ok: true }] });
+  const r = await herramienta.handler({ proyecto: e.clave, repo: 'r', numero: 1 });
+  assert.deepEqual([r.lentesCubiertas, r.estimacion.usd, r.topeUsd], [['seguridad'], 4, 4]);
 });

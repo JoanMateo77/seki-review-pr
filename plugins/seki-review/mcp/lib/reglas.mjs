@@ -10,7 +10,7 @@ import { AGOTADO, compilarPatron, probarSeguro } from './patrones.mjs';
 
 const VISTAS = /\.(ejs|html)$/;
 const CODIGO = /\.(ts|js|mjs|cjs)$/;
-const PRUEBAS = /(__tests__|\.spec\.|\.test\.)/;
+export const PRUEBAS = /(__tests__|\.spec\.|\.test\.)/;
 const FRAGMENTO_SQL = /^(filtro|filtros|where|condicion\w*|clausula\w*|orden|order\w*|limit\w*|offset|paginacion|sql\w*|campos?|columnas?|placeholders?|tabla|schema|esquema)$/i;
 
 export const SEVERIDADES = ['bloqueante', 'alto', 'medio', 'aviso'];
@@ -91,6 +91,41 @@ export const REGLAS = [
     excluir: PRUEBAS,
     mensaje: 'Narrow the type instead of silencing it.',
     origen: '`as any` turns off type checking at that point.',
+  },
+  {
+    id: 'tipo-any',
+    titulo: 'Typing with `any`',
+    severidad: 'aviso',
+    archivos: /\.tsx?$/,
+    // `: any`, `any[]`, generic arguments (`<any>`, `Map<K, any>`), union and intersection members
+    // (`string | any`, `A & any`), aliases and constraints (`type X = any`, `T extends any`).
+    // The `as any` cast is left to as-any: the lookbehinds keep `as any[]` and `as any |` out, so a mixed
+    // line such as `(y as any) as Map<string, any>` still reports its type-position any.
+    // `||` and `&&` are not members: the lookarounds skip them.
+    // Cost: no alternative starts with a repeat, so a match can only begin at a fixed token (`:`, `any`, `<`, `,`,
+    // `|`, `&`, `type`, `extends`), and the `\s*`/`\s+` run right after that token (or before `any`, for the `as`
+    // lookbehinds) is read once from it. The alias form has three more repeats: `\w{1,80}(?!\w)` reads the name
+    // and the lookahead rejects every shorter split in one step; the lazy `[^;]{0,300}?` reads at most 300
+    // characters; the `\s*` after an `=` in that window is read once per `type` whose name ends at most 300
+    // characters before that `=`. So each character is read a bounded number of times and long lines stay linear.
+    // The alias form is not anchored, so a trailing comment or more code (`type X = any; // why`) is still caught.
+    // Its limits: the name has 1-80 word characters, and `= any` must follow within 300 characters with no `;`
+    // between. `=> any` is not an alias: that `=` is followed by `>`, not `any`.
+    patron: new RegExp([
+      String.raw`:\s*any\b`,
+      String.raw`(?<!\bas\s+)\bany\[\]`,
+      String.raw`[<,]\s*any\s*[,>]`,
+      String.raw`(?<!\|)\|\s*any\b`,
+      String.raw`(?<!\bas\s+)\bany\s*\|(?!\|)`,
+      String.raw`(?<!&)&\s*any\b`,
+      String.raw`(?<!\bas\s+)\bany\s*&(?!&)`,
+      String.raw`\btype\s+\w{1,80}(?!\w)[^;]{0,300}?=\s*any(?![\w$])`,
+      String.raw`\bextends\s+any\b`,
+    ].join('|')),
+    // A line that starts as a comment (`//`, `/*`, `*`) is prose, not a type. Text inside strings is still read.
+    cuando: (linea) => !/^\s*(?:\/\/|\/\*|\*)/.test(linea),
+    mensaje: 'Use `unknown` and narrow it, or the real type.',
+    origen: 'The standard bans `any` everywhere, tests included: it turns off type checking for every value that passes through it.',
   },
   {
     id: 'log-dato-sensible',

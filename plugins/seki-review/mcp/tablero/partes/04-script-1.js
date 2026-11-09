@@ -72,6 +72,17 @@ const estado = {
   confirmarPendientes: false,
 };
 const trabajo = (pr) => estado.trabajos.get(pr.id);
+// Brief feedback on a copy button. The original label is kept once per button, so a second click inside the window
+// does not take "Copied" as the label to restore.
+const marcasCopia = new WeakMap();
+function marcarCopia(boton, texto) {
+  const previa = marcasCopia.get(boton);
+  if (previa) clearTimeout(previa.reloj);
+  const original = previa?.original ?? boton.innerHTML;
+  boton.textContent = texto;
+  // A button re-rendered away meanwhile keeps its new markup: the stale original is not written back.
+  marcasCopia.set(boton, { original, reloj: setTimeout(() => { if (boton.isConnected) boton.innerHTML = original; marcasCopia.delete(boton); }, 1400) });
+}
 const usd = (x) => { const n = Number(x) || 0; return `USD ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: n < 0.01 ? 4 : 2 })}`; };
 const nombreModelo = (m) => (m ?? '').replace(/^claude-/, '').replace(/-\d.*$/, '').replace(/^./, (c) => c.toUpperCase());
 const costoTexto = (t) => `${t.modelo ? ` · ${nombreModelo(t.modelo)}` : ''}${t.costo ? ` · ${usd(t.costo)}` : ''}`;

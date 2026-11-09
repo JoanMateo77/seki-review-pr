@@ -1,0 +1,78 @@
+{
+  "id": "ligera",
+  "version": 1,
+  "titulo": "Light baseline",
+  "idioma": "en",
+  "siempre": true,
+  "aplicaA": [
+    "**"
+  ],
+  "excluir": [],
+  "items": [
+    {
+      "id": "L1-descripcion",
+      "pregunta": "Does the PR description match what the diff changes (no undeclared changes)?",
+      "evidencia": "Every file in the diff appears under \"What changes\"",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true
+      }
+    },
+    {
+      "id": "L2-pruebas",
+      "pregunta": "Are there tests that would fail without the change and cover the happy path and the rejections?",
+      "evidencia": "Test file and cases, with the line of each `it`",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true
+      }
+    },
+    {
+      "id": "L3-gemelas",
+      "pregunta": "Does the twin PR (testing/production, or the other portal) have the same changed lines?",
+      "evidencia": "Comparison of the `+`/`-` lines of both PRs",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true
+      }
+    },
+    {
+      "id": "L4-despliegue",
+      "pregunta": "Is the deployment order across repositories safe in the CURRENT state of the target branches?",
+      "evidencia": "Routes this PR adds or removes that the other repositories still call or already call",
+      "reglas": [
+        "rutas-en-otros-repos"
+      ],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true
+      }
+    },
+    {
+      "id": "L5-desviaciones",
+      "pregunta": "Is every deviation from the standard (legacy code, mocks, `any`, routes) declared in the PR?",
+      "evidencia": "The deviating line and the PR sentence that declares it",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "suggestion",
+        "bloqueante": false
+      }
+    },
+    {
+      "id": "L7-tipos",
+      "pregunta": "Do the added lines avoid typing with `any`?",
+      "evidencia": "Added lines that use `any`",
+      "reglas": [
+        "as-any",
+        "tipo-any"
+      ],
+      "siFalla": {
+        "etiqueta": "suggestion",
+        "bloqueante": false
+      }
+    }
+  ]
+}

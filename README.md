@@ -123,6 +123,7 @@ citing files or lines that do not exist, one verification call and the project c
 estimate (median of earlier reviews, or the cost caps when there are fewer than three). The result is stored per commit and shown in the
 "Ultra review" tab; the tool `pr_ultra` reads it without spending AI, and the link `#/pr/<repo>/<n>?ultra=1` opens the confirmation.
 Ultra is suggested when a changed path matches `ia.rutasSensibles` or the PR is flagged as security.
+A template may declare `"cubre": ["seguridad"]` (lens names `correccion`, `seguridad`, `lineamientos`); `owasp-web` and `pci-dss` do. When the stored template review of the same commit has such a template with a successful result, Ultra skips that lens (recorded as skipped, no call), and the dialog, the cap and the estimate count the lenses that will run (the history estimate is scaled by that share of three). Running again does not bring the lens back.
 
 **PRs to review.** Besides the PRs of `autor`, each refresh collects the open PRs of the configured repos where the owner is requested directly as
 reviewer (`user-review-requested:<login>`; team requests are not included) and remembers them in `salida/datos/revisar.json`, so a PR stays after the owner reviews it on GitHub until it
@@ -144,6 +145,20 @@ not come from a fork and that the branch only advanced with commits pushed by th
 applies the patch, makes a commit with the machine's git identity (no trailers) and runs `git push` to the PR's
 branch. If GitHub rejects the push, the proposal is kept as a patch to copy. Measured on 2026-10-27: a small change in
 a TypeScript backend cost USD 0.11 with Sonnet and took 72 s, checks included.
+
+### Review templates
+
+A template is a JSON checklist (`plugins/seki-review/plantillas/`: `ligera`, `owasp-web`, `pci-dss`) chosen by the files a PR changes: the light baseline always applies and the others when a changed path matches their `aplicaA` globs. The Templates tab of a PR shows which apply and why, the cost estimate (the sum, over the AI templates, of the median cost of each template in past runs, falling back to the median per template of all runs and then to the cap until there are three samples) and a confirmation; the review is an explicit job on one PR, never automatic. The tool `pr_plantillas` and the skill argument `templates <repo>#<n>` read the selection and the stored result without spending AI.
+
+**How each item is decided.** Items with `reglas` are decided by the fixed rules over the added lines (no AI); the rest go to one read-only AI call per template, which answers `cumple`, `falla`, `no_aplica` or `no_verificable`. Checking an item is not the same as having seen the behavior: when something cannot be known from the diff, the item stays `no_verificable` with a question for the author. One verification call then judges the failures (`CONFIRMED`, `PLAUSIBLE`, `REJECTED`); a rejected failure turns into a question.
+
+**Cost.** Every template call starts with the same context (PR, repositories, changed files, diff) and ends with its own items, and the first call runs alone so the others read the cached context instead of paying for it again; the cost record keeps the token usage of each step. A template is not called again on a new commit when what it reads did not change: the same version and items and the same patches (or blob sha, for a file without patch) of the files that activate it (all files for an always-on template), and every quote it holds is still in the code of the new commit and the other repositories loaded for the run. Its stored answers are kept, marked as reused, at cost 0, and only new failures are verified; a run where every template is reused makes no AI call and writes no cost record. "Repeat" calls every template again. The result also stores the other branches it was read from; a reused answer keeps the commit of the branch it was given at. The Templates tab data reports as moved (`ramasMovidas`) the branches for which a later refresh or review in the dashboard loaded a newer commit; a push nobody fetched is not seen.
+
+**Evidence.** `cumple` and `falla` need a quote that exists in the cited file and line, either in this PR's copy or in another configured repository (any AI item may quote one; the route rule always searches them); otherwise the item becomes `no_verificable`. Only fixed-rule or confirmed failures that the template marks as blocking are labelled `blocking`; `nitpick` never blocks.
+
+**Where results live.** Per commit in `salida/plantillas/<repo>-<n>.json`, marked outdated after newer commits (`GET/POST /api/plantillas`). Results become Conventional Comments, and "Copy review" in the Review tab appends those of the current commit. The "Not verifiable from the diff" block lists only the items with a question for the author; items left unchecked for an internal reason (a failed step, a rule the project does not run) show on the board only. Nothing is published to GitHub: the comments are pasted by hand, and Approve or Request changes remains a human action.
+
+**Project templates.** `plantillas` in the project entry points to a folder of your own `.json` templates (absolute or `~/` path); a file with the same `id` replaces the built-in one, and invalid files are skipped with a warning. A configured folder that does not exist is reported with the invalid files. See `config/proyectos.ejemplo.json`.
 
 ### QA guide and import
 

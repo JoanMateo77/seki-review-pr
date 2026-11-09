@@ -110,9 +110,11 @@ export function marcarUso(p, dir) {
 const leerUsos = (p) => { try { return JSON.parse(readFileSync(rutaUsos(p), 'utf8')); } catch { return {}; } };
 
 // Read-only copy of a branch, fetched fresh from the remote into a private ref that is deleted right away.
+export const dirDeRama = (p, repo, rama) => join(p.copias ?? join(p.salida, 'copias'), 'ramas', `${repo}--${rama.replace(/[^\w.-]+/g, '_')}`);
+
 export async function copiaDeRama(p, repo, rama) {
   const checkout = checkoutDe(p, repo);
-  const dir = join(p.copias ?? join(p.salida, 'copias'), 'ramas', `${repo}--${rama.replace(/[^\w.-]+/g, '_')}`);
+  const dir = dirDeRama(p, repo, rama);
   const ref = `refs/seki-review/ramas/${rama}`;
   const sha = await enCola(checkout, async () => {
     try {

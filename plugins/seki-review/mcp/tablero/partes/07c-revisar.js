@@ -54,8 +54,12 @@ function seccionParaRevisar(prs) {
 
 const rangoRevision = (c) => (c.desde ? `:L${Number(c.desde)}${c.hasta && Number(c.hasta) !== Number(c.desde) ? `–${Number(c.hasta)}` : ''}` : '');
 
+// A template result counts only for the PR's current commit: an outdated one never reaches the copied review.
+const plantillasVigentes = (pr, r) => !!r && !r.desactualizada && (!pr?.headSha || r.headSha === pr.headSha);
+
 // Plain Markdown to paste on GitHub: decision, the owner's comments on the diff, then the general notes. No escaping.
-function revisionMarkdown(pr, revisionPr, comentariosPr) {
+// The comments of a current template review follow after a rule.
+function revisionMarkdown(pr, revisionPr, comentariosPr, plantillasPr) {
   const partes = [];
   const decision = revisionPr?.decision;
   if (decision) partes.push(`Decision: ${(DECISIONES[decision] ?? [decision])[0]}`);
@@ -65,7 +69,10 @@ function revisionMarkdown(pr, revisionPr, comentariosPr) {
   }
   const nota = (revisionPr?.nota ?? '').trim();
   if (nota) partes.push(`Notes\n${nota}`);
-  return partes.join('\n\n');
+  const propio = partes.join('\n\n');
+  const md = plantillasVigentes(pr, plantillasPr) && typeof plantillasPr.markdown === 'string' && plantillasPr.markdown.trim() ? plantillasPr.markdown : '';
+  if (!md) return propio;
+  return propio ? `${propio}\n\n---\n\n${md}` : md;
 }
 
 function mensajeRutaDesconocida(id) {
@@ -137,7 +144,32 @@ document.addEventListener('click', (ev) => {
   const copia = ev.target.closest?.('[data-copiar-revision]');
   if (!copia) return;
   const pr = FOTO.prs.find((p) => p.id === estado.seleccion);
-  const texto = pr ? revisionMarkdown(pr, revision(pr), comentarios(pr)) : '';
-  if (!texto) return avisar('There is no decision, comment or note to copy yet.');
-  copiar(copia, texto);
+  if (!pr) return avisar(SIN_REVISION);
+  copiarRevision(copia, pr);
 });
+
+const SIN_REVISION = 'There is no decision, comment or note to copy yet.';
+
+function entregarRevision(boton, texto) {
+  if (!texto) return avisar(SIN_REVISION);
+  copiar(boton, texto);
+}
+
+// The clipboard is written inside the click: synchronously when the template result is loaded (the Review tab
+// preloads it), or through a ClipboardItem whose content waits for the one GET. Browsers without ClipboardItem
+// copy after the GET.
+function copiarRevision(boton, pr) {
+  const texto = (r) => revisionMarkdown(pr, revision(pr), comentarios(pr), r);
+  const cargado = plantillasCargadas(pr);
+  if (cargado !== undefined) return entregarRevision(boton, texto(cargado));
+  const promesa = cargarPlantillas(pr).then((d) => texto(d?.resultado ?? null), () => texto(null));
+  if (typeof ClipboardItem !== 'function' || !navigator.clipboard?.write) return promesa.then((t) => entregarRevision(boton, t));
+  const contenido = promesa.then((t) => { if (!t) throw new Error(SIN_REVISION); return new Blob([t], { type: 'text/plain' }); });
+  let escritura;
+  try { escritura = navigator.clipboard.write([new ClipboardItem({ 'text/plain': contenido })]); } catch {
+    // A browser that refuses the item or the write at once copies after the GET instead.
+    contenido.catch(() => {});
+    return promesa.then((t) => entregarRevision(boton, t));
+  }
+  escritura.then(() => marcarCopia(boton, 'Copied'), () => contenido.then(() => marcarCopia(boton, 'Could not copy'), () => avisar(SIN_REVISION)));
+}

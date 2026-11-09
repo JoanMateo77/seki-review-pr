@@ -17,6 +17,19 @@ export function lineasAgregadas(patch = '') {
   return salida;
 }
 
+// Removed lines of a unified patch, with their line number in the old version of the file.
+export function lineasQuitadas(patch = '') {
+  const salida = [];
+  let vieja = 0;
+  for (const l of patch.split('\n')) {
+    const h = /^@@ -(\d+)/.exec(l);
+    if (h) { vieja = +h[1]; continue; }
+    if (l.startsWith('-') && !l.startsWith('---')) salida.push({ linea: vieja++, texto: l.slice(1) });
+    else if (l.startsWith(' ')) vieja++;
+  }
+  return salida;
+}
+
 // Local `git diff` -> same shape as GitHub's files API ({ filename, status, patch }).
 export function archivosDeDiff(diff) {
   return diff.split(/^diff --git /m).slice(1).map((bloque) => {

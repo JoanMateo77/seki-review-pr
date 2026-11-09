@@ -19,7 +19,8 @@ import { avances } from './avance.mjs';
 import { filtrarPrs } from './filtrar.mjs';
 import { costosDelDia, registrarCosto, resumenCostos } from './ia.mjs';
 import { modoDe, topeDeTrabajo, topeRevisarUltra } from './perfiles.mjs';
-import { datosUltra, leerUltra, revisarUltra } from './ultra.mjs';
+import { datosUltra, lentesCubiertas, leerUltra, revisarUltra } from './ultra.mjs';
+import { datosPlantillas, leerPlantillasPr, revisarPlantillas } from './revision-plantillas.mjs';
 import { crearPresupuesto, crearReservas, gastoMaquina } from './presupuesto.mjs';
 import { estadoServidor, pedirCeder, tokenDe } from './acceso.mjs';
 import { limpiarCopias } from './copias.mjs';
@@ -178,8 +179,8 @@ export async function detenerServidores() {
   await Promise.all([...servidores.values()].map((s) => s.cerrar()));
 }
 
-// intervaloVigiaMs and relojVigia exist for tests only.
-export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true, soloPuerto = false, intervaloVigiaMs = null, relojVigia, ejecutarUltra = revisarUltra } = {}) {
+// intervaloVigiaMs, relojVigia, the ejecutar* jobs and diffPlantillas and shaRama are injected by tests only.
+export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true, soloPuerto = false, intervaloVigiaMs = null, relojVigia, ejecutarUltra = revisarUltra, ejecutarPlantillas = revisarPlantillas, diffPlantillas = asegurarDiff, shaRama } = {}) {
   if (servidores.has(proyecto)) {
     const s = servidores.get(proyecto);
     if (abrir) execFile('open', [s.url]);
@@ -569,9 +570,36 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         // A stored result for this commit is returned as is: no job, no reservation, no spend.
         const guardado = repetir === true ? null : leerUltra(p, pr.repo, pr.numero, pr.headSha);
         if (guardado && !guardado.desactualizada) return responder(res, 200, { desdeCache: true, resultado: guardado });
-        const n = cola.encolar([{ id: `${pr.id}:ultra`, tipo: 'revisar_ultra', prId: pr.id, topeUsd: topeRevisarUltra(), ejecutar: () => ejecutarUltra(p, pr, { repetir: repetir === true }) }]);
+        const n = cola.encolar([{ id: `${pr.id}:ultra`, tipo: 'revisar_ultra', prId: pr.id, topeUsd: topeRevisarUltra(3 - lentesCubiertas(p, pr.repo, pr.numero, pr.headSha).length), ejecutar: () => ejecutarUltra(p, pr, { repetir: repetir === true }) }]);
         if (!n) throw Object.assign(new Error('An Ultra review of this PR is already queued'), { codigo: 409 });
         return responder(res, 202, { encolado: `${pr.id}:ultra` });
+      }
+      // The selection is the core of the templates tab and sets the job reservation: it uses the PR diff, which the job
+      // fetches anyway. The tab falls back to the cached file names when GitHub cannot be reached; the job does not.
+      const rutasPlantillas = async (pr) => (await diffPlantillas(p, pr.repo, pr.numero, pr.headSha)).map((a) => a.filename).filter(Boolean);
+      if (req.method === 'GET' && url.pathname === '/api/plantillas') {
+        const pr = prDeFoto(`${url.searchParams.get('repo')}#${url.searchParams.get('numero')}`);
+        return responder(res, 200, await datosPlantillas(p, pr, await rutasPlantillas(pr).catch(() => nombresDeArchivos(p, pr)), { shaRama }));
+      }
+      // Allowed in every AI mode: the template calls always use their own profile. A selection without AI items
+      // is queued too, at cap 0: the job runs only the deterministic part.
+      if (req.method === 'POST' && url.pathname === '/api/plantillas') {
+        const { repo, numero, repetir, confirmar } = await leerJsonEstricto(req);
+        if (confirmar !== true) throw falloHttp(400, 'The template review must be confirmed');
+        let pr;
+        try { pr = prDeFoto(`${repo}#${numero}`); } catch { throw falloHttp(409, 'The PR is not in the snapshot'); }
+        if (pr.estadoPr !== 'OPEN') throw falloHttp(409, 'The PR is no longer open');
+        // A stored result for this commit is returned as is: no job, no reservation, no spend.
+        const guardado = repetir === true ? null : leerPlantillasPr(p, pr.repo, pr.numero, pr.headSha);
+        if (guardado && !guardado.desactualizada) return responder(res, 200, { desdeCache: true, resultado: guardado });
+        // No reservation from a guess: without the diff the job could select more templates than the cap covers.
+        let rutas;
+        try { rutas = await rutasPlantillas(pr); } catch { throw falloHttp(503, 'The PR diff could not be loaded'); }
+        const { topeUsd } = await datosPlantillas(p, pr, rutas, { shaRama });
+        const id = `${pr.id}:plantillas`;
+        const n = cola.encolar([{ id, tipo: 'revisar_plantillas', prId: pr.id, topeUsd, ejecutar: () => ejecutarPlantillas(p, pr, { repetir: repetir === true }) }]);
+        if (!n) throw falloHttp(409, 'A template review of this PR is already queued');
+        return responder(res, 202, { encolado: id });
       }
       if (req.method === 'POST' && url.pathname === '/api/trabajos/forzar') {
         const { id } = await leerJsonEstricto(req);

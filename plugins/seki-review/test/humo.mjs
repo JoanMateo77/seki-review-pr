@@ -30,6 +30,7 @@ if (tool) {
   console.log(r.result?.content?.[0]?.text ?? JSON.stringify(r.error));
 }
 if (!lista.result.tools.some((t) => t.name === 'pr_ultra')) { console.error('FAIL: the pr_ultra tool is not registered'); process.exitCode = 1; }
+if (!lista.result.tools.some((t) => t.name === 'pr_plantillas')) { console.error('FAIL: the pr_plantillas tool is not registered'); process.exitCode = 1; }
 if (!lista.result.tools.some((t) => t.name === 'pr_revisar')) { console.error('FAIL: the pr_revisar tool is not registered'); process.exitCode = 1; }
 srv.kill();
 
