@@ -54,10 +54,10 @@ Unlike GitHub's PR list, it checks with git whether the code is already in testi
   hints, it does not rule out shared mistakes. In "My reviews", Approve or Request changes on GitHub is a human
   action for each submission, with the diff open.
 
-- **Shared templates (noted 2026-10-27, not implemented).** Several base review templates (PCI DSS-style
-  security, OWASP web, SQL/DDL migration, screens and copy, integrations, lightweight) that can be shared
-  from a repository instead of living only in each machine's `~/.config/seki-review/plantillas/`. This means
-  versioning the templates and making the project configuration independent of machine-specific paths.
+- **Shared templates (noted 2026-10-27, partly delivered in 0.25.0).** Since 0.25.0 the plugin bundles base review
+  templates (`ligera`, `owasp-web`, `pci-dss`) and each project can point `plantillas` to a folder of its own, which
+  replaces a base template with the same `id`. Still to do: sharing templates from a repository (versioned with it)
+  instead of a folder on each machine, and the remaining base sets (SQL/DDL migration, screens and copy, integrations).
 
 - **Ultra security lens as templates (pending the owner's decision).** Splitting the security lens of the Ultra review
   into review templates is not done; it needs the owner's decision.
