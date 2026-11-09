@@ -93,3 +93,25 @@ test('tipo-any leaves identifiers, logical or, and plain assignments alone', () 
   });
   assert.equal(hallazgos.some((h) => h.regla === 'tipo-any'), false);
 });
+
+test('tipo-any flags any in a generic alias', () => {
+  const { hallazgos } = verificar({
+    repo: 'demo',
+    archivos: [archivo('src/a.ts', [
+      'type X<T> = any;',
+      'type Y<T extends string, U> = any;',
+    ])],
+  });
+  assert.deepEqual(hallazgos.filter((h) => h.regla === 'tipo-any').map((h) => h.linea), [1, 2]);
+});
+
+test('tipo-any leaves logical and alone', () => {
+  const { hallazgos } = verificar({
+    repo: 'demo',
+    archivos: [archivo('src/a.ts', [
+      'const p = a && any;',
+      'x = any && y;',
+    ])],
+  });
+  assert.equal(hallazgos.some((h) => h.regla === 'tipo-any'), false);
+});
