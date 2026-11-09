@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { comentariosDePlantillas } from '../mcp/lib/comentarios-plantilla.mjs';
 import { leerCostos, registrarCosto } from '../mcp/lib/ia.mjs';
-import { topeRevisarPlantillas } from '../mcp/lib/perfiles.mjs';
+import { estimarCostoPlantillas, topeRevisarPlantillas } from '../mcp/lib/perfiles.mjs';
 import { datosPlantillas, leerPlantillasPr, revisarPlantillas } from '../mcp/lib/revision-plantillas.mjs';
 
 const SHA = 'a'.repeat(40);
@@ -305,7 +305,7 @@ test('the cost record has tipo revisar_plantillas and one detail per step', asyn
   assert.deepEqual([rec.tipo, rec.modo, rec.prId, rec.costo, rec.ok], ['revisar_plantillas', 'normal', 'api#7', 1.25, true]);
   assert.equal(rec.plantillasIa, 2);
   assert.deepEqual(rec.detalle.map((d) => d.paso), ['ligera', 'owasp-web', 'verificar']);
-  for (const d of rec.detalle) assert.deepEqual(Object.keys(d).sort(), ['costo', 'modelo', 'ok', 'paso', 'uso']);
+  for (const d of rec.detalle) assert.deepEqual(Object.keys(d).sort(), d.paso === 'verificar' ? ['costo', 'modelo', 'ok', 'paso', 'uso', 'verifica'] : ['costo', 'modelo', 'ok', 'paso', 'uso']);
   assert.doesNotMatch(readFileSync(join(p.salida, 'datos/costos.jsonl'), 'utf8'), /SECRET|Template:/);
   assert.deepEqual(r.resultado.plantillas.map((t) => t.costo), [0.5, 0.5, 0]);
 });
@@ -557,8 +557,8 @@ test('when everything is reused no AI call and no cost record are made and the r
   registro.length = 0;
   let copias = 0;
   const r = await revisarPlantillas(e.p, { ...pr, headSha: NUEVA }, { ...e.deps, diff: async () => [diff1[0], archivo('docs/a.md', '@@ -1 +1 @@\n+dos')], copiar: async () => { copias++; return e.copia; },
-    otras: async () => { throw new Error('not needed'); } });
-  assert.deepEqual([r.ok, r.costo, r.modelo, registro.length, copias, leerCostos(e.p).length], [true, 0, null, 0, 0, registros]);
+    otras: async () => ({ ambiente: 'pruebas', lista: [{ repo: 'web', rama: 'develop', sha: 'c'.repeat(40), dir: '/tmp/x' }] }) });
+  assert.deepEqual([r.ok, r.costo, r.modelo, registro.length, copias, leerCostos(e.p).length], [true, 0, null, 0, 1, registros]);
   assert.equal(item(r, 'pci', 'P1').reutilizada, true);
   assert.equal(leerPlantillasPr(e.p, 'api', 7, NUEVA).headSha, NUEVA);
   assert.equal(leerPlantillasPr(e.p, 'api', 7, NUEVA).desactualizada, undefined);
@@ -612,4 +612,84 @@ test('the estimate sums the per-template median of past steps, then the per-temp
   assert.ok(Math.abs(d.estimacion.usd - 0.55) < 1e-9);
   const vacio = await datosPlantillas({ salida: mkdtempSync(join(tmpdir(), 'seki-plantillas-')), repos: {} }, pr, ['src/routes/a.ts']);
   assert.deepEqual(vacio.estimacion, { usd: vacio.topeUsd, base: 'topes', muestras: 0 });
+});
+
+test('a file without patch is told apart by its blob sha', async () => {
+  const registro = [];
+  const sinPatch = (sha) => [{ filename: 'src/a.ts', status: 'modified', additions: 0, deletions: 0, sha }];
+  const e = entorno({ plantillas: [tpl('ligera', [it('L1')])], registro, diff: sinPatch('1'.repeat(40)), respuestas: { ligera: { items: [cita('L1', 'cumple', 1, 'import { suma }')] } } });
+  await revisarPlantillas(e.p, pr, e.deps);
+  registro.length = 0;
+  await revisarPlantillas(e.p, { ...pr, headSha: NUEVA }, { ...e.deps, diff: async () => sinPatch('1'.repeat(40)) });
+  assert.equal(registro.length, 0);
+  await revisarPlantillas(e.p, { ...pr, headSha: 'c'.repeat(40) }, { ...e.deps, diff: async () => sinPatch('2'.repeat(40)) });
+  assert.equal(registro.length, 1);
+});
+
+test('a reused answer is revalidated against this run: a quote that moved out of its lines asks the template again', async () => {
+  const registro = [];
+  const e = mundo({ registro });
+  await revisarPlantillas(e.p, pr, e.deps);
+  registro.length = 0;
+  const reutilizadas = await revisarPlantillas(e.p, { ...pr, headSha: NUEVA }, e.deps);
+  assert.equal(registro.length, 0);
+  assert.equal(item(reutilizadas, 'pci', 'P1').reutilizada, true);
+  // Same patches, but the cited line is now far from line 1 in the copy of the new commit.
+  writeFileSync(join(e.copia, 'src/a.ts'), `x\ny\nz\nw\nv\nu\n${ARCHIVO}`);
+  const movida = await revisarPlantillas(e.p, { ...pr, headSha: 'c'.repeat(40) }, e.deps);
+  assert.deepEqual(registro.filter((c) => /^Template: /m.test(c.prompt)).map((c) => /^Template: ([\w-]+)/m.exec(c.prompt)[1]).sort(), ['ligera', 'pci']);
+  assert.equal(item(movida, 'pci', 'P1').reutilizada, undefined);
+});
+
+test('a quote in another repository is revalidated with the repositories loaded now', async () => {
+  const registro = [];
+  const otro = mkdtempSync(join(tmpdir(), 'seki-otro-'));
+  mkdirSync(join(otro, 'src'));
+  writeFileSync(join(otro, 'src/cliente.js'), 'a\nfetch("/v1/pagos/lista");\nb\n');
+  const lista = [{ repo: 'web', portal: 'w', rama: 'develop', sha: 'c'.repeat(40), dir: otro }];
+  const e = entorno({ plantillas: [tpl('ligera', [it('L1')])], registro, otras: async () => ({ ambiente: 'pruebas', lista }),
+    respuestas: { ligera: { items: [cita('L1', 'cumple', 2, 'fetch("/v1/pagos/lista");', { repo: 'web', archivo: 'src/cliente.js' })] } } });
+  await revisarPlantillas(e.p, pr, e.deps);
+  registro.length = 0;
+  await revisarPlantillas(e.p, { ...pr, headSha: NUEVA }, e.deps);
+  assert.equal(registro.length, 0);
+  writeFileSync(join(otro, 'src/cliente.js'), 'a\nb\n');
+  await revisarPlantillas(e.p, { ...pr, headSha: 'c'.repeat(40) }, e.deps);
+  assert.equal(registro.length, 1);
+});
+
+test('a run that reuses a template keeps the branch commits it was answered at', async () => {
+  const dirs = [{ repo: 'web', portal: 'w', rama: 'develop', dir: '/tmp/w' }, { repo: 'jobs', portal: 'j', rama: 'develop', dir: '/tmp/j' }];
+  let ramas = dirs.slice(0, 1).map((d) => ({ ...d, sha: 'c'.repeat(40) }));
+  const e = mundo({ otras: async () => ({ ambiente: 'pruebas', lista: ramas }) });
+  await revisarPlantillas(e.p, pr, e.deps);
+  ramas = [{ ...dirs[0], sha: 'd'.repeat(40) }, { ...dirs[1], sha: 'e'.repeat(40) }];
+  e.deps.diff = async () => [archivo('src/a.ts', '@@ -1 +1 @@\n+dos'), archivo('src/pci/x.ts', '@@ -1 +1 @@\n+pci')];
+  const r = await revisarPlantillas(e.p, { ...pr, headSha: NUEVA }, e.deps);
+  assert.equal(item(r, 'pci', 'P1').reutilizada, true);
+  assert.deepEqual(r.resultado.ramas, [{ repo: 'web', rama: 'develop', sha: 'c'.repeat(40) }, { repo: 'jobs', rama: 'develop', sha: 'e'.repeat(40) }]);
+  const d = await datosPlantillas(e.p, { ...pr, headSha: NUEVA }, [], { shaRama: async (_p, repo) => ramas.find((x) => x.repo === repo).sha });
+  assert.deepEqual(d.resultado.ramasMovidas, [{ repo: 'web', rama: 'develop' }]);
+  // Nothing reused: the fresh commits replace them.
+  const todo = await revisarPlantillas(e.p, { ...pr, headSha: 'c'.repeat(40) }, { ...e.deps, repetir: true });
+  assert.deepEqual(todo.resultado.ramas.map((x) => x.sha), ['d'.repeat(40), 'e'.repeat(40)]);
+});
+
+test('the verification step never counts as a template called "verificar" in the estimate', () => {
+  const registros = [1, 2, 3].map((i) => ({ tipo: 'revisar_plantillas', modo: 'normal', fecha: new Date().toISOString(), costo: 9.2, ok: true, plantillasIa: 1,
+    detalle: [{ paso: 'verificar', modelo: 'm', costo: 0.2, ok: true }, { paso: 'verificar', verifica: true, modelo: 'm', costo: 9, ok: true }] }));
+  const e = estimarCostoPlantillas(registros, ['verificar'], { topeUsd: 2 });
+  assert.equal(e.base, 'historial');
+  assert.ok(Math.abs(e.usd - 0.2) < 1e-9);
+});
+
+test('a failed template does not stop the others, also with paralelo 1', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const registro = [];
+  const plantillas = ['a', 'b', 'c'].map((id) => tpl(id, [it(`${id.toUpperCase()}1`)]));
+  const e = entorno({ plantillas, registro, respuestas: { a: new Error('boom'), b: { items: [] }, c: { items: [] } } });
+  const r = await revisarPlantillas(e.p, pr, { ...e.deps, paralelo: 1 });
+  assert.deepEqual(registro.map((c) => /^Template: ([\w-]+)/m.exec(c.prompt)[1]), ['a', 'b', 'c']);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.resultado.plantillas.map((x) => [x.id, x.ok]), [['a', false], ['b', true], ['c', true]]);
 });

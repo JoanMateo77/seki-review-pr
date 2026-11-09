@@ -179,8 +179,8 @@ export async function detenerServidores() {
   await Promise.all([...servidores.values()].map((s) => s.cerrar()));
 }
 
-// intervaloVigiaMs, relojVigia, the ejecutar* jobs and diffPlantillas are injected by tests only.
-export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true, soloPuerto = false, intervaloVigiaMs = null, relojVigia, ejecutarUltra = revisarUltra, ejecutarPlantillas = revisarPlantillas, diffPlantillas = asegurarDiff } = {}) {
+// intervaloVigiaMs, relojVigia, the ejecutar* jobs and diffPlantillas and shaRama are injected by tests only.
+export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true, soloPuerto = false, intervaloVigiaMs = null, relojVigia, ejecutarUltra = revisarUltra, ejecutarPlantillas = revisarPlantillas, diffPlantillas = asegurarDiff, shaRama } = {}) {
   if (servidores.has(proyecto)) {
     const s = servidores.get(proyecto);
     if (abrir) execFile('open', [s.url]);
@@ -579,7 +579,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
       const rutasPlantillas = async (pr) => (await diffPlantillas(p, pr.repo, pr.numero, pr.headSha)).map((a) => a.filename).filter(Boolean);
       if (req.method === 'GET' && url.pathname === '/api/plantillas') {
         const pr = prDeFoto(`${url.searchParams.get('repo')}#${url.searchParams.get('numero')}`);
-        return responder(res, 200, await datosPlantillas(p, pr, await rutasPlantillas(pr).catch(() => nombresDeArchivos(p, pr))));
+        return responder(res, 200, await datosPlantillas(p, pr, await rutasPlantillas(pr).catch(() => nombresDeArchivos(p, pr)), { shaRama }));
       }
       // Allowed in every AI mode: the template calls always use their own profile. A selection without AI items
       // is queued too, at cap 0: the job runs only the deterministic part.
@@ -595,7 +595,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         // No reservation from a guess: without the diff the job could select more templates than the cap covers.
         let rutas;
         try { rutas = await rutasPlantillas(pr); } catch { throw falloHttp(503, 'The PR diff could not be loaded'); }
-        const { topeUsd } = await datosPlantillas(p, pr, rutas);
+        const { topeUsd } = await datosPlantillas(p, pr, rutas, { shaRama });
         const id = `${pr.id}:plantillas`;
         const n = cola.encolar([{ id, tipo: 'revisar_plantillas', prId: pr.id, topeUsd, ejecutar: () => ejecutarPlantillas(p, pr, { repetir: repetir === true }) }]);
         if (!n) throw falloHttp(409, 'A template review of this PR is already queued');

@@ -162,17 +162,23 @@ const sumarUso = (a, b) => Object.fromEntries(Object.keys(USO_VACIO).map((k) => 
 function huellaDe(t, archivos) {
   const patches = archivosDePlantilla(t, archivos.map((a) => a.filename))
     .sort()
-    .map((nombre) => [nombre, archivos.find((a) => a.filename === nombre)?.patch ?? null]);
+    .map((nombre) => {
+      const a = archivos.find((x) => x.filename === nombre);
+      // A file without patch (too large, binary) is told apart by its blob sha.
+      return [nombre, a?.patch ?? null, a?.sha ?? null];
+    });
   return createHash('sha256').update(JSON.stringify([t.id, t.version, itemsIa(t), patches])).digest('hex');
 }
 
-// A stored template entry can stand in for a new call when nothing it read changed, it succeeded, and it holds an
-// answer for every AI item; a failing item that was never judged (the verification failed) is asked again.
-function reutilizable(entrada, huella, t) {
+// A stored template entry can stand in for a new call when nothing it read changed, it succeeded, it holds an answer
+// for every AI item (a failing item that was never judged is asked again) and every quote it carries is still in the
+// code of this run: the changed files may be the same while the lines they cite moved.
+function reutilizable(entrada, huella, t, { raices, cuentas, repoPr }) {
   if (!entrada || entrada.ok === false || entrada.huella !== huella) return null;
   const guardados = new Map((entrada.items ?? []).filter((i) => i.origen === 'ia').map((i) => [i.id, i]));
   const ia = itemsIa(t).map((i) => guardados.get(i.id));
   if (ia.some((i) => !i || (i.estado === 'falla' && !i.veredicto))) return null;
+  if (ia.some((i) => i.cita && !citaValida(raices, cuentas, i, repoPr))) return null;
   return new Map(ia.map((i) => [i.id, { ...i, reutilizada: true }]));
 }
 
@@ -193,25 +199,30 @@ export async function revisarPlantillas(p, pr, {
   const activas = activasDe(plantillas, seleccion);
   const conIaActivas = activas.filter((t) => itemsIa(t).length);
   const huellas = new Map(conIaActivas.map((t) => [t.id, huellaDe(t, archivos)]));
-  const reusadas = new Map();
-  if (!repetir) {
-    for (const t of conIaActivas) {
-      const items = reutilizable(guardado?.plantillas?.find((x) => x.id === t.id), huellas.get(t.id), t);
-      if (items) reusadas.set(t.id, items);
-    }
-  }
-  const conIa = conIaActivas.filter((t) => !reusadas.has(t.id));
-  const dir = conIa.length ? await copiar(p, pr.repo, pr.numero, pr.headSha, { sufijo: '-lectura' }) : null;
+  const dir = conIaActivas.length ? await copiar(p, pr.repo, pr.numero, pr.headSha, { sufijo: '-lectura' }) : null;
   const usa = (regla) => activas.some((t) => t.items.some((i) => i.reglas.includes(regla)));
   // The other repositories serve the AI (read and quoted) and the cross-repo route rule; nothing else needs them.
   let ambiente = 'pruebas';
   let lista = [];
   let reposListos = true;
-  if (conIa.length || usa(REGLA_RUTAS)) {
+  if (conIaActivas.length || usa(REGLA_RUTAS)) {
     try { ({ ambiente, lista } = await otras(p, pr)); } catch { reposListos = false; }
   }
   const otros = lista.filter((o) => !o.falla);
   if (otros.length < lista.length) reposListos = false;
+  const dirsOtros = otros.map((o) => o.dir);
+  const raices = new Map([['', dir], [pr.repo, dir], ...otros.map((o) => [o.repo, o.dir])]);
+  const cuentas = new Map();
+
+  // The copies of this run decide the reuse, so they are loaded even when nothing ends up being called.
+  const reusadas = new Map();
+  if (!repetir) {
+    for (const t of conIaActivas) {
+      const items = reutilizable(guardado?.plantillas?.find((x) => x.id === t.id), huellas.get(t.id), t, { raices, cuentas, repoPr: pr.repo });
+      if (items) reusadas.set(t.id, items);
+    }
+  }
+  const conIa = conIaActivas.filter((t) => !reusadas.has(t.id));
 
   // Deterministic part: the same fixed rules as pr_verificaciones on the whole diff, plus the cross-repo routes.
   let listaCommits = [];
@@ -235,10 +246,7 @@ export async function revisarPlantillas(p, pr, {
   const contexto = [`PR #${pr.numero} of ${pr.repo}: ${pr.titulo ?? ''}`.trim(),
     `Available repositories (read-only):\n- ${pr.repo}: the current directory, at commit ${pr.headSha.slice(0, 7)} of PR #${pr.numero}.\n${repos}`.trim(),
     `Changed files:\n${listaArchivos}`, `Diff:\n${textoDiff}`].join('\n\n');
-  const dirsOtros = otros.map((o) => o.dir);
   const prohibidas = dir ? reglasSecretos([dir, ...dirsOtros], p.secretos) : [];
-  const raices = new Map([['', dir], [pr.repo, dir], ...otros.map((o) => [o.repo, o.dir])]);
-  const cuentas = new Map();
 
   const pasos = [];
   const llamar = async (paso, tipo, prompt, schema) => {
@@ -314,12 +322,15 @@ export async function revisarPlantillas(p, pr, {
 
     ok = !motivoFallo;
     if (ok) {
+      // Reused answers were given at the stored branch commits: those stay, so a branch that moved since still shows.
+      const frescas = otros.map(({ repo, rama, sha }) => ({ repo, rama, sha }));
+      const previas = reusadas.size ? guardado?.ramas ?? [] : [];
+      const ramas = [...previas, ...frescas.filter((f) => !previas.some((q) => q.repo === f.repo && q.rama === f.rama))];
       const comentarios = comentariosDePlantillas({ plantillas: entradas });
       resultado = {
         headSha: pr.headSha, fecha: new Date().toISOString(), seleccion,
         ...(reposListos ? {} : { otrosRepos: 'no_disponibles' }), ...(verificacion ? { verificacion } : {}),
-        // The other branches this result was read from; a reuse that read none keeps the ones its answers came from.
-        ramas: conIa.length || usa(REGLA_RUTAS) ? otros.map(({ repo, rama, sha }) => ({ repo, rama, sha })) : guardado?.ramas ?? [],
+        ramas,
         plantillas: entradas, ...comentarios,
       };
       escribirJson(rutaPlantillas(p.salida, pr.repo, pr.numero), resultado);
@@ -329,7 +340,7 @@ export async function revisarPlantillas(p, pr, {
     if (pasos.length) {
       // Template steps in template order, then the verification (a template may be called "verificar" too).
       const orden = (x) => (x.verifica ? conIa.length : conIa.findIndex((t) => t.id === x.paso));
-      const detalle = [...pasos].sort((a, b) => orden(a) - orden(b)).map(({ paso, modelo, costo, uso, ok: pok }) => ({ paso, modelo, costo, uso, ok: pok }));
+      const detalle = [...pasos].sort((a, b) => orden(a) - orden(b)).map(({ paso, verifica, modelo, costo, uso, ok: pok }) => ({ paso, ...(verifica ? { verifica: true } : {}), modelo, costo, uso, ok: pok }));
       registrarCosto(p, {
         tipo: 'revisar_plantillas', modo: 'normal', prId: pr.id, plantillasIa: conIa.length, modelo: detalle.find((x) => x.modelo)?.modelo ?? null,
         costo: redondear(detalle.reduce((s, x) => s + x.costo, 0)), uso: detalle.reduce((s, x) => sumarUso(s, x.uso), USO_VACIO), ok, ...(ok ? {} : { motivo: motivoFallo ?? MOTIVO_GENERICO }), detalle,

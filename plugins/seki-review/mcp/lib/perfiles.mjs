@@ -76,7 +76,7 @@ export function estimarCostoPlantillas(registros, ids, { topeUsd = 0, ahora = Da
   for (const x of registros) {
     if (x?.tipo !== 'revisar_plantillas' || (x.modo ?? 'normal') !== 'normal' || !(x.fecha >= desde)) continue;
     for (const d of Array.isArray(x.detalle) ? x.detalle : []) {
-      if (d?.ok === true && Number.isFinite(d.costo) && ids.includes(d.paso)) pasos.set(d.paso, [...(pasos.get(d.paso) ?? []), d.costo]);
+      if (d?.ok === true && !d.verifica && Number.isFinite(d.costo) && ids.includes(d.paso)) pasos.set(d.paso, [...(pasos.get(d.paso) ?? []), d.costo]);
     }
   }
   let usd = 0;

@@ -21,7 +21,7 @@ const SOLO_REGLAS = { id: 'ligera', version: 2, titulo: 'Rules only', idioma: 'e
 
 let n = 0;
 // The template job never reaches git, gh or claude: the server takes this fake instead.
-async function entorno({ ia, prs = [pr(1), pr(2, { estadoPr: 'CLOSED' })], plantillas, diffPlantillas, ejecutarPlantillas = async () => ({ ok: true, costo: 0, modelo: null, resultado: null }) } = {}) {
+async function entorno({ ia, prs = [pr(1), pr(2, { estadoPr: 'CLOSED' })], plantillas, diffPlantillas, shaRama, ejecutarPlantillas = async () => ({ ok: true, costo: 0, modelo: null, resultado: null }) } = {}) {
   const clave = `pa${++n}`;
   const dir = mkdtempSync(join(tmpdir(), 'seki-plantillas-api-'));
   temporales.push(dir);
@@ -40,7 +40,7 @@ async function entorno({ ia, prs = [pr(1), pr(2, { estadoPr: 'CLOSED' })], plant
   escribirJson(rutaInstantanea(salida), { proyecto: clave, generado: new Date().toISOString(), owner: 'o', prs, recientes: [] });
   // The diff is cached for the head commit: the selection never reaches GitHub.
   for (const x of prs) escribirJson(rutaDiff(salida, x.repo, x.numero), { headSha: x.headSha, archivos: [{ filename: 'README.md', status: 'modified', additions: 1, deletions: 0 }] });
-  const { url } = await iniciarServidor({ proyecto: clave, puerto: 0, abrir: false, ejecutarPlantillas, ...(diffPlantillas ? { diffPlantillas } : {}) });
+  const { url } = await iniciarServidor({ proyecto: clave, puerto: 0, abrir: false, ejecutarPlantillas, ...(diffPlantillas ? { diffPlantillas } : {}), ...(shaRama ? { shaRama } : {}) });
   const u = new URL(url);
   const token = u.searchParams.get('t');
   const llamar = (r, cuerpo) => fetch(`${u.origin}${r}`, { method: cuerpo === undefined ? 'GET' : 'POST', headers: { 'x-seki-token': token, 'content-type': 'application/json' }, body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo) });
@@ -65,6 +65,18 @@ test('GET /api/plantillas returns the selection without spending', async (t) => 
   assert.equal((await e.llamar('/api/plantillas?repo=r&numero=99')).status, 404);
   assert.equal(llamadas, 0);
   assert.equal((await e.trabajos()).length, 0);
+});
+
+test('GET /api/plantillas reports the branches whose sha moved and the POST still queues with the cap', async (t) => {
+  const e = await entorno({ ia: { presupuestoDiarioUsd: 0.01 }, shaRama: async (_p, repo) => (repo === 'web' ? 'f'.repeat(40) : 'c'.repeat(40)) });
+  t.after(e.cerrar);
+  escribirJson(rutaPlantillas(e.p.salida, 'r', 1), { headSha: SHA, plantillas: [], markdown: 'x', ramas: [{ repo: 'web', rama: 'develop', sha: 'a'.repeat(40) }, { repo: 'jobs', rama: 'develop', sha: 'c'.repeat(40) }] });
+  const d = await (await e.llamar('/api/plantillas?repo=r&numero=1')).json();
+  assert.deepEqual(d.resultado.ramasMovidas, [{ repo: 'web', rama: 'develop' }]);
+  const r = await e.llamar('/api/plantillas', { repo: 'r', numero: 1, confirmar: true, repetir: true });
+  assert.equal(r.status, 202);
+  const [job] = await e.trabajos();
+  assert.equal(job.topeUsd, d.topeUsd);
 });
 
 test('POST /api/plantillas without confirmar is 400', async (t) => {
