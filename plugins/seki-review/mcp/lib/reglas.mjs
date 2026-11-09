@@ -97,9 +97,10 @@ export const REGLAS = [
     titulo: 'Typing with `any`',
     severidad: 'aviso',
     archivos: /\.tsx?$/,
-    patron: /(?::\s*any\b|<any>|\bany\[\])/,
-    // A line with `as any` is left to the as-any rule.
-    excluir: /\bas any\b/,
+    // Generic arguments (`Map<K, any>`, `Promise<any>`) and `: any`, `any[]`. The `as any` cast is left to
+    // as-any: the lookbehind keeps `as any[]` out, and the other alternatives cannot match `as any`,
+    // so a mixed line such as `(y as any) as Map<string, any>` still reports its type-position any.
+    patron: /(?::\s*any\b|<any>|(?<!\bas\s+)\bany\[\]|[<,]\s*any\s*[,>])/,
     mensaje: 'Use `unknown` and narrow it, or the real type.',
     origen: 'The standard bans `any` everywhere, tests included: it turns off type checking for every value that passes through it.',
   },

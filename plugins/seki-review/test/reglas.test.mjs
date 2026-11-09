@@ -34,3 +34,34 @@ test('tipo-any ignores files that are not TypeScript', () => {
   });
   assert.equal(hallazgos.some((h) => h.regla === 'tipo-any'), false);
 });
+
+test('tipo-any flags any as a generic argument', () => {
+  const { hallazgos } = verificar({
+    repo: 'demo',
+    archivos: [archivo('src/a.ts', [
+      'const r: Record<string, any> = {};',
+      'const m = new Map<K, any>();',
+      'async function f(): Promise<any> {}',
+      'let a: Array<any> = [];',
+    ])],
+  });
+  assert.deepEqual(hallazgos.filter((h) => h.regla === 'tipo-any').map((h) => h.linea), [1, 2, 3, 4]);
+});
+
+test('tipo-any does not flag a line with only as any', () => {
+  const { hallazgos } = verificar({
+    repo: 'demo',
+    archivos: [archivo('src/a.ts', ['const z = y as any;', 'const q = (y as any[]);'])],
+  });
+  assert.equal(hallazgos.some((h) => h.regla === 'tipo-any'), false);
+  assert.equal(hallazgos.filter((h) => h.regla === 'as-any').length, 2);
+});
+
+test('tipo-any reports a mixed line once', () => {
+  const { hallazgos } = verificar({
+    repo: 'demo',
+    archivos: [archivo('src/a.ts', ['const w = (y as any) as Map<string, any>;'])],
+  });
+  const tipos = hallazgos.filter((h) => h.regla === 'tipo-any');
+  assert.deepEqual(tipos.map((h) => h.linea), [1]);
+});
