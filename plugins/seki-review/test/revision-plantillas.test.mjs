@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { comentariosDePlantillas } from '../mcp/lib/comentarios-plantilla.mjs';
 import { leerCostos } from '../mcp/lib/ia.mjs';
 import { topeRevisarPlantillas } from '../mcp/lib/perfiles.mjs';
 import { datosPlantillas, leerPlantillasPr, revisarPlantillas } from '../mcp/lib/revision-plantillas.mjs';
@@ -11,7 +12,7 @@ const SHA = 'a'.repeat(40);
 const pr = { id: 'api#7', repo: 'api', numero: 7, titulo: 'feat: algo', headSha: SHA };
 const it = (id, extra = {}) => ({ id, pregunta: `Question ${id}?`, evidencia: `Evidence ${id}`, reglas: [], siFalla: { etiqueta: 'issue', bloqueante: true }, ...extra });
 const tpl = (id, items, extra = {}) => ({ id, version: 1, titulo: `Template ${id}`, idioma: 'en', siempre: true, aplicaA: ['**'], excluir: [], items, ...extra });
-const ARCHIVO = ['l1', 'const valor = suma(1,   2);', '  return valor;', 'l4', 'l5', 'l6', 'l7', ''].join('\n');
+const ARCHIVO = ['import { suma } from "./suma";', 'const valor = suma(1,   2);', '  return valor;', 'l4', 'l5', 'l6', 'l7', ''].join('\n');
 const DIFF = [{ filename: 'src/a.ts', status: 'modified', additions: 1, deletions: 0, patch: '@@ -1 +1,2 @@\n l1\n+const valor = suma(1,   2);' }];
 const ok = (salida, costo = 0.5) => ({ ok: true, costo, modelo: 'claude-sonnet-5-5', salida });
 const cita = (id, estado, linea, texto, extra = {}) => ({ id, estado, archivo: 'src/a.ts', linea, cita: texto, titulo: `Title ${id}`, detalle: `Detail ${id}`, ...extra });
@@ -112,10 +113,10 @@ test('items the AI omitted are not verifiable and unknown ids are dropped', asyn
   const plantillas = [tpl('ligera', [it('L1'), it('L2'), it('L3'), it('L5')])];
   const { p, deps } = entorno({ plantillas, respuestas: { ligera: { items: [
     { id: 'L1', estado: 'no_aplica', titulo: 'Not touched', detalle: 'No route changes.' },
-    { id: 'ZZ-inventado', estado: 'falla', archivo: 'src/a.ts', linea: 1, cita: 'l1', titulo: 't', detalle: 'd' },
+    { id: 'ZZ-inventado', estado: 'falla', archivo: 'src/a.ts', linea: 1, cita: 'import { suma }', titulo: 't', detalle: 'd' },
     { id: 'L3', estado: 'quizas', titulo: 't', detalle: 'd' },
     { id: 'L5', estado: 'no_verificable', titulo: 'Unknown', detalle: 'd', pedido: 'Which client calls this route?' },
-    { id: 'L5', estado: 'cumple', archivo: 'src/a.ts', linea: 1, cita: 'l1', titulo: 't', detalle: 'd' },
+    { id: 'L5', estado: 'cumple', archivo: 'src/a.ts', linea: 1, cita: 'import { suma }', titulo: 't', detalle: 'd' },
   ] } } });
   const r = await revisarPlantillas(p, pr, deps);
   const t = r.resultado.plantillas[0];
@@ -191,8 +192,8 @@ test('a rejected failure becomes not verifiable with the reason and a confirmed 
   const registro = [];
   const plantillas = [tpl('ligera', [it('L1'), it('L2'), it('L3'), it('L5'), it('L6')])];
   const { p, deps } = entorno({ plantillas, registro, verificar: veredictosDe({ 'ligera/L2': 'REJECTED', 'ligera/L3': 'PLAUSIBLE' }), respuestas: { ligera: { items: [
-    cita('L1', 'falla', 2, 'suma(1,   2)'), cita('L2', 'falla', 3, 'return valor;'), cita('L3', 'falla', 1, 'l1'),
-    cita('L5', 'falla', 2, 'not there'), cita('L6', 'cumple', 1, 'l1'),
+    cita('L1', 'falla', 2, 'suma(1,   2)'), cita('L2', 'falla', 3, 'return valor;'), cita('L3', 'falla', 1, 'import { suma }'),
+    cita('L5', 'falla', 2, 'not there'), cita('L6', 'cumple', 1, 'import { suma }'),
   ] } } });
   const r = await revisarPlantillas(p, pr, deps);
   const verif = registro.find((c) => !c.prompt.startsWith('Template:'));
@@ -211,7 +212,7 @@ test('a rejected failure becomes not verifiable with the reason and a confirmed 
 
 test('no verdict keeps the failure non-blocking; a failed verification call marks the result', async () => {
   const plantillas = [tpl('ligera', [it('L1'), it('L2')])];
-  const respuestas = { ligera: { items: [cita('L1', 'falla', 2, 'suma(1, 2)'), cita('L2', 'falla', 1, 'l1')] } };
+  const respuestas = { ligera: { items: [cita('L1', 'falla', 2, 'suma(1, 2)'), cita('L2', 'falla', 1, 'import { suma }')] } };
   const a = entorno({ plantillas, respuestas, verificar: () => ok({ veredictos: [{ id: 'ligera/L1', veredicto: 'CONFIRMED', razon: 'r' }, { id: 'ligera/L1', veredicto: 'REJECTED', razon: 'dup' }] }, 0.1) });
   const r = await revisarPlantillas(a.p, pr, a.deps);
   assert.deepEqual([item(r, 'ligera', 'L1').veredicto, item(r, 'ligera', 'L2').veredicto], ['CONFIRMED', null]);
@@ -227,7 +228,7 @@ test('no verdict keeps the failure non-blocking; a failed verification call mark
 
 test('one failed template does not fail the job; all failed does', async () => {
   const plantillas = [tpl('ligera', [it('L1'), it('L7', { reglas: ['tipo-any'] })]), tpl('owasp-web', [it('W1')])];
-  const e = entorno({ plantillas, verificar: veredictosDe({}), respuestas: { ligera: new Error('x'), 'owasp-web': { items: [cita('W1', 'falla', 1, 'l1')] } } });
+  const e = entorno({ plantillas, verificar: veredictosDe({}), respuestas: { ligera: new Error('x'), 'owasp-web': { items: [cita('W1', 'falla', 1, 'import { suma }')] } } });
   const r = await revisarPlantillas(e.p, pr, e.deps);
   assert.equal(r.ok, true);
   const t = r.resultado.plantillas[0];
@@ -250,7 +251,7 @@ test('one failed template does not fail the job; all failed does', async () => {
 test('the result is stored per commit, read back as outdated after a new head, and a second run for the same head spends nothing', async () => {
   const registro = [];
   const plantillas = [tpl('ligera', [it('L1')])];
-  const { p, deps } = entorno({ plantillas, registro, verificar: veredictosDe({}), respuestas: { ligera: { items: [cita('L1', 'falla', 1, 'l1')] } } });
+  const { p, deps } = entorno({ plantillas, registro, verificar: veredictosDe({}), respuestas: { ligera: { items: [cita('L1', 'falla', 1, 'import { suma }')] } } });
   const r = await revisarPlantillas(p, pr, deps);
   const crudo = JSON.parse(readFileSync(join(p.salida, 'plantillas', 'api-7.json'), 'utf8'));
   assert.deepEqual(Object.keys(crudo).sort(), ['comentarios', 'fecha', 'headSha', 'markdown', 'plantillas', 'recortados', 'seleccion']);
@@ -274,7 +275,7 @@ test('the result is stored per commit, read back as outdated after a new head, a
 test('the cost record has tipo revisar_plantillas and one detail per step', async () => {
   const plantillas = [tpl('ligera', [it('L1')]), tpl('owasp-web', [it('W1')]), tpl('reglas', [it('R1', { reglas: ['tipo-any'] })])];
   const { p, deps } = entorno({ plantillas, verificar: veredictosDe({}), respuestas: {
-    ligera: { items: [cita('L1', 'falla', 1, 'l1', { titulo: 'TITULO-SECRETO' })] }, 'owasp-web': { items: [] } } });
+    ligera: { items: [cita('L1', 'falla', 1, 'import { suma }', { titulo: 'TITULO-SECRETO' })] }, 'owasp-web': { items: [] } } });
   const r = await revisarPlantillas(p, pr, deps);
   assert.equal(r.costo, 1.25);
   assert.equal(r.modelo, 'claude-sonnet-5-5');
@@ -345,4 +346,66 @@ test('datosPlantillas gives selection, invalid files, estimate and cap, and warn
   const d2 = datosPlantillas(p, pr, ['src/pagos/cobro.ts']);
   assert.deepEqual(d2.invalidas, []);
   assert.ok(d2.seleccion.activas.some((a) => a.id === 'rota'));
+});
+
+test('evidence in a listed other repository is accepted with its repo; an unknown repo is not', async () => {
+  const otro = mkdtempSync(join(tmpdir(), 'seki-otro-'));
+  mkdirSync(join(otro, 'src'));
+  writeFileSync(join(otro, 'src/cliente.js'), 'a\nfetch("/v1/pagos/lista");\nb\n');
+  const registro = [];
+  const plantillas = [tpl('ligera', [it('L1'), it('L2'), it('L3')])];
+  const e = entorno({ plantillas, registro, verificar: veredictosDe({}),
+    otras: async () => ({ ambiente: 'pruebas', lista: [{ repo: 'web', portal: 'w', rama: 'develop', sha: 'c'.repeat(40), dir: otro }] }),
+    respuestas: { ligera: { items: [
+      cita('L1', 'falla', 2, 'fetch("/v1/pagos/lista");', { repo: 'web', archivo: 'src/cliente.js' }),
+      cita('L2', 'falla', 2, 'fetch("/v1/pagos/lista");', { repo: 'nadie', archivo: 'src/cliente.js' }),
+      cita('L3', 'cumple', 2, 'const valor = suma(1, 2);', { repo: 'api' }),
+    ] } } });
+  const r = await revisarPlantillas(e.p, pr, e.deps);
+  const l1 = item(r, 'ligera', 'L1');
+  assert.deepEqual([l1.estado, l1.repo, l1.archivo, l1.linea], ['falla', 'web', 'src/cliente.js', 2]);
+  const l2 = item(r, 'ligera', 'L2');
+  assert.deepEqual([l2.estado, l2.motivo], ['no_verificable', 'The quote does not match the cited code']);
+  const l3 = item(r, 'ligera', 'L3');
+  assert.deepEqual([l3.estado, l3.repo], ['cumple', undefined]);
+  const verif = registro.find((c) => !c.prompt.startsWith('Template:'));
+  const fichas = JSON.parse(/Findings:\n([^]*)$/.exec(verif.prompt)[1]);
+  assert.deepEqual(fichas.map((f) => [f.id, f.repo]), [['ligera/L1', 'web']]);
+});
+
+test('a deterministic-only run without the route rule does not load the other repositories', async () => {
+  const plantillas = [tpl('ligera', [it('L7', { reglas: ['tipo-any'] })])];
+  let llamadas = 0;
+  const e = entorno({ plantillas, otras: async () => { llamadas++; throw new Error('no checkout'); } });
+  const r = await revisarPlantillas(e.p, pr, e.deps);
+  assert.equal(llamadas, 0);
+  assert.equal(r.resultado.otrosRepos, undefined);
+  assert.equal(r.motivo, null);
+});
+
+test('quotes over 300 characters, under 8 non-space characters or outside the copy are rejected', async () => {
+  const largo = `const valor = suma(1, 2);${' x'.repeat(150)}`;
+  const e = entorno({ plantillas: [tpl('ligera', [it('L1'), it('L2'), it('L3'), it('L4'), it('L5')])], verificar: veredictosDe({}), respuestas: { ligera: { items: [
+    cita('L1', 'falla', 2, largo),
+    cita('L2', 'falla', 3, '}'),
+    cita('L3', 'falla', 1, 'import { suma } from'),
+    cita('L4', 'falla', 1, 'localhost', { archivo: '../copia/../../etc/hosts' }),
+    cita('L5', 'falla', 1, 'localhost', { archivo: '/etc/hosts' }),
+  ] } } });
+  writeFileSync(join(e.copia, 'src/a.ts'), `${ARCHIVO}${largo}\n`);
+  const r = await revisarPlantillas(e.p, pr, e.deps);
+  for (const id of ['L1', 'L2', 'L4', 'L5']) assert.deepEqual([item(r, 'ligera', id).estado, item(r, 'ligera', id).motivo], ['no_verificable', 'The quote does not match the cited code'], id);
+  assert.equal(item(r, 'ligera', 'L3').estado, 'falla');
+});
+
+test('an empty AI title is not stored and the comment falls back to the question', async () => {
+  const e = entorno({ plantillas: [tpl('ligera', [it('L1')])], verificar: veredictosDe({}), respuestas: { ligera: { items: [
+    cita('L1', 'falla', 1, 'import { suma }', { titulo: '   ' }),
+  ] } } });
+  const r = await revisarPlantillas(e.p, pr, e.deps);
+  const l1 = item(r, 'ligera', 'L1');
+  assert.equal('titulo' in l1, false);
+  const { markdown } = comentariosDePlantillas(r.resultado);
+  assert.doesNotMatch(markdown, /\*\*issue \([^)]*\): \*\*/);
+  assert.match(markdown, /\*\*issue \(blocking\): Question L1\?\*\*/);
 });

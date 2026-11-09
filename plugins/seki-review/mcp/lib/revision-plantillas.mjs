@@ -26,6 +26,7 @@ const REGLA_COMMITS = 'atribucion-ia';
 const MAX_TITULO = 200;
 const MAX_DETALLE = 2000;
 const MAX_CITA = 300;
+const MIN_CITA = 8;
 const MAX_PEDIDO = 300;
 const MOTIVO_GENERICO = 'The job failed';
 const MOTIVO_CITA = 'The quote does not match the cited code';
@@ -38,7 +39,7 @@ const PEDIDO_COMMITS = 'Check the commit messages by hand: they could not be rea
 const SCHEMA_PLANTILLA = {
   type: 'object',
   properties: { items: { type: 'array', items: { type: 'object', properties: {
-    id: { type: 'string' }, estado: { type: 'string', enum: [...ESTADOS] }, archivo: { type: 'string' }, linea: { type: 'integer' },
+    id: { type: 'string' }, estado: { type: 'string', enum: [...ESTADOS] }, repo: { type: 'string' }, archivo: { type: 'string' }, linea: { type: 'integer' },
     cita: { type: 'string' }, titulo: { type: 'string' }, detalle: { type: 'string' }, pedido: { type: 'string' },
   }, required: ['id', 'estado', 'titulo', 'detalle'] } } },
   required: ['items'],
@@ -88,27 +89,32 @@ export function datosPlantillas(p, pr, rutas = []) {
   return { seleccion, invalidas, estimacion: { usd: n ? usd : 0, base, muestras }, topeUsd, resultado: leerPlantillasPr(p, pr.repo, pr.numero, pr.headSha) };
 }
 
-// The whitespace-collapsed quote must be inside the collapsed lines linea-2 … linea+2 of a file the AI could read.
-function citaValida(raices, cuentas, x) {
+// The whitespace-collapsed quote (8 to 300 characters, not a lone brace) must be inside the collapsed lines
+// linea-2 … linea+2 of a file inside a directory the AI could read: this PR's copy or a listed other repository.
+function citaValida(raices, cuentas, x, repoPr) {
+  const repo = typeof x.repo === 'string' && x.repo && x.repo !== repoPr ? x.repo : '';
   const archivo = texto(x.archivo, 300);
   const linea = Number.isInteger(x.linea) ? x.linea : 0;
-  const cita = colapsar(x.cita).slice(0, MAX_CITA).trim();
-  if (!cita || existeCita(raices, cuentas, { archivo, linea })) return null;
+  const cita = colapsar(x.cita);
+  if (cita.length > MAX_CITA || cita.replace(/\s/g, '').length < MIN_CITA) return null;
+  if (existeCita(raices, cuentas, { repo, archivo, linea })) return null;
   try {
-    const lineas = readFileSync(realpathSync(resolve(realpathSync(raices.get('')), archivo)), 'utf8').split('\n');
-    return colapsar(lineas.slice(Math.max(0, linea - 3), linea + 2).join('\n')).includes(cita) ? { archivo, linea, cita } : null;
+    const lineas = readFileSync(realpathSync(resolve(realpathSync(raices.get(repo)), archivo)), 'utf8').split('\n');
+    return colapsar(lineas.slice(Math.max(0, linea - 3), linea + 2).join('\n')).includes(cita) ? { ...(repo ? { repo } : {}), archivo, linea, cita } : null;
   } catch { return null; }
 }
 
-function itemIa(base, x, raices, cuentas) {
+function itemIa(base, x, raices, cuentas, repoPr) {
   if (!x) return { ...base, estado: 'no_verificable', motivo: MOTIVO_OMITIDO };
-  const conTexto = { ...base, titulo: texto(x.titulo, MAX_TITULO), detalle: texto(x.detalle, MAX_DETALLE) };
+  // An empty title is left out so the comment falls back to the question.
+  const titulo = texto(x.titulo, MAX_TITULO);
+  const conTexto = { ...base, ...(titulo ? { titulo } : {}), detalle: texto(x.detalle, MAX_DETALLE) };
   if (x.estado === 'no_aplica') return { ...conTexto, estado: 'no_aplica' };
   if (x.estado === 'no_verificable') {
     const pedido = texto(x.pedido, MAX_PEDIDO);
     return { ...conTexto, estado: 'no_verificable', ...(pedido ? { pedido } : { motivo: MOTIVO_SIN_PEDIDO }) };
   }
-  const evidencia = citaValida(raices, cuentas, x);
+  const evidencia = citaValida(raices, cuentas, x, repoPr);
   if (!evidencia) return { ...conTexto, estado: 'no_verificable', motivo: MOTIVO_CITA };
   return { ...conTexto, estado: x.estado, ...evidencia, ...(x.estado === 'falla' ? { veredicto: null } : {}) };
 }
@@ -142,17 +148,20 @@ export async function revisarPlantillas(p, pr, {
   const activas = activasDe(plantillas, seleccion);
   const conIa = activas.filter((t) => itemsIa(t).length);
   const dir = conIa.length ? await copiar(p, pr.repo, pr.numero, pr.headSha, { sufijo: '-lectura' }) : null;
+  const usa = (regla) => activas.some((t) => t.items.some((i) => i.reglas.includes(regla)));
+  // The other repositories serve the AI (read and quoted) and the cross-repo route rule; nothing else needs them.
   let ambiente = 'pruebas';
   let lista = [];
   let reposListos = true;
-  try { ({ ambiente, lista } = await otras(p, pr)); } catch { reposListos = false; }
+  if (conIa.length || usa(REGLA_RUTAS)) {
+    try { ({ ambiente, lista } = await otras(p, pr)); } catch { reposListos = false; }
+  }
   const otros = lista.filter((o) => !o.falla);
   if (otros.length < lista.length) reposListos = false;
 
   // Deterministic part: the same fixed rules as pr_verificaciones on the whole diff, plus the cross-repo routes.
   let listaCommits = [];
   let commitsListos = true;
-  const usa = (regla) => activas.some((t) => t.items.some((i) => i.reglas.includes(regla)));
   if (usa(REGLA_COMMITS)) {
     try { listaCommits = await commits(p, pr); } catch { commitsListos = false; }
   }
@@ -174,7 +183,7 @@ export async function revisarPlantillas(p, pr, {
     `Changed files:\n${listaArchivos}`, `Diff:\n${textoDiff}`].join('\n\n');
   const dirsOtros = otros.map((o) => o.dir);
   const prohibidas = dir ? reglasSecretos([dir, ...dirsOtros], p.secretos) : [];
-  const raices = new Map([['', dir]]);
+  const raices = new Map([['', dir], [pr.repo, dir], ...otros.map((o) => [o.repo, o.dir])]);
   const cuentas = new Map();
 
   const pasos = [];
@@ -214,16 +223,16 @@ export async function revisarPlantillas(p, pr, {
         const base = { id: i.id, pregunta: i.pregunta, siFalla: i.siFalla };
         if (i.reglas.length) return itemDeterminista({ ...base, origen: 'determinista' }, i, deterministas);
         if (res?.motivo) return { ...base, origen: 'ia', estado: 'no_verificable', motivo: MOTIVO_PLANTILLA };
-        return itemIa({ ...base, origen: 'ia' }, porId.get(i.id), raices, cuentas);
+        return itemIa({ ...base, origen: 'ia' }, porId.get(i.id), raices, cuentas, pr.repo);
       });
       return { id: t.id, version: t.version, titulo: t.titulo, idioma: t.idioma, ok: !res?.motivo, ...(res?.motivo ? { motivo: res.motivo } : {}), costo: res?.costo ?? 0, items };
     });
 
-    motivoFallo = conIa.length && conIa.every((t) => respuestas.get(t.id).motivo) ? respuestas.get(conIa[0].id).motivo : null;
+    motivoFallo = conIa.length > 0 && conIa.every((t) => respuestas.get(t.id).motivo) ? respuestas.get(conIa[0].id).motivo : null;
     let verificacion = null;
     const candidatas = entradas.flatMap((t) => t.items.filter((i) => i.estado === 'falla' && i.origen === 'ia').map((i) => ({ t, i })));
     if (!motivoFallo && candidatas.length) {
-      const fichas = candidatas.map(({ t, i }) => ({ id: `${t.id}/${i.id}`, archivo: i.archivo, linea: i.linea, cita: i.cita, titulo: i.titulo, detalle: i.detalle }));
+      const fichas = candidatas.map(({ t, i }) => ({ id: `${t.id}/${i.id}`, ...(i.repo ? { repo: i.repo } : {}), archivo: i.archivo, linea: i.linea, cita: i.cita, titulo: i.titulo, detalle: i.detalle }));
       const v = await llamar('verificar', 'ultra_verificar', `Verify these findings.\n\nAvailable repositories (read-only):\n- ${pr.repo}: the current directory.\n${repos}\n\nFindings:\n${JSON.stringify(fichas, null, 1)}`, SCHEMA_VERIFICAR);
       const motivo = falla(v, Array.isArray(v.salida?.veredictos));
       if (motivo) {
