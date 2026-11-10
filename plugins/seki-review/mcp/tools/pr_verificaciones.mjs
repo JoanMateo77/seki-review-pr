@@ -41,10 +41,11 @@ export default {
     }
 
     if (!repo || !numero) throw new Error('Provide repo and numero, or dir and base.');
-    const [archivos, commits, { headRefOid }] = await Promise.all([
-      archivosPr(p.owner, repo, numero),
+    // The head commit comes first: the files are cached per commit.
+    const { headRefOid } = await ghJson(['pr', 'view', String(numero), '-R', `${p.owner}/${repo}`, '--json', 'headRefOid']);
+    const [archivos, commits] = await Promise.all([
+      archivosPr(p.owner, repo, numero, headRefOid),
       commitsPr(p.owner, repo, numero),
-      ghJson(['pr', 'view', String(numero), '-R', `${p.owner}/${repo}`, '--json', 'headRefOid']),
     ]);
     const resultado = { repo, numero, headSha: headRefOid, ...verificar({ repo, archivos, commits, omitidas: p.repos[repo]?.reglas_omitidas, extra: reglasDeConfig(p.reglas) }) };
     escribirJson(rutaVerificacion(p.salida, repo, numero), resultado);

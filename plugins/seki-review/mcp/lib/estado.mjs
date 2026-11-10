@@ -20,10 +20,21 @@ export async function arbolRama(owner, repo, rama) {
   return arboles.get(clave);
 }
 
+// Keyed by head commit: a push changes the file list, and the server process outlives pushes.
 const archivosMemo = new Map();
-export function archivosPr(owner, repo, numero) {
-  const clave = `${owner}/${repo}#${numero}`;
-  if (!archivosMemo.has(clave)) archivosMemo.set(clave, ghApiLista(`repos/${owner}/${repo}/pulls/${numero}/files?per_page=100`));
+export function archivosPr(owner, repo, numero, headSha, pedir = ghApiLista) {
+  const pedirArchivos = () => pedir(`repos/${owner}/${repo}/pulls/${numero}/files?per_page=100`);
+  if (!headSha) return pedirArchivos();
+  const base = `${owner}/${repo}#${numero}`;
+  const clave = `${base}@${headSha}`;
+  if (!archivosMemo.has(clave)) {
+    // Older commits of the same PR are never asked for again; keeping them would only grow the memo.
+    for (const k of archivosMemo.keys()) if (k.startsWith(`${base}@`)) archivosMemo.delete(k);
+    const pendiente = pedirArchivos();
+    // A failed request must not stay memoized, or the PR would fail until the process restarts.
+    pendiente.catch(() => { if (archivosMemo.get(clave) === pendiente) archivosMemo.delete(clave); });
+    archivosMemo.set(clave, pendiente);
+  }
   return archivosMemo.get(clave);
 }
 
@@ -66,8 +77,8 @@ async function probarParche(dir, numero, prod, pruebas, baseSha) {
   }
 }
 
-export async function estadoFrentePruebas({ owner, repo, cfgRepo, numero, prod, pruebas, baseSha }) {
-  const [arbol, archivos] = await Promise.all([arbolRama(owner, repo, pruebas), archivosPr(owner, repo, numero)]);
+export async function estadoFrentePruebas({ owner, repo, cfgRepo, numero, prod, pruebas, baseSha, headSha }) {
+  const [arbol, archivos] = await Promise.all([arbolRama(owner, repo, pruebas), archivosPr(owner, repo, numero, headSha)]);
   const total = archivos.length;
   const iguales = archivos.filter((a) =>
     a.status === 'removed' ? !arbol.blobs.has(a.filename) : arbol.blobs.get(a.filename) === a.sha,
