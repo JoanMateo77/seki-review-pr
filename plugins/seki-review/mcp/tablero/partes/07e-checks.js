@@ -99,12 +99,12 @@ function tabVerificaciones(pr) {
   const veredictos = veredictosCheck(pr);
   const vieja = !!pr.triaje?.desactualizado;
   const abiertos = v.hallazgos.length
-    ? `<div class="tabla"><table><thead><tr><th>Severity</th><th>Finding</th><th>Where</th><th>Verdict</th>${API ? '<th></th>' : ''}</tr></thead><tbody>
+    ? `<div class="tabla"><table><thead><tr><th>Severity</th><th>Finding</th><th>Where</th><th>Verdict</th>${API ? '<th><span class="sr">Actions</span></th>' : ''}</tr></thead><tbody>
       ${v.hallazgos.map((h) => filaCheck(pr, h, veredictos.get(h.huella), vieja)).join('')}
     </tbody></table></div>`
     : `<p class="tenue">${descartados.length ? 'No open findings: the rest were dismissed.' : 'The added lines pass all rules.'}</p>`;
   const cerrados = descartados.length
-    ? `<details class="descartados-check"><summary>Dismissed (${descartados.length})</summary><div class="tabla"><table><thead><tr><th>Finding</th><th>Reason</th><th>Proposed by</th><th>Date</th>${API ? '<th></th>' : ''}</tr></thead><tbody>
+    ? `<details class="descartados-check"><summary>Dismissed (${descartados.length})</summary><div class="tabla"><table><thead><tr><th>Finding</th><th>Reason</th><th>Proposed by</th><th>Date</th>${API ? '<th><span class="sr">Actions</span></th>' : ''}</tr></thead><tbody>
       ${descartados.map((h) => filaDescartada(pr, h)).join('')}
     </tbody></table></div></details>` : '';
   return `${avisoTriaje(API ? trabajoChecks(pr) : null)}${cabeceraCheck(pr, v.hallazgos)}${abiertos}${cerrados}
@@ -159,12 +159,13 @@ function abrirLote(pr) {
     <ul class="lista-modal">${lote.map((h) => `<li><strong>${esc(h.titulo)}</strong> <span class="mono muy-tenue">${esc(lugarCheck(h))}</span><br><span class="tenue">${esc(veredictosCheck(pr).get(h.huella)?.razon)}</span></li>`).join('')}</ul>
     <div class="modal-pie">
       <button type="button" class="btn" data-modal-cerrar>Cancel</button>
-      <button type="button" class="btn primario" data-check-accion="descartar-lote-confirmar" data-check-pr="${esc(pr.id)}">Dismiss ${lote.length}</button>
+      <button type="button" class="btn primario" data-check-accion="descartar-lote-confirmar" data-check-pr="${esc(pr.id)}" data-check-huellas="${esc(lote.map((h) => h.huella).join(','))}">Dismiss ${lote.length}</button>
     </div>
     <p class="error-texto" id="modalIaError" role="alert" hidden></p>`);
 }
 
-const confirmarLote = (pr) => enviarCheck('/api/checks/descartar', { repo: pr.repo, numero: pr.numero, huellas: candidatosLote(pr).map((h) => h.huella) });
+// The list the person saw when the dialog opened: a snapshot reload in between must not change what is dismissed.
+const confirmarLote = (pr, huellas) => huellas ? enviarCheck('/api/checks/descartar', { repo: pr.repo, numero: pr.numero, huellas: huellas.split(',') }) : undefined;
 
 async function abrirValidacion(pr) {
   // Shares the dialog counter with Ultra: closing any dialog drops a pending estimate.
@@ -251,7 +252,7 @@ function accionCheck(accion, pr, datos = {}) {
   if (accion === 'descartar') return abrirDescarte(pr, datos.checkHuella);
   if (accion === 'descartar-confirmar') return confirmarDescarte(pr, datos.checkHuella);
   if (accion === 'descartar-lote') return abrirLote(pr);
-  if (accion === 'descartar-lote-confirmar') return confirmarLote(pr);
+  if (accion === 'descartar-lote-confirmar') return confirmarLote(pr, datos.checkHuellas);
   if (accion === 'arreglar') return abrirArreglo(pr, datos.checkHuella);
   if (accion === 'arreglar-confirmar') return pedirArreglo(pr, datos.checkHuella);
   if (accion === 'reabrir') return enviarCheck('/api/checks/reabrir', { repo: pr.repo, numero: pr.numero, huella: datos.checkHuella });

@@ -22,6 +22,8 @@ function tablero({ api = async () => ({}), sinApi = false, trabajos = [], foto, 
   const llamadas = [];
   const modales = [];
   const cajas = { motivoCheck: { value: '' }, modalIaError: { textContent: '', hidden: true } };
+  // The estimate dialog swaps its spinner for the error text: this records what it was swapped for.
+  const carga = { outerHTML: '<p class="trabajando"></p>' };
   const repintados = [];
   let guardados = iniciales;
   const seleccionados = [];
@@ -29,7 +31,7 @@ function tablero({ api = async () => ({}), sinApi = false, trabajos = [], foto, 
     API: sinApi ? null : { token: 't' }, FOTO: foto ?? { owner: 'o', prs: [] },
     estado: { cerrados: new Set(), seleccion: 'acme/api#7', tab: 'verificaciones', trabajos: new Map(trabajos.map((t) => [t.id, t])) },
     esc: escape, plural: (a, b, c) => `${a} ${a === 1 ? b : c}`, icono: () => '', usd: (x) => `USD ${x}`, nivel: (v) => v, transcurrido: () => '',
-    $: (id) => (id === 'modalIa' ? { querySelector: () => null } : cajas[id] ?? null),
+    $: (id) => (id === 'modalIa' ? { querySelector: (sel) => (sel === '.trabajando' ? carga : null) } : cajas[id] ?? null),
     avisar() {}, sondear() {}, pintarDetalle: () => repintados.push('detalle'), repintarDetalle() {}, pintarTodo: () => repintados.push('todo'), seleccionar: (id) => seleccionados.push(id),
     // Bodies are copied out of the vm realm so deepEqual compares plain values.
     api: async (ruta, cuerpo) => { llamadas.push(JSON.parse(JSON.stringify([ruta, cuerpo ?? null]))); return api(ruta, cuerpo); },
@@ -42,7 +44,7 @@ function tablero({ api = async () => ({}), sinApi = false, trabajos = [], foto, 
   runInContext(readFileSync(new URL('07e-checks.js', PARTES), 'utf8'), ctx);
   // The dialog helpers of 07b-modos.js need a DOM: they are replaced by recorders.
   Object.assign(ctx, { abrirModal: (h) => modales.push(h), cerrarModal() {}, modoActual: () => 'normal' });
-  return { ctx, llamadas, modales, cajas, repintados, seleccionados, guardados: () => guardados };
+  return { ctx, llamadas, modales, cajas, carga, repintados, seleccionados, guardados: () => guardados };
 }
 
 test('every field written by the model or a person is escaped', () => {
@@ -170,8 +172,30 @@ test('the bulk dialog lists the findings and confirming sends every fingerprint 
   const t = tablero({ api: async () => ({ owner: 'o', prs: [] }) });
   t.ctx.accionCheck('descartar-lote', p, {});
   assert.ok(t.modales.at(-1).includes('Finding h1') && t.modales.at(-1).includes('Finding h2') && !t.modales.at(-1).includes('Finding h3'));
-  await t.ctx.accionCheck('descartar-lote-confirmar', p, {});
+  const confirmar = /data-check-accion="descartar-lote-confirmar"[^>]*data-check-huellas="([^"]*)"/.exec(t.modales.at(-1));
+  await t.ctx.accionCheck('descartar-lote-confirmar', p, { checkHuellas: confirmar?.[1] });
   assert.deepEqual(t.llamadas[0], ['/api/checks/descartar', { repo: 'acme/api', numero: 7, huellas: ['h1', 'h2'] }]);
+});
+
+test('the bulk confirmation sends the fingerprints listed when the dialog opened, not a new selection', async () => {
+  const p = pr({ hallazgos: [hallazgo('h1'), hallazgo('h2')], t: triaje([veredicto('h1', 'falso_positivo'), veredicto('h2', 'falso_positivo')]) });
+  const t = tablero({ api: async () => ({ owner: 'o', prs: [] }) });
+  t.ctx.accionCheck('descartar-lote', p, {});
+  const abierto = /data-check-huellas="([^"]*)"/.exec(t.modales.at(-1))?.[1];
+  // A reload while the dialog is open changes what the snapshot holds.
+  p.triaje = triaje([veredicto('h1', 'falso_positivo'), veredicto('h2', 'real')]);
+  p.verificaciones.hallazgos.push(hallazgo('h3'));
+  p.triaje.veredictos.push(veredicto('h3', 'falso_positivo'));
+  await t.ctx.accionCheck('descartar-lote-confirmar', p, { checkHuellas: abierto });
+  assert.deepEqual(t.llamadas[0][1].huellas, ['h1', 'h2']);
+});
+
+test('the action column of both tables has a hidden Actions label', () => {
+  const p = pr({ hallazgos: [hallazgo('h1')], descartados: [hallazgo('h2', { descarte: { motivo: 'm', propuestoPor: 'persona', fecha: '2026-11-09T10:00:00Z' } })] });
+  const html = tablero().ctx.tabVerificaciones(p);
+  assert.equal(html.split('<th><span class="sr">Actions</span></th>').length - 1, 2);
+  assert.doesNotMatch(html, /<th><\/th>/);
+  assert.doesNotMatch(tablero({ sinApi: true }).ctx.tabVerificaciones(p), /Actions/);
 });
 
 test('Reopen posts the fingerprint and reloads the snapshot', async () => {
@@ -198,6 +222,17 @@ test('a failed estimate shows the error inside the dialog and nothing is started
   const t = tablero({ api: async () => { throw new Error('Server down'); } });
   await t.ctx.accionCheck('validar', pr({ hallazgos: [hallazgo('h1')] }), {});
   assert.equal(t.llamadas.length, 1);
+  assert.match(t.carga.outerHTML, /<p class="error-texto">Server down<\/p>/);
+  assert.ok(!t.llamadas.some(([ruta]) => ruta === '/api/checks/triar'));
+});
+
+test('a PR that is not open offers no Validate with AI', () => {
+  const t = tablero();
+  for (const estadoPr of ['MERGED', 'CLOSED']) {
+    const html = t.ctx.tabVerificaciones({ ...pr({ hallazgos: [hallazgo('h1')] }), estadoPr });
+    assert.doesNotMatch(html, /data-check-accion="validar"/, estadoPr);
+    assert.doesNotMatch(html, /Validate with AI/, estadoPr);
+  }
 });
 
 test('the ?checks=1 link selects the PR on the Checks tab and nothing else', () => {

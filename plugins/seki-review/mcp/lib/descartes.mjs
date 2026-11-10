@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { escribirJson, leerJson, rutaDescartes } from './cache.mjs';
+import { conBloqueoSync, escribirAtomico } from './bloqueo.mjs';
+import { leerJson, rutaDescartes } from './cache.mjs';
 import { resumir } from './verificar.mjs';
 
 export const TRIABLES = new Set(['bloqueante', 'alto', 'medio']);
@@ -28,6 +29,17 @@ export function huellaHallazgo(h) {
 
 export const leerDescartes = (p, repo, numero) => leerJson(rutaDescartes(p.salida, repo, numero), []);
 
+// The MCP server and the board are two processes that write this file: the read-modify-write runs under one lock.
+// escribirAtomico, not escribirJson, because the lock is not re-entrant. Returning null leaves the file untouched.
+function modificar(p, repo, numero, cambiar) {
+  const ruta = rutaDescartes(p.salida, repo, numero);
+  return conBloqueoSync(ruta, () => {
+    const nuevos = cambiar(leerJson(ruta, []));
+    if (nuevos !== null) escribirAtomico(ruta, JSON.stringify(nuevos, null, 2) + '\n');
+    return nuevos;
+  });
+}
+
 export function descartar(p, repo, numero, hallazgo, { motivo, propuestoPor }) {
   const limpio = String(motivo ?? '').trim();
   if (limpio.length < 1 || limpio.length > MOTIVO_MAX) throw new Error(`motivo must have between 1 and ${MOTIVO_MAX} characters`);
@@ -43,17 +55,15 @@ export function descartar(p, repo, numero, hallazgo, { motivo, propuestoPor }) {
     propuestoPor,
     fecha: new Date().toISOString(),
   };
-  const resto = leerDescartes(p, repo, numero).filter((d) => d.huella !== huella);
-  escribirJson(rutaDescartes(p.salida, repo, numero), [...resto, descarte]);
+  modificar(p, repo, numero, (actuales) => [...actuales.filter((d) => d.huella !== huella), descarte]);
   return descarte;
 }
 
 export function reabrir(p, repo, numero, huella) {
-  const actuales = leerDescartes(p, repo, numero);
-  const resto = actuales.filter((d) => d.huella !== huella);
-  if (resto.length === actuales.length) return false;
-  escribirJson(rutaDescartes(p.salida, repo, numero), resto);
-  return true;
+  return modificar(p, repo, numero, (actuales) => {
+    const resto = actuales.filter((d) => d.huella !== huella);
+    return resto.length === actuales.length ? null : resto;
+  }) !== null;
 }
 
 export function aplicarDescartes(verificaciones, descartes) {

@@ -26,7 +26,9 @@ export default {
       listar_reglas: { type: 'boolean', description: 'Only return the rule catalog' },
     },
   },
-  async handler({ proyecto, repo, numero, dir, base, listar_reglas }) {
+  // `acceso` lets tests replace the GitHub calls; the server always uses the real ones.
+  async handler({ proyecto, repo, numero, dir, base, listar_reglas }, acceso = {}) {
+    const { ghJson: pedirPr = ghJson, archivosPr: pedirArchivos = archivosPr, commitsPr: pedirCommits = commitsPr } = acceso;
     const p = cargarProyecto(proyecto);
     if (listar_reglas) return [...REGLAS, ...reglasDeConfig(p.reglas)].map((r) => `${r.id} [${r.severidad}] ${r.titulo}. ${r.origen}`).join('\n');
 
@@ -45,10 +47,10 @@ export default {
 
     if (!repo || !numero) throw new Error('Provide repo and numero, or dir and base.');
     // The head commit comes first: the files are cached per commit.
-    const { headRefOid } = await ghJson(['pr', 'view', String(numero), '-R', `${p.owner}/${repo}`, '--json', 'headRefOid']);
+    const { headRefOid } = await pedirPr(['pr', 'view', String(numero), '-R', `${p.owner}/${repo}`, '--json', 'headRefOid']);
     const [archivos, commits] = await Promise.all([
-      archivosPr(p.owner, repo, numero, headRefOid),
-      commitsPr(p.owner, repo, numero),
+      pedirArchivos(p.owner, repo, numero, headRefOid),
+      pedirCommits(p.owner, repo, numero),
     ]);
     const resultado = { repo, numero, headSha: headRefOid, ...verificar({ repo, archivos, commits, omitidas: p.repos[repo]?.reglas_omitidas, extra: reglasDeConfig(p.reglas) }) };
     escribirJson(rutaVerificacion(p.salida, repo, numero), resultado);

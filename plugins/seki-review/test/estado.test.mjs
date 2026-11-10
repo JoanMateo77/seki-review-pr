@@ -33,3 +33,12 @@ test('archivosPr does not memoize without a commit', async () => {
   await archivosPr('acme', 'api-sin', 3, undefined, pedir);
   assert.equal(pedir.llamadas, 2);
 });
+
+test('archivosPr does not memoize a rejected request', async () => {
+  let llamadas = 0;
+  const pedir = async () => { llamadas++; if (llamadas === 1) throw new Error('gh failed'); return [{ filename: 'ok.ts' }]; };
+  await assert.rejects(() => archivosPr('acme', 'api-falla', 4, 'a'.repeat(40), pedir), /gh failed/);
+  const lista = await archivosPr('acme', 'api-falla', 4, 'a'.repeat(40), pedir);
+  assert.equal(llamadas, 2);
+  assert.equal(lista[0].filename, 'ok.ts');
+});

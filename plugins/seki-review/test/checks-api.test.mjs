@@ -165,6 +165,18 @@ test('bulk dismissal needs medium findings whose verdict is a false positive, an
   assert.ok(guardados.every((d) => d.propuestoPor === 'ia'));
 });
 
+test('a bulk dismissal with a person motivo is attributed to the person and repeated huellas collapse', async (t) => {
+  const e = await entorno();
+  t.after(e.cerrar);
+  triaje(e.p, [falso(MEDIO_1), falso(MEDIO_2)]);
+  const r = await e.llamar('/api/checks/descartar', { ...R(), huellas: [huella(MEDIO_1), huella(MEDIO_2), huella(MEDIO_1)], motivo: 'Reviewed by hand' });
+  assert.equal(r.status, 200);
+  assert.deepEqual(await r.json(), { descartados: 2 });
+  const guardados = leerDescartes(e.p, 'acme/api', 1);
+  assert.equal(guardados.length, 2);
+  assert.ok(guardados.every((d) => d.propuestoPor === 'persona' && d.motivo === 'Reviewed by hand'));
+});
+
 test('bulk dismissal without a stored verdict is refused', async (t) => {
   const e = await entorno();
   t.after(e.cerrar);

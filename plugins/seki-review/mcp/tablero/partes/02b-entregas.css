@@ -41,7 +41,7 @@ body[data-pestana="entregas"] .rol:not(.pestanas) { display: none; }
 .acciones-entrega .pregunta { flex-basis: 100%; color: var(--texto-2); font-size: 12px; }
 .separar-lista { display: grid; gap: 4px; flex-basis: 100%; }
 .separar-lista div { display: flex; align-items: center; gap: 6px; }
-.entregas .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 .barra-qa { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
 .barra-qa label { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; color: var(--texto-2); }

@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,6 +14,8 @@ test('fingerprint ignores line and inner spaces, follows the text', () => {
   assert.equal(huellaHallazgo({ ...h, linea: 90 }), huellaHallazgo(h));
   assert.equal(huellaHallazgo({ ...h, texto: '<%-   item.name   %>' }), huellaHallazgo({ ...h, texto: '<%- item.name %>' }));
   assert.notEqual(huellaHallazgo({ ...h, texto: '<%- item.id %>' }), huellaHallazgo(h));
+  assert.notEqual(huellaHallazgo({ ...h, regla: 'otra-regla' }), huellaHallazgo(h));
+  assert.notEqual(huellaHallazgo({ ...h, archivo: 'views/other.ejs' }), huellaHallazgo(h));
   assert.match(huellaHallazgo(h), /^[0-9a-f]{16}$/);
 });
 
@@ -76,4 +79,19 @@ test('triablesOrdenados keeps triable severities, highest first, at most 40, eac
   assert.deepEqual(r.slice(0, 3).map((h) => h.severidad), ['bloqueante', 'alto', 'medio']);
   assert.ok(r.every((h) => h.huella === huellaHallazgo(h)));
   assert.deepEqual(triablesOrdenados(undefined), []);
+});
+
+test('two processes dismissing at once do not lose entries', async () => {
+  const pr = p();
+  const guion = `
+    import { descartar } from ${JSON.stringify(new URL('../mcp/lib/descartes.mjs', import.meta.url).href)};
+    const [salida, id] = process.argv.slice(1);
+    for (let i = 0; i < 25; i++) descartar({ salida }, 'api', 1, { regla: 'r', archivo: 'a', texto: id + i }, { motivo: 'ok', propuestoPor: 'persona' });
+  `;
+  const correr = (id) => new Promise((resolver, rechazar) => {
+    const hijo = spawn(process.execPath, ['--input-type=module', '-e', guion, pr.salida, id], { stdio: 'inherit' });
+    hijo.on('exit', (codigo) => (codigo === 0 ? resolver() : rechazar(new Error(`child ${id} exited with ${codigo}`))));
+  });
+  await Promise.all([correr('a'), correr('b')]);
+  assert.equal(leerDescartes(pr, 'api', 1).length, 50);
 });

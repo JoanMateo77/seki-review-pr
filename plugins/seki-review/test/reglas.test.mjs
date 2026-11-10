@@ -205,3 +205,17 @@ test('ejs-sin-escapar skips tags that only emit literals', () => {
   const ejs = hallazgos.filter((h) => h.regla === 'ejs-sin-escapar');
   assert.deepEqual(ejs.map((h) => h.linea), [5, 6, 7, 8]);
 });
+
+test('ejs-sin-escapar still flags an unclosed tag and a literal it cannot prove static', () => {
+  const { hallazgos } = verificar({
+    repo: 'acme/api',
+    archivos: [archivo('views/list.ejs', [
+      `<%- 'static'`,
+      `<%- \`plain\` %>`,
+      `<%- "say \\"hi\\"" %>`,
+      `<%- \`a \${v}\` %>`,
+    ])],
+  });
+  const ejs = hallazgos.filter((h) => h.regla === 'ejs-sin-escapar');
+  assert.deepEqual(ejs.map((h) => h.linea), [1, 4]);
+});
