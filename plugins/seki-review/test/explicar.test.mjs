@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { escribirJson, rutaDiff } from '../mcp/lib/cache.mjs';
+import { escribirJson, rutaDiff, rutaVerificacion } from '../mcp/lib/cache.mjs';
+import { descartar } from '../mcp/lib/descartes.mjs';
 import { archivosLeidos, coberturaReal, escribirParches, explicarConIa, prioridad, promptExplicar, recortarDiff } from '../mcp/lib/explicar.mjs';
 import { leerCostos } from '../mcp/lib/ia.mjs';
 import { falsoClaude } from './util/claude.mjs';
@@ -88,4 +89,22 @@ test('an explain job whose answer does not confirm completion is recorded as fai
   assert.equal(r.ok, false);
   const [rec] = leerCostos(p).filter((x) => x.tipo === 'explicar');
   assert.deepEqual([rec.ok, rec.motivo], [false, 'The AI did not confirm completion']);
+});
+
+test('the explanation prompt leaves out the findings a person dismissed', async (t) => {
+  const salida = mkdtempSync(join(tmpdir(), 'seki-exp-'));
+  const p = { salida, owner: 'o', clave: 'demo', repos: {} };
+  const prx = { ...pr, headSha: 'a'.repeat(40) };
+  escribirJson(rutaDiff(salida, 'api', 7), { headSha: prx.headSha, archivos: [chico('src/a.ts')] });
+  const abierto = { regla: 'sql-interpolado', titulo: 'OPEN_FINDING', severidad: 'alto', archivo: 'src/a.ts', linea: 1, texto: 'a', mensaje: 'm' };
+  const cerrado = { ...abierto, titulo: 'DISMISSED_FINDING', texto: 'b' };
+  escribirJson(rutaVerificacion(salida, 'api', 7), { headSha: prx.headSha, hallazgos: [abierto, cerrado], resumen: {} });
+  descartar(p, 'api', 7, cerrado, { motivo: 'Literal', propuestoPor: 'persona' });
+  const destino = join(mkdtempSync(join(tmpdir(), 'seki-exp-prompt-')), 'prompt');
+  fijarEnv(t, 'SEKI_GH', falsoGh({ body: 'x', commits: [] }).ruta);
+  fijarEnv(t, 'SEKI_CLAUDE', falsoClaude({ type: 'result', is_error: false, subtype: 'success', result: 'done', total_cost_usd: 0.01, modelUsage: { 'claude-sonnet-5-5': { inputTokens: 1, outputTokens: 1 } } }, 0, `printf '%s' "$2" > '${destino}'`));
+  await explicarConIa(p, prx);
+  const prompt = readFileSync(destino, 'utf8');
+  assert.match(prompt, /OPEN_FINDING/);
+  assert.doesNotMatch(prompt, /DISMISSED_FINDING/);
 });

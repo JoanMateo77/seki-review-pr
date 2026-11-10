@@ -8,9 +8,12 @@ import { leerCostos } from '../mcp/lib/ia.mjs';
 import { proyecto as cargarProyecto } from '../mcp/lib/config.mjs';
 import { guardarTriaje } from '../mcp/lib/triaje.mjs';
 import herramienta from '../mcp/tools/pr_verificaciones.mjs';
+import pendientes from '../mcp/tools/prs_pendientes.mjs';
 
 const temporales = [];
 after(() => { for (const d of temporales.splice(0)) rmSync(d, { recursive: true, force: true }); });
+const configPrevia = process.env.SEKI_REVIEW_CONFIG;
+after(() => { if (configPrevia === undefined) delete process.env.SEKI_REVIEW_CONFIG; else process.env.SEKI_REVIEW_CONFIG = configPrevia; });
 const SHA = 'a'.repeat(40);
 
 const parche = '@@ -0,0 +1,2 @@\n+<%- item.name %>\n+<%- item.bio %>';
@@ -53,4 +56,19 @@ test('the PR form returns findings with huella, dismissals, stored triage and th
   assert.equal(segunda.triaje.veredictos[0].veredicto, 'real');
   assert.equal(segunda.triaje.desactualizado, false);
   assert.deepEqual(leerCostos(e.p), []);
+});
+
+test('prs_pendientes counts only the findings nobody dismissed', async () => {
+  const e = entorno();
+  const bloqueante = { regla: 'sql-interpolado', titulo: 'SQL', severidad: 'bloqueante', archivo: 'src/a.ts', linea: 1, texto: 'q(`${x}`)', mensaje: 'm', origen: 'o' };
+  const alto = { ...bloqueante, regla: 'ejs-sin-escapar', severidad: 'alto', texto: '<%- x %>' };
+  const hallazgos = [bloqueante, alto];
+  const foto = { proyecto: e.clave, generado: '2026-11-10T10:00:00Z', acciones: { listo_prod: 'Ready' }, prs: [{
+    repo: 'api', numero: 7, titulo: 'Change', accion: 'listo_prod', dias: 1, verificaciones: { headSha: SHA, hallazgos, resumen: { bloqueante: 1, alto: 1 } } }] };
+  const recolectar = async () => structuredClone(foto);
+  assert.match(await pendientes.handler({ proyecto: e.clave }, { recolectar }), /checks: 1 blocking, 1 high/);
+  descartar(e.p, 'api', 7, bloqueante, { motivo: 'Parameterized upstream', propuestoPor: 'persona' });
+  assert.match(await pendientes.handler({ proyecto: e.clave }, { recolectar }), /checks: 0 blocking, 1 high/);
+  descartar(e.p, 'api', 7, alto, { motivo: 'Literal', propuestoPor: 'persona' });
+  assert.doesNotMatch(await pendientes.handler({ proyecto: e.clave }, { recolectar }), /checks:/);
 });

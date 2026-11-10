@@ -61,6 +61,16 @@ test('cambiar never runs on haiku, whatever the source', (t) => {
   assert.equal(perfil({ tipo: 'cambiar', modo: 'normal', pr: chica }).modelo, 'sonnet');
 });
 
+test('triar_checks never runs on haiku, not even when an environment variable forces it', (t) => {
+  for (const modo of MODOS) assert.notEqual(perfil({ tipo: 'triar_checks', modo, pr: chica }).modelo, 'haiku');
+  fijarEnv(t, 'SEKI_IA_MODELO', 'haiku');
+  assert.equal(perfil({ tipo: 'triar_checks', modo: 'ahorro', pr: chica }).modelo, 'sonnet');
+  fijarEnv(t, 'SEKI_IA_MODELO_TRIAR_CHECKS', 'haiku');
+  assert.equal(perfil({ tipo: 'triar_checks', modo: 'normal', pr: chica }).modelo, 'sonnet');
+  fijarEnv(t, 'SEKI_IA_MODELO_TRIAR_CHECKS', 'opus');
+  assert.equal(perfil({ tipo: 'triar_checks', modo: 'normal', pr: chica }).modelo, 'opus');
+});
+
 test('precedence: per-type env > general env > mode row > default', (t) => {
   assert.equal(perfil({ tipo: 'explicar', modo: 'ahorro', pr: chica }).modelo, 'sonnet');
   fijarEnv(t, 'SEKI_IA_MODELO', 'opus');

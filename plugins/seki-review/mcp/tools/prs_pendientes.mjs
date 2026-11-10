@@ -1,4 +1,6 @@
-import { recolectar } from '../lib/recolectar.mjs';
+import { proyecto as cargarProyecto } from '../lib/config.mjs';
+import { aplicarDescartes, leerDescartes } from '../lib/descartes.mjs';
+import { recolectar as recolectarReal } from '../lib/recolectar.mjs';
 
 const ESTADO = { en_pruebas: 'in testing', parcial: 'partial', no_en_pruebas: 'not in testing' };
 
@@ -16,8 +18,10 @@ export default {
       incluir_inactivas: { type: 'boolean', default: false },
     },
   },
-  async handler({ proyecto, repos, incluir_inactivas = false }) {
+  // `acceso` lets tests replace the collection, which reaches GitHub; the server always uses the real one.
+  async handler({ proyecto, repos, incluir_inactivas = false }, { recolectar = recolectarReal } = {}) {
     const foto = await recolectar({ proyecto, repos, incluirInactivas: true });
+    const p = cargarProyecto(proyecto);
     // PRs in the snapshot only to be reviewed are listed apart; they are not the user's pending promotions.
     const propias = foto.prs.filter((x) => !x.soloRevision);
     const paraRevisar = foto.prs.filter((x) => x.soloRevision);
@@ -40,7 +44,8 @@ export default {
       if (!grupo.length) continue;
       lineas.push('', `## ${titulo} (${grupo.length})`);
       for (const x of grupo) {
-        const v = x.verificaciones?.resumen;
+        // The snapshot keeps the raw findings: the dismissed ones do not count.
+        const v = x.verificaciones && aplicarDescartes(x.verificaciones, leerDescartes(p, x.repo, x.numero)).resumen;
         const faltantes = (x.hermanas ?? []).filter((h) => !h.numero).map((h) => h.portal);
         const extra = [
           x.portal,

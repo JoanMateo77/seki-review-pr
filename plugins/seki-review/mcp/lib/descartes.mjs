@@ -13,13 +13,13 @@ const ORDEN_SEVERIDAD = ['bloqueante', 'alto', 'medio'];
 
 export const esTriable = (h) => TRIABLES.has(h.severidad) && !REGLAS_NO_TRIABLES.has(h.regla);
 
-// One selection for the standalone triage and for Ultra, so both judge the same findings.
-export function triablesOrdenados(hallazgos) {
+// One selection for the standalone triage and for Ultra, so both judge the same findings; Ultra passes a lower cap.
+export function triablesOrdenados(hallazgos, max = MAX_TRIABLES) {
   return (hallazgos ?? [])
     .filter(esTriable)
     .map((h) => ({ ...h, huella: h.huella ?? huellaHallazgo(h) }))
     .sort((a, b) => ORDEN_SEVERIDAD.indexOf(a.severidad) - ORDEN_SEVERIDAD.indexOf(b.severidad))
-    .slice(0, MAX_TRIABLES);
+    .slice(0, max);
 }
 
 const MOTIVO_MAX = 500;

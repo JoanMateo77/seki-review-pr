@@ -39,12 +39,12 @@ Los hallazgos sin línea (`porArchivo`, `atribucion-ia`) tienen huella pero no a
 
 ### D. Triaje con IA (`triar_checks`)
 
-- Una llamada por PR sobre la copia de solo lectura (`-lectura`), con `Read`, `Grep`, `Glob`. Entrada: un bloque JSON con el PR (número, repo y título, que es texto del autor y por eso va dentro de los datos) y, por hallazgo `huella`, regla, título, mensaje, origen, archivo, línea, texto.
+- Una llamada por PR sobre la copia de solo lectura (`-lectura`), con `Read`, `Grep`, `Glob`. Entrada: un bloque JSON con el PR (número, repo y título, que es texto del autor y por eso va dentro de los datos) y, por hallazgo, exactamente `huella`, `regla`, `titulo`, `severidad`, `mensaje`, `origen` (por qué existe la regla), `archivo`, `linea` y `texto`.
 - Se trían las severidades `bloqueante`, `alto` y `medio`. Los `aviso` no.
 - Salida por hallazgo: `{ huella, veredicto: real | falso_positivo | dudoso, razon, evidencia?: { archivo, linea } }`.
 - Un `falso_positivo` sin `razon`, o sin `evidencia` válida (`archivo` no vacío y `linea` entera mayor o igual a 1), o con `evidencia` que no pasa `existeCita`, se guarda como `dudoso`. Una `evidencia` mal formada se descarta del veredicto guardado, sea cual sea. Los veredictos que agrega Ultra (G) no llevan esta exigencia. Un hallazgo sin veredicto queda `dudoso`. `dudoso` deja el hallazgo abierto.
 - Perfil: `triar_checks: { modelo: null, topeUsd: 1, turnos: 25, segundaPasada: false }`. `modelo: null` da Sonnet, u Opus en PR de seguridad o grande; en modo ahorro, Sonnet. Nunca Haiku.
-- Se guarda por commit en `<salida>/verificaciones/triaje/<repo>-<n>.json`: `{ headSha, fecha, origen: 'triaje' | 'ultra', modelo, modo, costo, veredictos }`. Con commits nuevos se marca `desactualizado`, pero los veredictos de huellas que siguen presentes se siguen mostrando.
+- Se guarda por commit en `<salida>/verificaciones/triaje/<repo>-<n>.json`: `{ headSha, fecha, origen: 'checks' | 'ultra', modelo, modo, costo, veredictos }`. Con commits nuevos se marca `desactualizado`, pero los veredictos de huellas que siguen presentes se siguen mostrando.
 - Se lanza solo desde el tablero, con estimación y confirmación, por la cola y el presupuesto diario, igual que Ultra y plantillas.
 
 ### E. Descartes guardados por Seki

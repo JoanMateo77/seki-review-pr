@@ -20,6 +20,8 @@ import { fusionarTriaje } from './triaje.mjs';
 import { paralelo as paraleloCola } from './trabajos.mjs';
 
 const MAX_HALLAZGOS = 30;
+// The check cards share the verification call with the lens findings.
+const MAX_FICHAS_CHECKS = 15;
 const SEVERIDAD_FICHA = { bloqueante: 'alta', alto: 'alta', medio: 'media' };
 const VEREDICTO_TRIAJE = { CONFIRMED: 'real', PLAUSIBLE: 'dudoso', REJECTED: 'falso_positivo' };
 const MOTIVO_SIN_VEREDICTO_LENTE = 'The verification gave no verdict';
@@ -170,11 +172,13 @@ async function copiaDeComprobacion(p, pr, patchCache, dirLectura) {
   return { dir: await crearCopia(p, pr.repo, pr.numero, pr.headSha, { sufijo: '-ultra' }), baseSha: null };
 }
 
-// Open, triable findings of the stored checks of this commit; none when they belong to another commit.
+// Open findings of the checks of this commit; none when they belong to another commit. The board passes the snapshot
+// PR, which carries them; the file the MCP tool stores is read only for a PR object without checks. Dismissals are
+// read again here: a person may dismiss findings while the job waits in the queue.
 function checksGuardados(p, pr) {
-  const guardado = leerJson(rutaVerificacion(p.salida, pr.repo, pr.numero));
-  if (!guardado || guardado.headSha !== pr.headSha) return [];
-  return aplicarDescartes(guardado, leerDescartes(p, pr.repo, pr.numero)).hallazgos;
+  const fuente = pr.verificaciones ?? leerJson(rutaVerificacion(p.salida, pr.repo, pr.numero));
+  if (!fuente || fuente.headSha !== pr.headSha) return [];
+  return aplicarDescartes(fuente, leerDescartes(p, pr.repo, pr.numero)).hallazgos;
 }
 
 const lineaCheck = (h) => `- ${h.severidad} · ${h.titulo} (${h.regla}) · ${h.archivo}${h.linea ? `:${h.linea}` : ''} · ${h.texto}`;
@@ -199,7 +203,10 @@ export async function revisarUltra(p, pr, {
   try { ({ ambiente, lista } = await otras(p, pr)); } catch { otrosRepos = 'no_disponibles'; }
   const otros = lista.filter((o) => !o.falla);
   const archivos = await diff(p, pr.repo, pr.numero, pr.headSha);
-  const hallazgosChecks = triablesOrdenados(await checks(p, pr));
+  const abiertosChecks = await checks(p, pr);
+  const hallazgosChecks = triablesOrdenados(abiertosChecks);
+  // Only the most severe get a card; the rest keep no verdict, so the standalone triage can still judge them.
+  const verificadosChecks = triablesOrdenados(abiertosChecks, MAX_FICHAS_CHECKS);
   const seccionChecks = hallazgosChecks.length ? `\n\nFixed-rule findings (unverified patterns):\n${hallazgosChecks.map(lineaCheck).join('\n')}` : '';
   const patch = parcheUnido(archivos);
   const cubiertas = lentesCubiertas(p, pr.repo, pr.numero, pr.headSha);
@@ -260,8 +267,8 @@ export async function revisarUltra(p, pr, {
     let modeloVerificar = null;
     motivoFallo = null;
     if (!lentes.some((l) => l.ok)) motivoFallo = lentes.find((l) => !l.omitida)?.motivo ?? MOTIVO_GENERICO;
-    else if (candidatas.length || hallazgosChecks.length) {
-      const fichasChecks = hallazgosChecks.map((h) => ({ id: `check-${h.huella}`, lente: 'checks', archivo: h.archivo, linea: h.linea, severidad: SEVERIDAD_FICHA[h.severidad], titulo: h.titulo, detalle: texto(`${h.texto}\n${h.mensaje}`, MAX_DETALLE) }));
+    else if (candidatas.length || verificadosChecks.length) {
+      const fichasChecks = verificadosChecks.map((h) => ({ id: `check-${h.huella}`, lente: 'checks', archivo: h.archivo, linea: h.linea, severidad: SEVERIDAD_FICHA[h.severidad], titulo: h.titulo, detalle: texto(`${h.texto}\n${h.mensaje}`, MAX_DETALLE) }));
       const fichas = [...candidatas.map(({ id, lente, repo, archivo, linea, severidad, titulo, detalle }) => ({ id, lente, ...(repo ? { repo } : {}), archivo, linea, severidad, titulo, detalle })), ...fichasChecks];
       const v = await llamar('verificar', 'ultra_verificar', `Verify these findings.\n\nAvailable repositories (read-only):\n- ${pr.repo}: the current directory.\n${repos}\n\nFindings:\n${JSON.stringify(fichas, null, 1)}`, SCHEMA_VERIFICAR, dirsOtros);
       motivoFallo = falla(v, Array.isArray(v.salida?.veredictos));
@@ -276,9 +283,9 @@ export async function revisarUltra(p, pr, {
 
     ok = !motivoFallo;
     if (ok) {
-      if (hallazgosChecks.length) {
+      if (verificadosChecks.length) {
         // Same guard as the standalone triage: a rejection without a reason never hides a finding.
-        fusionarTriaje(p, pr, { modelo: modeloVerificar, modo: 'ultra', costo: 0, veredictos: hallazgosChecks.map((h) => {
+        fusionarTriaje(p, pr, { modelo: modeloVerificar, modo: 'ultra', costo: 0, veredictos: verificadosChecks.map((h) => {
           const v = veredictos.get(`check-${h.huella}`);
           if (!v) return { huella: h.huella, veredicto: 'dudoso', razon: MOTIVO_SIN_VEREDICTO };
           return { huella: h.huella, veredicto: v.veredicto === 'REJECTED' && !v.razon ? 'dudoso' : VEREDICTO_TRIAJE[v.veredicto], razon: v.razon };

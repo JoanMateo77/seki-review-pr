@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { leerCostos } from '../mcp/lib/ia.mjs';
-import { rutaTriaje } from '../mcp/lib/cache.mjs';
+import { escribirJson, rutaTriaje } from '../mcp/lib/cache.mjs';
 import { aplicarDescartes } from '../mcp/lib/descartes.mjs';
 import { datosChecks, guardarTriaje, leerTriaje, triarChecks } from '../mcp/lib/triaje.mjs';
 
@@ -63,6 +63,9 @@ test('the PR title travels inside the JSON data block, never as free text', asyn
   const datos = JSON.parse(prompt.slice(prompt.indexOf('{')));
   assert.equal(datos.pr.titulo, titulo);
   assert.equal(datos.hallazgos.length, 1);
+  // Exactly the fields the spec lists, the reason the rule exists included.
+  assert.deepEqual(Object.keys(datos.hallazgos[0]), ['huella', 'regla', 'titulo', 'severidad', 'mensaje', 'origen', 'archivo', 'linea', 'texto']);
+  assert.equal(datos.hallazgos[0].origen, 'base');
 });
 
 test('with no triable finding nothing is called', async () => {
@@ -134,6 +137,14 @@ test('an AI attribution finding is neither counted as triable nor sent', async (
   assert.equal(datosChecks(p, pr, verificaciones).triables, 1);
   await triarChecks(p, pr, deps);
   assert.doesNotMatch(llamadas[0].prompt, /ATRIBUCION/);
+});
+
+test('a stored triage without a verdict list reads as an empty list', () => {
+  const { p } = entorno();
+  escribirJson(rutaTriaje(p.salida, 'acme/api', 7), { headSha: SHA, origen: 'checks' });
+  assert.deepEqual(leerTriaje(p, 'acme/api', 7, SHA).veredictos, []);
+  escribirJson(rutaTriaje(p.salida, 'acme/api', 7), { headSha: SHA, veredictos: 'x' });
+  assert.deepEqual(leerTriaje(p, 'acme/api', 7, SHA).veredictos, []);
 });
 
 test('a false positive needs valid evidence, otherwise it is stored as dudoso without it', async () => {

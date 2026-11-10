@@ -10,7 +10,7 @@ const PARTES = new URL('../mcp/tablero/partes/', import.meta.url);
 
 const hallazgo = (huella, extra = {}) => ({ huella, regla: 'ejs-sin-escapar', titulo: `Finding ${huella}`, severidad: 'medio', archivo: 'views/list.ejs', linea: 4, texto: `<%- ${huella} %>`, mensaje: 'Unescaped output', origen: 'ejs-sin-escapar', ...extra });
 const veredicto = (huella, v, razon = `Reason ${huella}`) => ({ huella, veredicto: v, razon });
-const triaje = (veredictos, extra = {}) => ({ headSha: SHA, fecha: '2026-11-09T10:00:00Z', origen: 'triaje', modelo: 'm', costo: 0.2, desactualizado: false, veredictos, ...extra });
+const triaje = (veredictos, extra = {}) => ({ headSha: SHA, fecha: '2026-11-09T10:00:00Z', origen: 'checks', modelo: 'm', costo: 0.2, desactualizado: false, veredictos, ...extra });
 const pr = ({ hallazgos = [], descartados = [], t = null } = {}) => ({
   id: 'acme/api#7', repo: 'acme/api', numero: 7, url: 'https://github.test/acme/api/pull/7', headSha: SHA, estadoPr: 'OPEN',
   verificaciones: { headSha: SHA, hallazgos, descartados, resumen: {} }, triaje: t,

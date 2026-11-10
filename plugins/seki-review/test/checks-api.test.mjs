@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { escribirJson, rutaInstantanea } from '../mcp/lib/cache.mjs';
+import { escribirJson, rutaInstantanea, rutaTriaje } from '../mcp/lib/cache.mjs';
 import { proyecto as cargarProyecto } from '../mcp/lib/config.mjs';
 import { aplicarDescartes, huellaHallazgo, leerDescartes } from '../mcp/lib/descartes.mjs';
 import { actualizarComentario, leerComentarios } from '../mcp/lib/comentarios.mjs';
@@ -407,4 +407,13 @@ test('a fix that cannot be queued answers 409 and leaves its request failed', as
   } finally {
     Date.now = ahora;
   }
+});
+
+test('a stored triage file without a verdict list does not break dismissing or fixing', async (t) => {
+  const e = await entorno({ ejecutarCambios: cambiosFalsos([]) });
+  t.after(e.cerrar);
+  escribirJson(rutaTriaje(e.p.salida, 'acme/api', 1), { headSha: SHA, origen: 'checks' });
+  assert.equal((await e.llamar('/api/checks/descartar', { ...R(), huellas: [huella(ALTO)] })).status, 400);
+  assert.equal((await e.llamar('/api/checks/descartar', { ...R(), huellas: [huella(ALTO)], motivo: 'Reviewed' })).status, 200);
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), confirmar: true, huella: huella(MEDIO_1) })).status, 202);
 });
