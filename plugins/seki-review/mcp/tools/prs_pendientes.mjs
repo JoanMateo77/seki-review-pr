@@ -18,7 +18,7 @@ export default {
       incluir_inactivas: { type: 'boolean', default: false },
     },
   },
-  // `acceso` lets tests replace the collection, which reaches GitHub; the server always uses the real one.
+  // The second argument lets tests replace `recolectar`, which reaches GitHub; the server always uses the real one.
   async handler({ proyecto, repos, incluir_inactivas = false }, { recolectar = recolectarReal } = {}) {
     const foto = await recolectar({ proyecto, repos, incluirInactivas: true });
     const p = cargarProyecto(proyecto);
