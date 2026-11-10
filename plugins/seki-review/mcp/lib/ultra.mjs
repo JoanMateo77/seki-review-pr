@@ -3,9 +3,10 @@
 import { mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, isAbsolute, resolve, sep } from 'node:path';
-import { escribirJson, leerJson, rutaPlantillas, rutaUltra } from './cache.mjs';
+import { escribirJson, leerJson, rutaPlantillas, rutaUltra, rutaVerificacion } from './cache.mjs';
 import { comprobar } from './calidad.mjs';
 import { expandir } from './config.mjs';
+import { aplicarDescartes, huellaHallazgo, leerDescartes, TRIABLES } from './descartes.mjs';
 import { crearCopia, mergeBaseFresca, ramasEquivalentes, reiniciarCopia } from './copias.mjs';
 import { asegurarDiff } from './diffs.mjs';
 import { prioridad } from './explicar.mjs';
@@ -15,9 +16,16 @@ import { cargarPlantillas, LENTES_ULTRA } from './plantillas.mjs';
 import { otrasRamas } from './preguntas.mjs';
 import { enParalelo, git } from './proceso.mjs';
 import { lineamientos } from './propuestas.mjs';
+import { guardarTriaje } from './triaje.mjs';
 import { paralelo as paraleloCola } from './trabajos.mjs';
 
 const MAX_HALLAZGOS = 30;
+// Same cap and order as the standalone triage job, so both paths judge the same findings.
+const MAX_CHECKS = 40;
+const ORDEN_CHECKS = ['bloqueante', 'alto', 'medio'];
+const SEVERIDAD_FICHA = { bloqueante: 'alta', alto: 'alta', medio: 'media' };
+const VEREDICTO_TRIAJE = { CONFIRMED: 'real', PLAUSIBLE: 'dudoso', REJECTED: 'falso_positivo' };
+const MOTIVO_SIN_VEREDICTO = 'The verification gave no verdict';
 const MAX_TITULO = 200;
 const MAX_DETALLE = 2000;
 const MAX_PARCHE = 60000;
@@ -165,9 +173,19 @@ async function copiaDeComprobacion(p, pr, patchCache, dirLectura) {
   return { dir: await crearCopia(p, pr.repo, pr.numero, pr.headSha, { sufijo: '-ultra' }), baseSha: null };
 }
 
+// Open, triable findings of the stored checks of this commit; none when they belong to another commit.
+function checksGuardados(p, pr) {
+  const guardado = leerJson(rutaVerificacion(p.salida, pr.repo, pr.numero));
+  if (!guardado || guardado.headSha !== pr.headSha) return [];
+  return aplicarDescartes(guardado, leerDescartes(p, pr.repo, pr.numero)).hallazgos;
+}
+
+const lineaCheck = (h) => `- ${h.severidad} · ${h.titulo} (${h.regla}) · ${h.archivo}:${h.linea} · ${h.texto}`;
+
 export async function revisarUltra(p, pr, {
   repetir = false, paralelo = paraleloCola(), ejecutar = ejecutarClaude, comprobarFn = comprobar,
   copiar = crearCopia, otras = otrasRamas, diff = asegurarDiff, guias = lineamientos, copiarComprobacion = copiaDeComprobacion,
+  checks = checksGuardados,
 } = {}) {
   if (!pr?.headSha) throw new Error('The PR has no head commit');
   const guardado = leerUltra(p, pr.repo, pr.numero);
@@ -184,6 +202,12 @@ export async function revisarUltra(p, pr, {
   try { ({ ambiente, lista } = await otras(p, pr)); } catch { otrosRepos = 'no_disponibles'; }
   const otros = lista.filter((o) => !o.falla);
   const archivos = await diff(p, pr.repo, pr.numero, pr.headSha);
+  const hallazgosChecks = (await checks(p, pr) ?? [])
+    .filter((h) => TRIABLES.has(h.severidad))
+    .map((h) => ({ ...h, huella: h.huella ?? huellaHallazgo(h) }))
+    .sort((a, b) => ORDEN_CHECKS.indexOf(a.severidad) - ORDEN_CHECKS.indexOf(b.severidad))
+    .slice(0, MAX_CHECKS);
+  const seccionChecks = hallazgosChecks.length ? `\n\nFixed-rule findings (unverified patterns):\n${hallazgosChecks.map(lineaCheck).join('\n')}` : '';
   const patch = parcheUnido(archivos);
   const cubiertas = lentesCubiertas(p, pr.repo, pr.numero, pr.headSha);
   const reglasGuia = guias(p);
@@ -224,7 +248,7 @@ export async function revisarUltra(p, pr, {
     const lentes = await enParalelo(LENTES, limite, async (nombre) => {
       if (cubiertas.includes(nombre)) return { nombre, ok: false, omitida: true, motivo: MOTIVO_CUBIERTA, costo: 0, hallazgos: [] };
       if (nombre === 'lineamientos' && !reglasGuia) return { nombre, ok: false, omitida: true, motivo: MOTIVO_SIN_GUIAS, costo: 0, hallazgos: [] };
-      const extra = nombre === 'lineamientos' ? `\n\nProject guidelines:\n${reglasGuia}` : '';
+      const extra = nombre === 'lineamientos' ? `\n\nProject guidelines:\n${reglasGuia}` : seccionChecks;
       const r = await llamar(nombre, 'ultra_lente', `Lens: ${nombre}. Review this PR.\n\n${contexto}${extra}`, SCHEMA_LENTE, nombre === 'lineamientos' && dirGuias ? [...dirsOtros, dirGuias] : dirsOtros);
       const motivo = falla(r, Array.isArray(r.salida?.hallazgos));
       if (motivo) aviso(nombre, motivo);
@@ -240,14 +264,17 @@ export async function revisarUltra(p, pr, {
     }
 
     let veredictos = new Map();
+    let modeloVerificar = null;
     motivoFallo = null;
     if (!lentes.some((l) => l.ok)) motivoFallo = lentes.find((l) => !l.omitida)?.motivo ?? MOTIVO_GENERICO;
-    else if (candidatas.length) {
-      const fichas = candidatas.map(({ id, lente, repo, archivo, linea, severidad, titulo, detalle }) => ({ id, lente, ...(repo ? { repo } : {}), archivo, linea, severidad, titulo, detalle }));
+    else if (candidatas.length || hallazgosChecks.length) {
+      const fichasChecks = hallazgosChecks.map((h) => ({ id: `check-${h.huella}`, lente: 'checks', archivo: h.archivo, linea: h.linea, severidad: SEVERIDAD_FICHA[h.severidad], titulo: h.titulo, detalle: h.mensaje }));
+      const fichas = [...candidatas.map(({ id, lente, repo, archivo, linea, severidad, titulo, detalle }) => ({ id, lente, ...(repo ? { repo } : {}), archivo, linea, severidad, titulo, detalle })), ...fichasChecks];
       const v = await llamar('verificar', 'ultra_verificar', `Verify these findings.\n\nAvailable repositories (read-only):\n- ${pr.repo}: the current directory.\n${repos}\n\nFindings:\n${JSON.stringify(fichas, null, 1)}`, SCHEMA_VERIFICAR, dirsOtros);
       motivoFallo = falla(v, Array.isArray(v.salida?.veredictos));
       if (motivoFallo) aviso('verification', motivoFallo);
       else {
+        modeloVerificar = v.modelo;
         for (const x of v.salida.veredictos) {
           if (x && VEREDICTOS.has(x.veredicto) && typeof x.id === 'string' && !veredictos.has(x.id)) veredictos.set(x.id, { veredicto: x.veredicto, razon: texto(x.razon, 300) });
         }
@@ -256,11 +283,17 @@ export async function revisarUltra(p, pr, {
 
     ok = !motivoFallo;
     if (ok) {
+      if (hallazgosChecks.length) {
+        guardarTriaje(p, pr, { origen: 'ultra', modelo: modeloVerificar, modo: 'ultra', costo: 0, veredictos: hallazgosChecks.map((h) => {
+          const v = veredictos.get(`check-${h.huella}`);
+          return { huella: h.huella, veredicto: v ? VEREDICTO_TRIAJE[v.veredicto] : 'dudoso', razon: v ? v.razon : MOTIVO_SIN_VEREDICTO };
+        }) });
+      }
       const hallazgos = [];
       for (const h of candidatas) {
         const v = veredictos.get(h.id);
         if (v && v.veredicto !== 'REJECTED') hallazgos.push({ ...h, ...v });
-        else descartadas.push({ ...h, motivo: v ? `Rejected by the verification: ${v.razon}` : 'The verification gave no verdict' });
+        else descartadas.push({ ...h, motivo: v ? `Rejected by the verification: ${v.razon}` : MOTIVO_SIN_VEREDICTO });
       }
       let comprobacion;
       try {
