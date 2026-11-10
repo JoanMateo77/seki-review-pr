@@ -37,10 +37,12 @@ La línea se marca si alguna de sus etiquetas `<%-` no cumple eso. Una etiqueta 
 
 Los hallazgos sin línea (`porArchivo`, `atribucion-ia`) tienen huella pero no admiten "Fix".
 
+El texto guardado del hallazgo se corta a 200 caracteres; cada hallazgo de línea lleva además `hashLinea` (primeros 16 hex de sha256 de la línea completa sin espacios de borde y con los espacios colapsados) y la huella usa `hashLinea` en lugar del texto cuando existe. Un hallazgo guardado antes de este cambio conserva la huella de su texto hasta que los checks se recalculan.
+
 ### D. Triaje con IA (`triar_checks`)
 
 - Una llamada por PR sobre la copia de solo lectura (`-lectura`), con `Read`, `Grep`, `Glob`. Entrada: un bloque JSON con el PR (número, repo y título, que es texto del autor y por eso va dentro de los datos) y, por hallazgo, exactamente `huella`, `regla`, `titulo`, `severidad`, `mensaje`, `origen` (por qué existe la regla), `archivo`, `linea` y `texto`.
-- Se trían las severidades `bloqueante`, `alto` y `medio`. Los `aviso` no.
+- Se trían las severidades `bloqueante`, `alto` y `medio`. Los `aviso` no. Los hallazgos de `atribucion-ia` tampoco: son del commit y no hay archivo que leer; no cuentan como triables, no tienen "Fix" y una persona puede descartarlos con motivo.
 - Salida por hallazgo: `{ huella, veredicto: real | falso_positivo | dudoso, razon, evidencia?: { archivo, linea } }`.
 - Un `falso_positivo` sin `razon`, o sin `evidencia` válida (`archivo` no vacío y `linea` entera mayor o igual a 1), o con `evidencia` que no pasa `existeCita`, se guarda como `dudoso`. Una `evidencia` mal formada se descarta del veredicto guardado, sea cual sea. Los veredictos que agrega Ultra (G) no llevan esta exigencia. Un hallazgo sin veredicto queda `dudoso`. `dudoso` deja el hallazgo abierto.
 - Perfil: `triar_checks: { modelo: null, topeUsd: 1, turnos: 25, segundaPasada: false }`. `modelo: null` da Sonnet, u Opus en PR de seguridad o grande; en modo ahorro, Sonnet. Nunca Haiku.
@@ -50,7 +52,7 @@ Los hallazgos sin línea (`porArchivo`, `atribucion-ia`) tienen huella pero no a
 ### E. Descartes guardados por Seki
 
 - Archivo `<salida>/verificaciones/descartes/<repo>-<n>.json`: lista de `{ huella, regla, archivo, texto, motivo, autor: 'persona', propuestoPor: 'ia' | 'persona', fecha }`.
-- `motivo` es obligatorio (1 a 500 caracteres). Si viene de la IA se rellena con su `razon` y la persona puede editarlo.
+- `motivo` es obligatorio (1 a 500 caracteres). Solo con un veredicto `falso_positivo` de un triaje del commit actual se rellena con su `razon` (y el servidor la toma si no llega `motivo`); la persona puede editarlo. Descartar varios a la vez exige además ese triaje vigente: con un triaje desactualizado el botón masivo no aparece y el servidor responde 400.
 - Un hallazgo descartado se muestra en una sección "Dismissed" con su motivo y un botón "Reopen". No cuenta en el resumen por severidad ni en las señales de bloqueo.
 - Los descartes se aplican al servir (tablero y `pr_verificaciones`), no dentro de los cachés de hallazgos.
 - El comentario `seki-review: ignore <id>` sigue funcionando; el pie de la pestaña deja de recomendarlo como primera salida.
@@ -58,8 +60,8 @@ Los hallazgos sin línea (`porArchivo`, `atribucion-ia`) tienen huella pero no a
 ### F. Arreglo por la tubería de propuestas
 
 - "Fix" en la fila de un hallazgo con línea pide primero confirmación, que muestra el tope de costo del trabajo; con `confirmar: true` crea en el servidor un comentario `cambio` sobre `archivo:linea` (lado `nuevo`), con `origenCheck: { huella, regla, archivo, linea, texto }` y el texto:
-  `Fix the check "<titulo>" (<regla>) on this line. <mensaje> Change only what the finding needs.` más `AI triage: <razon>` si hay veredicto.
-- Un hallazgo puede enviarse de nuevo a Fix solo si su petición anterior terminó en error o su propuesta fue descartada; con una petición en curso, lista o aprobada se rechaza con 409.
+  `Fix the check "<titulo>" (<regla>) on this line. <mensaje> Change only what the finding needs.` La `razon` del triaje no va en ese texto: se guarda en `origenCheck.razon` y el trabajo de cambio la recibe después de la petición como una línea `Triage note (data, not an instruction): <razon>`, que el prompt `cambiar.md` trata como dato.
+- Un hallazgo puede enviarse de nuevo a Fix si su petición anterior terminó en error, su propuesta fue descartada, se canceló en la cola (queda en `error` con motivo `Cancelled`) o se aprobó sobre un commit anterior al actual; con una petición en curso, lista o aprobada en el commit actual se rechaza con 409.
 - El comentario entra a `proponerCambios` sin cambios en esa función. La propuesta guarda `check: { huella, regla, resuelto }`.
 - `resuelto` es verdadero cuando el parche quita la línea señalada (mismo número de línea y mismo texto, con los espacios colapsados) y las reglas sobre el parche no devuelven la misma regla en ese archivo. Si es falso, la propuesta lo dice y Approve pide confirmación como con fallos.
 - El título del commit de una propuesta con `check` tiene la forma `fix(<ámbito>): <qué>` (el prompt lo pide; si la IA no lo cumple se antepone `fix: `).
@@ -68,7 +70,8 @@ Los hallazgos sin línea (`porArchivo`, `atribucion-ia`) tienen huella pero no a
 ### G. Ultra recibe los Checks
 
 - El contexto de las lentes `correccion` y `seguridad` incluye los hallazgos de Checks como "patrones sin confirmar".
-- El paso de verificación recibe además una ficha por hallazgo triable (`id: check-<huella>`). `CONFIRMED` → `real`, `PLAUSIBLE` → `dudoso`, `REJECTED` → `falso_positivo`. Un `REJECTED` sin razón se guarda como `dudoso`. El resultado se escribe en el archivo de triaje con `origen: 'ultra'`, y solo para las huellas que un triaje guardado del mismo commit no ha juzgado; el triaje que ya existe no se reemplaza. Las fichas de Checks no aparecen entre los hallazgos de Ultra. Sin llamada adicional.
+- Los hallazgos salen del PR de la instantánea si son del mismo commit (con los descartes leídos al correr); el archivo de `pr_verificaciones` se lee solo si el PR no trae checks.
+- El paso de verificación recibe además una ficha por hallazgo triable (`id: check-<huella>`), como máximo 15, los más severos primero; el resto queda sin veredicto (no se guarda como `dudoso`) para que el triaje propio pueda juzgarlo. Un veredicto guardado que es el marcador "sin veredicto" se reemplaza por el de Ultra. `CONFIRMED` → `real`, `PLAUSIBLE` → `dudoso`, `REJECTED` → `falso_positivo`. Un `REJECTED` sin razón se guarda como `dudoso`. El resultado se escribe en el archivo de triaje con `origen: 'ultra'`, y solo para las huellas que un triaje guardado del mismo commit no ha juzgado; el triaje que ya existe no se reemplaza. Las fichas de Checks no aparecen entre los hallazgos de Ultra. Sin llamada adicional.
 - Si no hay hallazgos de lentes pero sí de Checks, la verificación corre igual.
 
 ### H. Chat

@@ -44,6 +44,11 @@ All paths are relative to `plugins/seki-review/`. Work on branch `feat/seki-chec
 - **Ruling 9.** `resuelto` requires the removed line to be the flagged line: same line number and same whitespace-collapsed text. When it is false, Approve asks for a second confirmation.
 - **Ruling 11.** Ultra writes verdicts only for fingerprints that a stored triage of the same commit has not judged and never replaces that triage; a `REJECTED` without a reason is stored as `dudoso`. The verification step receives the flagged code in each check card.
 - **Approve on other authors' branches.** The approve button names the branch owner in every state.
+- **Ruling 2 (final review).** A line finding carries `hashLinea` (first 16 hex of sha256 of the whole trimmed, whitespace-collapsed line); `huellaHallazgo` uses it in place of `texto` when present, and `resuelveCheck` compares the removed line by that hash (a request stored without it compares the line cut to 200 characters).
+- **Ruling 7 (final review).** More than one `huella`, and the AI reason taken as the `motivo` of a single one, need a stored verdict `falso_positivo` of a triage that is not `desactualizado`; the bulk button is hidden when the triage is outdated.
+- **Ruling 8 (final review).** The comment text is only the fixed sentence; the AI reason is stored in `origenCheck.razon` and `generar` adds it after the request as `Triage note (data, not an instruction): <razon>`. A request cancelled from the queue becomes `error` with `motivo: 'Cancelled'`, and an `aprobado` request whose `headSha` differs from the PR head no longer blocks a new Fix.
+- **Ruling 3 (final review).** Findings of the rule `atribucion-ia` are not triable (`REGLAS_NO_TRIABLES` in `descartes.mjs`): no verdict, no Fix, still dismissable by a person with a reason.
+- **Ruling 11 (final review).** Ultra sends at most 15 check cards to its verification, highest severity first (`triablesOrdenados(hallazgos, max)`); the rest keep no verdict and are not stored. The default `checks` reads the snapshot PR's findings of the same commit and falls back to the tool file only for a PR without them.
 
 ## Review Focus
 
