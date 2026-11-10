@@ -4,6 +4,8 @@ import { escribirJson, rutaVerificacion } from '../lib/cache.mjs';
 import { archivosPr, commitsPr } from '../lib/estado.mjs';
 import { ghJson, git } from '../lib/proceso.mjs';
 import { archivosDeDiff, verificar } from '../lib/verificar.mjs';
+import { aplicarDescartes, leerDescartes } from '../lib/descartes.mjs';
+import { leerTriaje } from '../lib/triaje.mjs';
 import { REGLAS, reglasDeConfig } from '../lib/reglas.mjs';
 
 export default {
@@ -11,7 +13,8 @@ export default {
   description:
     'Runs the project\'s fixed checks (interpolated SQL, secrets, "comercio" in visible text, unescaped EJS, ' +
     'as any, any in type positions, sensitive logs, environment variables, DDL, dependencies, AI attribution trailers in commits) on the lines a PR adds, ' +
-    'or on a local branch before opening the PR (dir + base). No AI involved: the result is reproducible.',
+    'or on a local branch before opening the PR (dir + base). No AI involved: the result is reproducible. ' +
+    'With repo and numero it also returns the stored AI triage verdicts and the dismissed findings; verdicts and dismissals are read-only here and are managed from the board.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -49,6 +52,11 @@ export default {
     ]);
     const resultado = { repo, numero, headSha: headRefOid, ...verificar({ repo, archivos, commits, omitidas: p.repos[repo]?.reglas_omitidas, extra: reglasDeConfig(p.reglas) }) };
     escribirJson(rutaVerificacion(p.salida, repo, numero), resultado);
-    return resultado;
+    // The stored file keeps the raw findings; dismissals and verdicts are layered on the answer only.
+    return {
+      ...aplicarDescartes(resultado, leerDescartes(p, repo, numero)),
+      triaje: leerTriaje(p, repo, numero, headRefOid),
+      tablero: `#/pr/${repo}/${numero}?checks=1`,
+    };
   },
 };

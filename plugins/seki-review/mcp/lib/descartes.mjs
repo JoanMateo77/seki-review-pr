@@ -47,7 +47,9 @@ export function aplicarDescartes(verificaciones, descartes) {
   const porHuella = new Map(descartes.map((d) => [d.huella, d]));
   const hallazgos = [];
   const descartados = [];
-  for (const h of verificaciones.hallazgos ?? []) {
+  // Already-dismissed entries are re-evaluated too, so applying twice keeps them (and reopening still restores them).
+  const previos = (verificaciones.descartados ?? []).map(({ descarte, ...h }) => h);
+  for (const h of [...(verificaciones.hallazgos ?? []), ...previos]) {
     const huella = huellaHallazgo(h);
     const descarte = porHuella.get(huella);
     if (descarte) descartados.push({ ...h, huella, descarte });
