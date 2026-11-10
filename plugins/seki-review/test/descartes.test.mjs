@@ -1,0 +1,69 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { aplicarDescartes, descartar, huellaHallazgo, leerDescartes, reabrir, TRIABLES } from '../mcp/lib/descartes.mjs';
+import { resumir } from '../mcp/lib/verificar.mjs';
+
+const p = () => ({ salida: mkdtempSync(join(tmpdir(), 'seki-desc-')) });
+const h = { regla: 'ejs-sin-escapar', titulo: 'Unescaped output', severidad: 'alto', archivo: 'views/list.ejs', linea: 4, texto: '<%- item.name %>', mensaje: 'm', origen: 'regla' };
+
+test('fingerprint ignores line and inner spaces, follows the text', () => {
+  assert.equal(huellaHallazgo({ ...h, linea: 90 }), huellaHallazgo(h));
+  assert.equal(huellaHallazgo({ ...h, texto: '<%-   item.name   %>' }), huellaHallazgo({ ...h, texto: '<%- item.name %>' }));
+  assert.notEqual(huellaHallazgo({ ...h, texto: '<%- item.id %>' }), huellaHallazgo(h));
+  assert.match(huellaHallazgo(h), /^[0-9a-f]{16}$/);
+});
+
+test('descartar validates motivo and propuestoPor', () => {
+  const pr = p();
+  assert.throws(() => descartar(pr, 'api', 1, h, { motivo: '', propuestoPor: 'persona' }), /motivo/);
+  assert.throws(() => descartar(pr, 'api', 1, h, { motivo: '  ', propuestoPor: 'persona' }), /motivo/);
+  assert.throws(() => descartar(pr, 'api', 1, h, { motivo: 'x'.repeat(501), propuestoPor: 'persona' }), /motivo/);
+  assert.throws(() => descartar(pr, 'api', 1, h, { motivo: 'ok', propuestoPor: 'otro' }), /propuestoPor/);
+  assert.deepEqual(leerDescartes(pr, 'api', 1), []);
+});
+
+test('dismissing twice keeps one entry with the last motivo', () => {
+  const pr = p();
+  const d = descartar(pr, 'api', 1, h, { motivo: ' first ', propuestoPor: 'ia' });
+  assert.equal(d.autor, 'persona');
+  assert.equal(d.propuestoPor, 'ia');
+  assert.equal(d.motivo, 'first');
+  descartar(pr, 'api', 1, h, { motivo: 'second', propuestoPor: 'persona' });
+  const todos = leerDescartes(pr, 'api', 1);
+  assert.equal(todos.length, 1);
+  assert.equal(todos[0].motivo, 'second');
+  assert.equal(todos[0].huella, huellaHallazgo(h));
+});
+
+test('aplicarDescartes moves the finding and leaves the input untouched', () => {
+  const pr = p();
+  const otro = { ...h, regla: 'otra', severidad: 'medio', texto: 'x' };
+  const hallazgos = [h, otro];
+  const entrada = { headSha: 'abc', hallazgos, resumen: resumir(hallazgos) };
+  const copia = structuredClone(entrada);
+  descartar(pr, 'api', 1, h, { motivo: 'Safe here', propuestoPor: 'persona' });
+  const r = aplicarDescartes(entrada, leerDescartes(pr, 'api', 1));
+  assert.deepEqual(entrada, copia);
+  assert.equal(r.headSha, 'abc');
+  assert.equal(r.hallazgos.length, 1);
+  assert.equal(r.hallazgos[0].huella, huellaHallazgo(otro));
+  assert.equal(r.descartados.length, 1);
+  assert.equal(r.descartados[0].descarte.motivo, 'Safe here');
+  assert.equal(r.resumen.alto, entrada.resumen.alto - 1);
+  assert.equal(r.resumen.medio, 1);
+});
+
+test('reabrir removes an entry and returns false for an unknown huella', () => {
+  const pr = p();
+  descartar(pr, 'api', 1, h, { motivo: 'ok', propuestoPor: 'persona' });
+  assert.equal(reabrir(pr, 'api', 1, 'nope'), false);
+  assert.equal(reabrir(pr, 'api', 1, huellaHallazgo(h)), true);
+  assert.deepEqual(leerDescartes(pr, 'api', 1), []);
+});
+
+test('TRIABLES holds the three upper severities', () => {
+  assert.deepEqual([...TRIABLES].sort(), ['alto', 'bloqueante', 'medio']);
+});
