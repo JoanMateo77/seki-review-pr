@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { archivosDeDiff } from '../mcp/lib/verificar.mjs';
 import { leerCostos } from '../mcp/lib/ia.mjs';
 import { escribirJson, rutaPlantillas } from '../mcp/lib/cache.mjs';
+import { aplicarDescartes, descartar, huellaHallazgo } from '../mcp/lib/descartes.mjs';
+import { leerTriaje } from '../mcp/lib/triaje.mjs';
 import { lentesCubiertas, leerUltra, parcheUnido, revisarUltra } from '../mcp/lib/ultra.mjs';
 
 const SHA = 'a'.repeat(40);
@@ -389,4 +391,189 @@ test('all other lenses failing with the security lens covered ends the job on th
   const r = await revisarUltra(p, pr, deps);
   assert.equal(r.ok, false);
   assert.equal(r.motivo, 'The job exceeded the maximum time');
+});
+
+const REGLA = { regla: 'ejs-sin-escape', severidad: 'alto', titulo: 'Unescaped output', archivo: 'views/list.ejs', linea: 4, texto: '<%- nombre %>', mensaje: 'Output is not escaped' };
+const HUELLA = huellaHallazgo(REGLA);
+const conChecks = (e, lista = [REGLA]) => { e.deps.checks = () => lista.map((x) => ({ ...x, huella: huellaHallazgo(x) })); return e; };
+const ultimoVerificar = (registro) => registro.filter((x) => !x.prompt.startsWith('Lens:')).at(-1);
+
+test('correccion and seguridad get the check findings as context, lineamientos does not', async () => {
+  const registro = [];
+  const e = conChecks(entorno({ registro, verificar: veredictosDe({}) }));
+  await revisarUltra(e.p, pr, e.deps);
+  const linea = '- alto · Unescaped output (ejs-sin-escape) · views/list.ejs:4 · <%- nombre %>';
+  for (const lente of ['correccion', 'seguridad']) {
+    const c = registro.find((x) => x.prompt.startsWith(`Lens: ${lente}`));
+    assert.match(c.prompt, /Fixed-rule findings \(unverified patterns\)/);
+    assert.ok(c.prompt.includes(linea), lente);
+  }
+  const l = registro.find((x) => x.prompt.startsWith('Lens: lineamientos'));
+  assert.doesNotMatch(l.prompt, /Fixed-rule findings/);
+});
+
+test('a REJECTED check card is stored as falso_positivo with origen ultra and never enters the Ultra result', async () => {
+  const registro = [];
+  const e = conChecks(entorno({ registro, lentes: { correccion: { hallazgos: [h('src/a.ts', 1)] } }, verificar: veredictosDe({ [`check-${HUELLA}`]: 'REJECTED' }) }));
+  const r = await revisarUltra(e.p, pr, e.deps);
+  assert.ok(ultimoVerificar(registro).prompt.includes(`"id": "check-${HUELLA}"`));
+  assert.deepEqual(r.resultado.hallazgos.map((x) => x.id), ['correccion-1']);
+  assert.deepEqual(r.resultado.descartadas, []);
+  assert.equal(r.resultado.lentes.find((l) => l.nombre === 'correccion').hallazgos, 1);
+  const t = leerTriaje(e.p, 'api', 7, SHA);
+  assert.deepEqual([t.origen, t.costo, t.modo, t.modelo], ['ultra', 0, 'ultra', 'claude-sonnet-5-5']);
+  assert.deepEqual(t.veredictos, [{ huella: HUELLA, veredicto: 'falso_positivo', razon: 'Seen in src/a.ts:1' }]);
+});
+
+test('CONFIRMED and PLAUSIBLE map to real and dudoso; a card with no verdict is dudoso', async () => {
+  const otro = { ...REGLA, regla: 'otra', texto: 'x' };
+  const sin = { ...REGLA, regla: 'sin', severidad: 'medio', texto: 'y' };
+  const e = conChecks(entorno({ verificar: (prompt) => ({ ok: true, costo: 0.1, modelo: 'm', salida: { veredictos: [
+    { id: `check-${HUELLA}`, veredicto: 'CONFIRMED', razon: 'a' }, { id: `check-${huellaHallazgo(otro)}`, veredicto: 'PLAUSIBLE', razon: 'b' }] } }) }), [REGLA, otro, sin]);
+  await revisarUltra(e.p, pr, e.deps);
+  assert.deepEqual(leerTriaje(e.p, 'api', 7, SHA).veredictos.map((v) => [v.huella, v.veredicto, v.razon]), [
+    [HUELLA, 'real', 'a'], [huellaHallazgo(otro), 'dudoso', 'b'], [huellaHallazgo(sin), 'dudoso', 'The triage gave no verdict']]);
+});
+
+test('with no lens findings and one check the verification still runs once', async () => {
+  const registro = [];
+  const e = conChecks(entorno({ registro, verificar: veredictosDe({}) }));
+  const r = await revisarUltra(e.p, pr, e.deps);
+  assert.equal(r.ok, true);
+  assert.equal(registro.filter((x) => !x.prompt.startsWith('Lens:')).length, 1);
+  assert.deepEqual(r.resultado.hallazgos, []);
+});
+
+test('no check findings means no extra section, no check cards and no triage file', async () => {
+  const registro = [];
+  const e = entorno({ registro, lentes: { correccion: { hallazgos: [h('src/a.ts', 1)] } }, verificar: veredictosDe({}) });
+  e.deps.checks = () => [];
+  await revisarUltra(e.p, pr, e.deps);
+  assert.ok(registro.every((x) => !/Fixed-rule findings/.test(x.prompt) && !/"check-/.test(x.prompt)));
+  assert.equal(leerTriaje(e.p, 'api', 7, SHA), null);
+});
+
+test('a failed verification leaves no triage file; all lenses failing verifies nothing', async () => {
+  const f = conChecks(entorno({ verificar: () => ({ ok: false, costo: 0.3, modelo: 'm', salida: null, motivoSeguro: 'The job reached its turn limit' }) }));
+  const r = await revisarUltra(f.p, pr, f.deps);
+  assert.equal(r.ok, false);
+  assert.equal(leerTriaje(f.p, 'api', 7, SHA), null);
+  const registro = [];
+  const g = conChecks(entorno({ registro, lentes: { correccion: new Error('x'), seguridad: new Error('x'), lineamientos: new Error('x') } }));
+  const r2 = await revisarUltra(g.p, pr, g.deps);
+  assert.equal(r2.ok, false);
+  assert.ok(registro.every((x) => x.prompt.startsWith('Lens:')));
+  assert.equal(leerTriaje(g.p, 'api', 7, SHA), null);
+});
+
+test('at most 40 check findings go to the lenses and 15 to the verification, highest severity first', async () => {
+  const registro = [];
+  const lista = [...Array.from({ length: 45 }, (_, i) => ({ ...REGLA, severidad: 'medio', texto: `m${i}` })), { ...REGLA, severidad: 'bloqueante', texto: 'top' }];
+  const e = conChecks(entorno({ registro, verificar: veredictosDe({}) }), lista);
+  await revisarUltra(e.p, pr, e.deps);
+  const prompt = registro.find((x) => x.prompt.startsWith('Lens: correccion')).prompt;
+  assert.equal(prompt.split('\n').filter((l) => l.startsWith('- ') && l.includes('(ejs-sin-escape)')).length, 40);
+  assert.ok(prompt.includes('bloqueante · Unescaped output'));
+  assert.equal(leerTriaje(e.p, 'api', 7, SHA).veredictos.length, 15);
+  assert.equal(leerTriaje(e.p, 'api', 7, SHA).veredictos[0].huella, huellaHallazgo({ ...REGLA, texto: 'top' }));
+});
+
+test('with 20 check findings the verification gets 15 cards and the other 5 keep no verdict', async () => {
+  const registro = [];
+  const lista = Array.from({ length: 20 }, (_, i) => ({ ...REGLA, severidad: i < 5 ? 'alto' : 'medio', texto: `c${i}` }));
+  const e = conChecks(entorno({ registro, verificar: veredictosDe({}) }), lista);
+  await revisarUltra(e.p, pr, e.deps);
+  const fichas = JSON.parse(/Findings:\n([\s\S]*)$/.exec(ultimoVerificar(registro).prompt)[1]).filter((f) => f.lente === 'checks');
+  assert.equal(fichas.length, 15);
+  const guardadas = new Set(leerTriaje(e.p, 'api', 7, SHA).veredictos.map((v) => v.huella));
+  assert.equal(guardadas.size, 15);
+  for (const x of lista.slice(0, 5)) assert.ok(guardadas.has(huellaHallazgo(x)), x.texto);
+  // The ones left out are not stored as dudoso: the standalone triage can still judge them.
+  assert.equal(lista.filter((x) => !guardadas.has(huellaHallazgo(x))).length, 5);
+});
+
+// What the board sends: the PR of the snapshot, whose checks already carry their fingerprints and dismissals.
+const prDeFoto = (verificaciones) => ({ ...pr, verificaciones: aplicarDescartes(verificaciones, []) });
+
+test('the default checks dependency reads the checks of the snapshot PR with no stored tool file', async () => {
+  const registro = [];
+  const e = entorno({ registro, verificar: veredictosDe({}) });
+  delete e.deps.checks;
+  const descartado = { ...REGLA, regla: 'otra', texto: 'dismissed' };
+  const verificaciones = { headSha: SHA, hallazgos: [REGLA, { ...REGLA, severidad: 'bajo', texto: 'low' }, descartado], resumen: {} };
+  // Dismissed after the snapshot was built: the job reads the dismissals again when it runs.
+  descartar(e.p, 'api', 7, descartado, { motivo: 'Harmless', propuestoPor: 'persona' });
+  await revisarUltra(e.p, prDeFoto(verificaciones), e.deps);
+  assert.ok(ultimoVerificar(registro).prompt.includes(`"id": "check-${HUELLA}"`));
+  assert.deepEqual(leerTriaje(e.p, 'api', 7, SHA).veredictos.map((v) => v.huella), [HUELLA]);
+});
+
+test('the snapshot checks of another commit are not used, and the tool file is read only when the PR has none', async () => {
+  const e = entorno({ verificar: veredictosDe({}) });
+  delete e.deps.checks;
+  // The stored tool file of this commit is ignored while the PR object carries its own checks.
+  escribirJson(join(e.p.salida, 'verificaciones', 'api-7.json'), { headSha: SHA, hallazgos: [REGLA], resumen: {} });
+  const r0 = await revisarUltra(e.p, prDeFoto({ headSha: 'b'.repeat(40), hallazgos: [REGLA], resumen: {} }), e.deps);
+  assert.equal(r0.ok, true);
+  assert.equal(leerTriaje(e.p, 'api', 7, SHA), null);
+  await revisarUltra(e.p, pr, { ...e.deps, repetir: true });
+  assert.deepEqual(leerTriaje(e.p, 'api', 7, SHA).veredictos.map((v) => v.huella), [HUELLA]);
+});
+
+test('a stored placeholder without verdict is replaced by the Ultra verdict', async () => {
+  const otro = { ...REGLA, regla: 'otra', texto: 'x' };
+  const e = conChecks(entorno({ verificar: veredictosDe({ [`check-${HUELLA}`]: 'REJECTED' }) }), [REGLA, otro]);
+  escribirJson(join(e.p.salida, 'verificaciones', 'triaje', 'api-7.json'), { headSha: SHA, fecha: 'f', origen: 'checks', modelo: 'm0', modo: 'normal', costo: 0.2,
+    veredictos: [{ huella: HUELLA, veredicto: 'dudoso', razon: 'The triage gave no verdict' }, { huella: huellaHallazgo(otro), veredicto: 'real', razon: 'Reaches the page' }] });
+  await revisarUltra(e.p, pr, e.deps);
+  const t = leerTriaje(e.p, 'api', 7, SHA);
+  assert.deepEqual(t.veredictos, [
+    { huella: HUELLA, veredicto: 'falso_positivo', razon: 'Seen in src/a.ts:1', origen: 'ultra' },
+    { huella: huellaHallazgo(otro), veredicto: 'real', razon: 'Reaches the page' }]);
+});
+
+test('a stored triage file without verdicts does not stop Ultra from adding its own', async () => {
+  const e = conChecks(entorno({ verificar: veredictosDe({}) }));
+  escribirJson(join(e.p.salida, 'verificaciones', 'triaje', 'api-7.json'), { headSha: SHA, origen: 'checks' });
+  const r = await revisarUltra(e.p, pr, e.deps);
+  assert.equal(r.ok, true);
+  assert.deepEqual(leerTriaje(e.p, 'api', 7, SHA).veredictos.map((v) => [v.huella, v.origen]), [[HUELLA, 'ultra']]);
+});
+
+test('a REJECTED check card with an empty reason is stored as dudoso', async () => {
+  const e = conChecks(entorno({ verificar: () => ({ ok: true, costo: 0.1, modelo: 'm', salida: { veredictos: [{ id: `check-${HUELLA}`, veredicto: 'REJECTED', razon: '  ' }] } }) }));
+  await revisarUltra(e.p, pr, e.deps);
+  assert.equal(leerTriaje(e.p, 'api', 7, SHA).veredictos[0].veredicto, 'dudoso');
+});
+
+test('the check card shows the verifier the matched code and the message; a finding without line prints only the file', async () => {
+  const registro = [];
+  const sinLinea = { ...REGLA, regla: 'sl', texto: 'raw()', linea: undefined };
+  const e = conChecks(entorno({ registro, verificar: veredictosDe({}) }), [REGLA, sinLinea]);
+  await revisarUltra(e.p, pr, e.deps);
+  const ficha = JSON.parse(/Findings:\n([\s\S]*)$/.exec(ultimoVerificar(registro).prompt)[1]).find((f) => f.id === `check-${HUELLA}`);
+  assert.equal(ficha.detalle, '<%- nombre %>\nOutput is not escaped');
+  const lente = registro.find((x) => x.prompt.startsWith('Lens: correccion')).prompt;
+  assert.ok(lente.includes('(sl) · views/list.ejs · raw()'));
+  assert.doesNotMatch(lente, /undefined/);
+});
+
+test('Ultra keeps the verdicts of a stored triage of the same commit and only adds the missing ones', async () => {
+  const otro = { ...REGLA, regla: 'otra', texto: 'x' };
+  const e = conChecks(entorno({ verificar: veredictosDe({}) }), [REGLA, otro]);
+  escribirJson(join(e.p.salida, 'verificaciones', 'triaje', 'api-7.json'), { headSha: SHA, fecha: 'f', origen: 'checks', modelo: 'm0', modo: 'normal', costo: 0.2,
+    veredictos: [{ huella: HUELLA, veredicto: 'falso_positivo', razon: 'Seen', evidencia: { archivo: 'src/a.ts', linea: 1 } }] });
+  await revisarUltra(e.p, pr, e.deps);
+  const t = leerTriaje(e.p, 'api', 7, SHA);
+  assert.deepEqual([t.origen, t.modelo, t.costo], ['checks', 'm0', 0.2]);
+  assert.deepEqual(t.veredictos[0], { huella: HUELLA, veredicto: 'falso_positivo', razon: 'Seen', evidencia: { archivo: 'src/a.ts', linea: 1 } });
+  assert.deepEqual(t.veredictos.slice(1).map((v) => [v.huella, v.veredicto, v.origen]), [[huellaHallazgo(otro), 'real', 'ultra']]);
+});
+
+test('Ultra replaces a stored triage of another commit', async () => {
+  const e = conChecks(entorno({ verificar: veredictosDe({}) }));
+  escribirJson(join(e.p.salida, 'verificaciones', 'triaje', 'api-7.json'), { headSha: 'b'.repeat(40), origen: 'checks', modelo: 'm0', modo: 'normal', costo: 0.2, veredictos: [] });
+  await revisarUltra(e.p, pr, e.deps);
+  const t = leerTriaje(e.p, 'api', 7, SHA);
+  assert.deepEqual([t.origen, t.desactualizado, t.veredictos.length], ['ultra', false, 1]);
 });

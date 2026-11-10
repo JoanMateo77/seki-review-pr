@@ -3,6 +3,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { leerJson, rutaDiff, rutaExplicacion, rutaInstantanea } from './cache.mjs';
 import { sugerirUltra } from './perfiles.mjs';
+import { aplicarDescartes, leerDescartes } from './descartes.mjs';
+import { leerTriaje } from './triaje.mjs';
 import { diffsDeFoto } from './diffs.mjs';
 import { datosEntregas } from './tablero-entregas.mjs';
 
@@ -35,6 +37,11 @@ export function fotoConExplicaciones(p) {
   for (const pr of foto.prs) {
     const e = leerJson(rutaExplicacion(p.salida, pr.repo, pr.numero));
     pr.explicacion = e ? { ...e, desactualizada: e.headSha !== pr.headSha } : undefined;
+    // Dismissals live outside the PR data, so every consumer of the snapshot sees the reduced findings.
+    if (pr.verificaciones) {
+      pr.verificaciones = aplicarDescartes(pr.verificaciones, leerDescartes(p, pr.repo, pr.numero));
+      pr.triaje = leerTriaje(p, pr.repo, pr.numero, pr.headSha) ?? undefined;
+    }
     pr.ultraSugerida = sugerirUltra(p, pr, p.ia?.patronesSensibles?.length ? nombresDeArchivos(p, pr) : []).sugerida;
   }
   return foto;

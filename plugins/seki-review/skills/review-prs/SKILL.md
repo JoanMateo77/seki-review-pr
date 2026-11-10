@@ -14,7 +14,7 @@ Tools of the `seki-review` MCP server:
 | `qa_guia` | Generates the QA guide (xlsx, html, pdf under the output folder) for deliveries waiting for QA: one row per finding and portal; `desde: "ultimo-corte"` limits it to tracks merged into testing after the last guide. It never runs the AI |
 | `qa_importar` | Imports a filled QA guide (xlsx), records the results per track and updates the tracker spreadsheet when configured |
 | `pr_detalle` | Description, commits and trimmed diff of a PR, to understand it |
-| `pr_verificaciones` | Fixed rules over the added lines of a PR, or of a local branch before opening it (`dir` + `base`) |
+| `pr_verificaciones` | Fixed rules over the added lines of a PR, or of a local branch before opening it (`dir` + `base`). For a PR it also returns the stored AI triage (marked outdated after newer commits), the dismissed findings with their reason and the board link of the Checks tab. Read-only: it spends no AI and changes no verdict or dismissal |
 | `pr_ultra` | Read-only: cost estimate of an Ultra review of a PR and what it is based on, whether Ultra is suggested, the stored result (marked outdated after newer commits) and the dashboard link that opens the confirmation. Spends no AI |
 | `pr_plantillas` | Read-only: the review templates that apply to a PR and why, the omitted ones, the files covered only by the base template, skipped template files, the cost estimate and cap, the stored checklist and Conventional Comments (marked outdated after newer commits) and the dashboard link that opens the confirmation. Spends no AI |
 | `pr_revisar` | Adds a PR to the dashboard's "To review" list from its link (`https://github.com/<owner>/<repo>/pull/<n>`, `<repo>#<n>`). Checks that the repository is configured and the PR open; spends no AI and writes nothing to GitHub |
@@ -37,6 +37,7 @@ both portals, "another version in testing" and old PRs with conflicts. Do not re
 
 **"verify <repo>#<n>"** or **"verify <path> <base>"** ("verificar"): `pr_verificaciones`; explain each blocking or high finding
 by looking at the line in context and say whether it is real or a false positive. Before opening your own PR, run it on the local branch.
+For a PR, show first what is stored: the AI verdict and reason of each finding (say if the triage is outdated, that is, from an earlier commit) and the dismissed findings with their reason, which are not open findings. Never start the triage from the chat and do not dismiss, reopen or fix anything from here: if there is no triage, say so and give the board link, the served URL returned by `tablero_servir` with the `tablero` field (`#/pr/<repo>/<n>?checks=1`) appended; opening it shows the Checks tab, where "Validate with AI" asks for confirmation before spending anything.
 
 **"deliveries" ("entregas"):** call `entregas` and summarize by stage, starting with what needs action (QA failed, stalled, merge order alerts, ready for production). Do not call GitHub; if the data may be stale, say that the dashboard refresh updates it. In the dashboard the default tab is Deliveries, where cards can be joined, split, renamed and closed.
 

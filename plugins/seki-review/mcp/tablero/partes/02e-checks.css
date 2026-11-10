@@ -1,0 +1,5 @@
+.acciones-check-cab { margin: 0 0 12px; }
+.acciones-check { text-align: right; white-space: nowrap; }
+.descartados-check { margin-top: 20px; }
+.descartados-check summary { margin-bottom: 8px; color: var(--texto-2); font-weight: 500; cursor: pointer; }
+.modal label[for="motivoCheck"] { display: block; margin: 12px 0 4px; font-weight: 500; }

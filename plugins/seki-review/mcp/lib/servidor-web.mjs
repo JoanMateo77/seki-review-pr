@@ -11,7 +11,7 @@ import { construirHtml, fotoConExplicaciones, nombresDeArchivos, versionEnDisco 
 const VERSION = versionEnDisco();
 import { crearCola } from './trabajos.mjs';
 import { asegurarDiff, diffParaTablero } from './diffs.mjs';
-import { actualizarComentario, guardarComentarios, leerComentarios, marcasComentarios, recuperarInterrumpidos, rescatarPendientes, separarEnviables } from './comentarios.mjs';
+import { actualizarComentario, bloqueaArreglo, cancelarPendientes, crearCambioDeCheck, guardarComentarios, leerComentarios, marcasComentarios, recuperarInterrumpidos, rescatarPendientes, separarEnviables } from './comentarios.mjs';
 import { investigarPregunta, responderPreguntas } from './preguntas.mjs';
 import { ajustarPropuesta, aprobar, descartar, leerPropuesta, proponerCambios } from './propuestas.mjs';
 import { explicarConIa } from './explicar.mjs';
@@ -20,6 +20,8 @@ import { filtrarPrs } from './filtrar.mjs';
 import { costosDelDia, registrarCosto, resumenCostos } from './ia.mjs';
 import { modoDe, topeDeTrabajo, topeRevisarUltra } from './perfiles.mjs';
 import { datosUltra, lentesCubiertas, leerUltra, revisarUltra } from './ultra.mjs';
+import { aplicarDescartes, descartar as descartarCheck, leerDescartes, reabrir as reabrirCheck } from './descartes.mjs';
+import { datosChecks, leerTriaje, triarChecks } from './triaje.mjs';
 import { datosPlantillas, leerPlantillasPr, revisarPlantillas } from './revision-plantillas.mjs';
 import { crearPresupuesto, crearReservas, gastoMaquina } from './presupuesto.mjs';
 import { estadoServidor, pedirCeder, tokenDe } from './acceso.mjs';
@@ -180,7 +182,7 @@ export async function detenerServidores() {
 }
 
 // intervaloVigiaMs, relojVigia, the ejecutar* jobs and diffPlantillas and shaRama are injected by tests only.
-export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true, soloPuerto = false, intervaloVigiaMs = null, relojVigia, ejecutarUltra = revisarUltra, ejecutarPlantillas = revisarPlantillas, diffPlantillas = asegurarDiff, shaRama } = {}) {
+export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true, soloPuerto = false, intervaloVigiaMs = null, relojVigia, ejecutarUltra = revisarUltra, ejecutarPlantillas = revisarPlantillas, ejecutarTriaje = triarChecks, ejecutarCambios = proponerCambios, diffPlantillas = asegurarDiff, shaRama } = {}) {
   if (servidores.has(proyecto)) {
     const s = servidores.get(proyecto);
     if (abrir) execFile('open', [s.url]);
@@ -340,7 +342,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
     ejecutar: async () => {
       try { return await ejecutar(); } finally { rescatarPendientes(p, pr.repo, pr.numero, ids, { estado: 'error', motivo: 'The job finished without completing this comment' }); }
     },
-    alCancelar: () => rescatarPendientes(p, pr.repo, pr.numero, ids, { estado: 'borrador', motivo: null }),
+    alCancelar: () => cancelarPendientes(p, pr.repo, pr.numero, ids),
   });
 
   const servidor = createServer(async (req, res) => {
@@ -573,6 +575,89 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         const n = cola.encolar([{ id: `${pr.id}:ultra`, tipo: 'revisar_ultra', prId: pr.id, topeUsd: topeRevisarUltra(3 - lentesCubiertas(p, pr.repo, pr.numero, pr.headSha).length), ejecutar: () => ejecutarUltra(p, pr, { repetir: repetir === true }) }]);
         if (!n) throw Object.assign(new Error('An Ultra review of this PR is already queued'), { codigo: 409 });
         return responder(res, 202, { encolado: `${pr.id}:ultra` });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/checks') {
+        const pr = prDeFoto(`${url.searchParams.get('repo')}#${url.searchParams.get('numero')}`);
+        // The cap of a fix job depends on the mode the dialog will send.
+        const modo = modoDe(p, url.searchParams.get('modo') || undefined);
+        return responder(res, 200, { ...datosChecks(p, pr, pr.verificaciones), topeArreglo: topeDeTrabajo({ tipo: 'cambiar', modo, n: 1 }) });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/checks/triar') {
+        const { repo, numero, repetir, modo: modoPedido, confirmar } = await leerJsonEstricto(req);
+        if (confirmar !== true) throw falloHttp(400, 'The triage must be confirmed');
+        let pr;
+        try { pr = prDeFoto(`${repo}#${numero}`); } catch { throw falloHttp(409, 'The PR is not in the snapshot'); }
+        if (pr.estadoPr !== 'OPEN') throw falloHttp(409, 'The PR is no longer open');
+        if (!datosChecks(p, pr, pr.verificaciones).triables) throw falloHttp(409, 'The PR has no open findings to triage');
+        // A stored triage for this commit is returned as is: no job, no reservation, no spend.
+        const guardado = repetir === true ? null : leerTriaje(p, pr.repo, pr.numero, pr.headSha);
+        if (guardado && !guardado.desactualizado) return responder(res, 200, { desdeCache: true, resultado: guardado });
+        const modo = modoDe(p, modoPedido);
+        const id = `${pr.id}:checks`;
+        // Dismissals are re-read when the job starts: a person may dismiss findings while it waits in the queue.
+        const ejecutar = () => ejecutarTriaje(p, pr, { modo, repetir: repetir === true, verificaciones: aplicarDescartes(pr.verificaciones, leerDescartes(p, pr.repo, pr.numero)) });
+        const n = cola.encolar([{ id, tipo: 'triar_checks', prId: pr.id, topeUsd: topeDeTrabajo({ tipo: 'triar_checks', modo }), ejecutar }]);
+        if (!n) throw falloHttp(409, 'A triage of this PR is already queued');
+        return responder(res, 202, { encolado: id });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/checks/descartar') {
+        const { repo, numero, huellas, motivo } = await leerJsonEstricto(req);
+        if (!Array.isArray(huellas) || !huellas.length || huellas.length > 200 || !huellas.every((x) => typeof x === 'string' && x)) throw falloHttp(400, 'huellas must be a non-empty array of strings');
+        if (motivo !== undefined && typeof motivo !== 'string') throw falloHttp(400, 'motivo must be a string');
+        const pr = prDeFoto(`${repo}#${numero}`);
+        const unicas = [...new Set(huellas)];
+        const abiertos = new Map((pr.verificaciones?.hallazgos ?? []).map((h) => [h.huella, h]));
+        const elegidos = unicas.map((x) => abiertos.get(x));
+        if (elegidos.includes(undefined)) throw falloHttp(404, 'A finding is not an open finding of the PR');
+        // A verdict of an earlier commit judged other code: it backs neither a batch nor the AI reason as the motivo.
+        const triaje = leerTriaje(p, pr.repo, pr.numero, pr.headSha);
+        const veredictos = new Map((triaje && !triaje.desactualizado ? triaje.veredictos : []).map((v) => [v.huella, v]));
+        const falsoPositivo = (h) => veredictos.get(h.huella)?.veredicto === 'falso_positivo';
+        // Several at once is only for the batch the AI called false positives at medium severity.
+        if (unicas.length > 1 && !elegidos.every((h) => h.severidad === 'medio' && falsoPositivo(h))) throw falloHttp(400, 'Several findings can be dismissed together only when all are medium with a false positive verdict of the current commit');
+        const propio = motivo?.trim();
+        // Everything is resolved before the first write so a rejected batch leaves nothing half dismissed.
+        const entradas = elegidos.map((h) => {
+          const razon = falsoPositivo(h) ? veredictos.get(h.huella).razon?.trim() : '';
+          const texto = propio || razon;
+          if (!texto) throw falloHttp(400, 'A motivo is required: the finding has no false positive verdict of the current commit');
+          if (texto.length > 500) throw falloHttp(400, 'motivo must have between 1 and 500 characters');
+          return [h, { motivo: texto, propuestoPor: propio ? 'persona' : 'ia' }];
+        });
+        for (const [h, datos] of entradas) descartarCheck(p, pr.repo, pr.numero, h, datos);
+        return responder(res, 200, { descartados: entradas.length });
+      }
+      // The finding enters the same pipeline as a "Request change" comment: nothing is pushed until a person approves the proposal.
+      if (req.method === 'POST' && url.pathname === '/api/checks/arreglar') {
+        const { repo, numero, huella, modo: modoPedido, confirmar } = await leerJsonEstricto(req);
+        if (confirmar !== true) throw falloHttp(400, 'The fix must be confirmed');
+        if (typeof huella !== 'string' || !huella) throw falloHttp(400, 'huella must be a string');
+        const pr = prDeFoto(`${repo}#${numero}`);
+        if (pr.estadoPr !== 'OPEN') throw falloHttp(409, 'The PR is no longer open');
+        const h = (pr.verificaciones?.hallazgos ?? []).find((x) => x.huella === huella);
+        if (!h) throw falloHttp((pr.verificaciones?.descartados ?? []).some((x) => x.huella === huella) ? 409 : 404, 'The finding is not an open finding of the PR');
+        if (pr.verificaciones.headSha !== pr.headSha) throw falloHttp(409, 'The checks are from an earlier commit');
+        if (!Number.isInteger(h.linea) || h.linea < 1) throw falloHttp(409, 'The finding has no line: it cannot be sent to a fix');
+        if (leerComentarios(p, pr.repo, pr.numero).some((c) => bloqueaArreglo(c, huella, pr.headSha))) throw falloHttp(409, 'This finding already has a fix request');
+        const modo = modoDe(p, modoPedido);
+        // A triage from an earlier commit judged other code: its reason would mislead the fix.
+        const triajeActual = leerTriaje(p, pr.repo, pr.numero, pr.headSha);
+        const razon = triajeActual && !triajeActual.desactualizado ? triajeActual.veredictos.find((v) => v.huella === huella)?.razon : undefined;
+        const comentario = crearCambioDeCheck(p, pr, h, { razon });
+        // The fingerprint keeps two fixes of one PR requested in the same millisecond apart.
+        const encolados = cola.encolar([{ id: `${pr.id}:cambiar:${huella}:${Date.now()}`, tipo: 'cambiar', prId: pr.id, topeUsd: topeDeTrabajo({ tipo: 'cambiar', modo, n: 1 }), ...conRescate(pr, [comentario.id], () => ejecutarCambios(p, pr, [comentario.id], { modo })) }]);
+        if (!encolados) {
+          actualizarComentario(p, pr.repo, pr.numero, comentario.id, { estado: 'error', motivo: 'The fix could not be queued' });
+          throw falloHttp(409, 'The fix could not be queued');
+        }
+        return responder(res, 202, { comentario });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/checks/reabrir') {
+        const { repo, numero, huella } = await leerJsonEstricto(req);
+        if (typeof huella !== 'string' || !huella) throw falloHttp(400, 'huella must be a string');
+        const pr = prDeFoto(`${repo}#${numero}`);
+        if (!reabrirCheck(p, pr.repo, pr.numero, huella)) throw falloHttp(404, 'The finding is not dismissed');
+        return responder(res, 200, { ok: true });
       }
       // The selection is the core of the templates tab and sets the job reservation: it uses the PR diff, which the job
       // fetches anyway. The tab falls back to the cached file names when GitHub cannot be reached; the job does not.

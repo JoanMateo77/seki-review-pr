@@ -21,10 +21,8 @@ export default {
   async handler({ proyecto, repo, numero, max_lineas_diff = 600 }) {
     const p = cargarProyecto(proyecto);
     const nombre = `${p.owner}/${repo}`;
-    const [pr, archivos] = await Promise.all([
-      ghJson(['pr', 'view', String(numero), '-R', nombre, '--json', 'title,body,url,baseRefName,headRefName,headRefOid,state,createdAt,commits,additions,deletions']),
-      archivosPr(p.owner, repo, numero),
-    ]);
+    const pr = await ghJson(['pr', 'view', String(numero), '-R', nombre, '--json', 'title,body,url,baseRefName,headRefName,headRefOid,state,createdAt,commits,additions,deletions']);
+    const archivos = await archivosPr(p.owner, repo, numero, pr.headRefOid);
     const foto = leerJson(rutaInstantanea(p.salida));
     const enFoto = foto?.prs.find((x) => x.repo === repo && x.numero === numero);
 

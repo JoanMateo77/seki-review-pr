@@ -8,7 +8,7 @@ export async function asegurarDiff(p, repo, numero, headSha) {
   const ruta = rutaDiff(p.salida, repo, numero);
   const previo = leerJson(ruta);
   if (previo?.headSha === headSha) return previo.archivos;
-  const archivos = (await archivosPr(p.owner, repo, numero)).map((a) => ({
+  const archivos = (await archivosPr(p.owner, repo, numero, headSha)).map((a) => ({
     filename: a.filename,
     previous_filename: a.previous_filename,
     status: a.status,

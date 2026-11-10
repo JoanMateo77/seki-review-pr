@@ -7,6 +7,7 @@ import { escribirJson, leerJson, rutaExplicacion, rutaVerificacion } from './cac
 import { asegurarDiff } from './diffs.mjs';
 import { contarHerramienta, fijarAvance, quitarAvance } from './avance.mjs';
 import { crearCopia } from './copias.mjs';
+import { aplicarDescartes, leerDescartes } from './descartes.mjs';
 import { argsClaude, dirVacio, ejecutarClaude, MOTIVO_SIN_CONFIRMAR, reglasSecretos, registrarCosto, sistemaDe } from './ia.mjs';
 import { modoDe, perfil } from './perfiles.mjs';
 import { ghJson } from './proceso.mjs';
@@ -160,7 +161,9 @@ async function explicar(p, pr, clave, { completar, modo }) {
   const copia = await crearCopia(p, pr.repo, pr.numero, pr.headSha, { sufijo: '-lectura' }).catch(() => null);
   const dirParches = join(p.copias ?? join(p.salida, 'copias'), 'diffs', `${pr.repo}-${pr.numero}`);
   const parches = escribirParches(dirParches, archivos);
-  const verificaciones = leerJson(rutaVerificacion(p.salida, pr.repo, pr.numero));
+  // A finding a person dismissed is not presented to the explanation as a risk.
+  const guardadas = leerJson(rutaVerificacion(p.salida, pr.repo, pr.numero));
+  const verificaciones = guardadas && aplicarDescartes(guardadas, leerDescartes(p, pr.repo, pr.numero));
   const { modo: modoUsado, modelo, topeUsd, turnos, segundaPasada } = perfil({ tipo: 'explicar', modo: modoDe(p, modo), pr });
   let costo = 0;
   let pasadas = 0;

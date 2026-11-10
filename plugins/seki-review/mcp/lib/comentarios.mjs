@@ -3,6 +3,7 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { leerJson, escribirJson, rutaComentarios } from './cache.mjs';
+import { huellaHallazgo } from './descartes.mjs';
 
 const TIPOS = new Set(['pregunta', 'cambio', 'nota']);
 const DEL_NAVEGADOR = new Set(['borrador', 'nota']);
@@ -16,6 +17,11 @@ export const SECCIONES = {
   dependencias: 'Must go first', riesgos: 'Risks', como_probar: 'How to test',
 };
 const PENDIENTES = new Set(['en_cola', 'en_curso']);
+// A check fix can be requested again when its request failed or its proposal was discarded.
+const REINTENTABLES = new Set(['error', 'descartado']);
+// A fix approved on an earlier commit no longer blocks: the push moved the head and the line may be flagged again.
+export const bloqueaArreglo = (c, huella, headSha) => c.tipo === 'cambio' && c.origenCheck?.huella === huella
+  && !REINTENTABLES.has(c.estado) && !(c.estado === 'aprobado' && c.headSha !== headSha);
 // What the browser may write; answer, cost, proposal and the rest are set only by the server.
 const CAMPOS = ['id', 'tipo', 'estado', 'ambito', 'seccion', 'citado', 'citadoDe', 'respondeA', 'investigar', 'archivo', 'lado', 'desde', 'hasta', 'claves', 'textoOriginal', 'texto', 'sugerido', 'headSha', 'creado', 'actualizado'];
 
@@ -64,7 +70,8 @@ export function fusionarComentarios(actuales, entrantes) {
   for (const c of entrantes) {
     const previo = porId.get(c.id);
     if (previo && !DEL_NAVEGADOR.has(previo.estado) && DEL_NAVEGADOR.has(c.estado)) continue;
-    if (!previo || (c.actualizado ?? '') > (previo.actualizado ?? '')) porId.set(c.id, c);
+    // The origin of a check fix is written only by the server: a browser copy never carries it, and must not drop it.
+    if (!previo || (c.actualizado ?? '') > (previo.actualizado ?? '')) porId.set(c.id, previo?.origenCheck ? { ...c, origenCheck: previo.origenCheck } : c);
   }
   return [...porId.values()];
 }
@@ -76,6 +83,32 @@ export function guardarComentarios(p, repo, numero, entrantes, borrados = []) {
     .filter((c) => !(quitar.has(c.id) && DEL_NAVEGADOR.has(c.estado)));
   escribir(p, repo, numero, lista);
   return lista;
+}
+
+// A check finding sent to the change pipeline. Created here, not by the browser, so `origenCheck` cannot be forged.
+// `origenCheck: { huella, regla, archivo, linea, texto, hashLinea? }` is stored because `resuelveCheck` needs the file,
+// the line and the text (the hash for a line longer than the cut text) to tell whether the finding is gone, without
+// reading the snapshot.
+// The AI reason goes to `origenCheck.razon`, not into `texto`: the change job follows `texto` as the request and
+// reads the reason only as labelled data.
+export function crearCambioDeCheck(p, pr, h, { razon } = {}) {
+  if (!Number.isInteger(h.linea) || h.linea < 1) throw new Error('The finding has no line: it cannot be sent to a fix');
+  const huella = h.huella ?? huellaHallazgo(h);
+  const actuales = leerComentarios(p, pr.repo, pr.numero);
+  if (actuales.some((x) => bloqueaArreglo(x, huella, pr.headSha))) throw Object.assign(new Error('This finding already has a fix request'), { codigo: 409 });
+  const ahora = new Date().toISOString();
+  const c = {
+    id: `c-${Array.from({ length: 12 }, () => Math.floor(Math.random() * 36).toString(36)).join('')}`,
+    tipo: 'cambio', estado: 'en_cola', archivo: h.archivo, lado: 'nuevo', desde: h.linea, hasta: h.linea,
+    texto: `Fix the check "${h.titulo}" (${h.regla}) on this line. ${h.mensaje} Change only what the finding needs.`,
+    headSha: pr.headSha, creado: ahora, actualizado: ahora,
+    origenCheck: { huella, regla: h.regla, archivo: h.archivo, linea: h.linea, texto: h.texto, ...(h.hashLinea ? { hashLinea: h.hashLinea } : {}), ...(razon ? { razon } : {}) },
+  };
+  // A retry replaces the failed or discarded request of the same finding instead of leaving it next to the new one.
+  // An approved one stays: it records what was pushed.
+  const previos = actuales.filter((x) => !(x.origenCheck?.huella === huella && REINTENTABLES.has(x.estado)));
+  escribir(p, pr.repo, pr.numero, [...previos, c]);
+  return c;
 }
 
 export function actualizarComentario(p, repo, numero, id, cambios) {
@@ -99,6 +132,13 @@ export function rescatarPendientes(p, repo, numero, ids, cambios) {
   }
   if (n) escribir(p, repo, numero, lista);
   return n;
+}
+
+// A cancelled check fix becomes a failed request, so its row offers Fix again; other comments go back to drafts.
+export function cancelarPendientes(p, repo, numero, ids) {
+  const deCheck = new Set(leerComentarios(p, repo, numero).filter((c) => c.origenCheck).map((c) => c.id));
+  return rescatarPendientes(p, repo, numero, ids.filter((id) => deCheck.has(id)), { estado: 'error', motivo: 'Cancelled' })
+    + rescatarPendientes(p, repo, numero, ids.filter((id) => !deCheck.has(id)), { estado: 'borrador', motivo: null });
 }
 
 // When the server starts no job is still alive: whatever was queued or in progress was interrupted.

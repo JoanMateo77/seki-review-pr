@@ -12,6 +12,7 @@ const NORMAL = {
   ultra_lente: { modelo: 'sonnet', topeUsd: 1.5, turnos: 25, segundaPasada: false },
   ultra_verificar: { modelo: 'sonnet', topeUsd: 1, turnos: 30, segundaPasada: false },
   plantilla: { modelo: 'sonnet', topeUsd: 1, turnos: 25, segundaPasada: false },
+  triar_checks: { modelo: null, topeUsd: 1, turnos: 25, segundaPasada: false },
 };
 
 const AHORRO = Object.fromEntries(Object.entries(NORMAL).map(([tipo, f]) => [tipo, {
@@ -30,10 +31,12 @@ const mayus = (tipo) => tipo.toUpperCase();
 
 // The difficulty rule behind `modelo: null`; the environment variables win over everything.
 const modeloForzado = (tipo) => process.env[`SEKI_IA_MODELO_${mayus(tipo)}`] ?? process.env.SEKI_IA_MODELO;
+// Editing code and judging check findings need more than Haiku, even when an environment variable asks for it.
+const NUNCA_HAIKU = new Set(['cambiar', 'triar_checks']);
 
 export function elegirModelo({ tipo, pr = {}, lineasSeleccionadas = 0 }) {
   const forzado = modeloForzado(tipo);
-  if (forzado) return tipo === 'cambiar' && forzado === 'haiku' ? 'sonnet' : forzado;
+  if (forzado) return NUNCA_HAIKU.has(tipo) && forzado === 'haiku' ? 'sonnet' : forzado;
   const grande = (pr.adiciones ?? 0) + (pr.eliminaciones ?? 0) > 1500;
   if (tipo !== 'responder' && (pr.seguridad || grande)) return 'opus';
   const esfuerzo = pr.explicacion?.esfuerzo ?? pr.esfuerzoTamano ?? 3;

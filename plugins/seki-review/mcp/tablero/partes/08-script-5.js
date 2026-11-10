@@ -113,6 +113,7 @@ document.addEventListener('click', (ev) => {
   if (d.tab) { estado.tab = d.tab; history.replaceState(null, '', `#${encodeURIComponent(estado.seleccion)}/${estado.tab}`); return pintarDetalle(); }
   if (d.tabIr) { ev.preventDefault(); estado.tab = d.tabIr; return pintarDetalle(); }
   if (d.copiar) return copiar(t, d.copiar);
+  if (d.checkAccion) { const pr = FOTO.prs.find((x) => x.id === d.checkPr); return pr && accionCheck(d.checkAccion, pr, d); }
   if (d.accion === 'limpiar') { estado.filtros.clear(); estado.portal = null; estado.filtroIa = null; $('buscar').value = ''; return pintarTodo(); }
   if (d.accion === 'filtrarIa') return filtrarConIa();
   if (d.accion === 'forzarFiltroIa') { const q = estado.filtroIa?.consulta; estado.filtroIa = null; return filtrarConIa(q, { forzar: true }); }
@@ -165,11 +166,7 @@ document.addEventListener('click', (ev) => {
   if (d.accion === 'enviarRevision') return enviarRevision(prSel());
   if (d.comReintentar) return enviarRevision(prSel(), [d.comReintentar]);
   if (d.comRepreguntar) return repreguntar(prSel(), d.comRepreguntar);
-  if (d.propAprobar) {
-    if (estado.propuestas.get(d.propAprobar)?.conFallos && estado.confirmarAprobar !== d.propAprobar) { estado.confirmarAprobar = d.propAprobar; return repintarDetalle(); }
-    t.disabled = true;
-    return accionPropuesta('aprobar', d.propAprobar, { confirmarFallos: estado.confirmarAprobar === d.propAprobar });
-  }
+  if (d.propAprobar) return clicAprobar(d.propAprobar, t);
   if (d.propAjustar) { estado.ajustando = estado.ajustando === d.propAjustar ? null : d.propAjustar; repintarDetalle(); return $('ajusteTexto')?.focus({ preventScroll: true }); }
   if (d.propEnviarAjuste) {
     const indicacion = $('ajusteTexto')?.value.trim();

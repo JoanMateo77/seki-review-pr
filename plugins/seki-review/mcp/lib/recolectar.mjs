@@ -151,7 +151,7 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
     const destinoSha = (await arbolRama(p.owner, repo, destino)).sha;
     const previo = cacheEstados[claveCache];
     if (previo && previo.headSha === headSha && previo.pruebasSha === destinoSha) return previo;
-    const r = { ...(await estadoFrentePruebas({ owner: p.owner, repo, cfgRepo: p.repos[repo], numero, prod: origen, pruebas: destino, baseSha })), headSha };
+    const r = { ...(await estadoFrentePruebas({ owner: p.owner, repo, cfgRepo: p.repos[repo], numero, prod: origen, pruebas: destino, baseSha, headSha })), headSha };
     if (!r.provisional) cacheEstados[claveCache] = r;
     return r;
   }
@@ -191,12 +191,12 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
 
   // An open PR to production that carries at least half of the testing PR's files, identical,
   // covers it even under a different title (for example, #463 carries the content of #459 and #460).
-  async function cubiertaPor(repo, linea, numero) {
-    const propios = await archivosPr(p.owner, repo, numero);
+  async function cubiertaPor(repo, linea, numero, headSha) {
+    const propios = await archivosPr(p.owner, repo, numero, headSha);
     if (!propios.length) return null;
     const candidatas = abiertas.filter((x) => x.repo === repo && x.pr.baseRefName === linea.prod);
     for (const { pr } of candidatas) {
-      const blobs = new Map((await archivosPr(p.owner, repo, pr.number)).map((a) => [a.filename, a.sha]));
+      const blobs = new Map((await archivosPr(p.owner, repo, pr.number, pr.headRefOid)).map((a) => [a.filename, a.sha]));
       const iguales = propios.filter((a) => blobs.get(a.filename) === a.sha).length;
       if (iguales * 2 >= propios.length) return pr.number;
     }
@@ -255,7 +255,7 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
 
     if (linea.ambiente === 'pruebas' && linea.prod && !SOLO_PRUEBAS.test(pr.title) && (!item.gemela || item.gemela.estado === 'CLOSED')) {
       item.estadoProd = await estadoEn({ repo, numero: pr.number, headSha: pr.headRefOid, origen: linea.pruebas, destino: linea.prod });
-      item.cubiertaPor = ausenteEnProd(item.estadoProd) ? await cubiertaPor(repo, linea, pr.number) : null;
+      item.cubiertaPor = ausenteEnProd(item.estadoProd) ? await cubiertaPor(repo, linea, pr.number, pr.headRefOid) : null;
       item.sinProd = ausenteEnProd(item.estadoProd) && !item.cubiertaPor;
     }
 
@@ -336,9 +336,9 @@ export async function recolectar({ proyecto: clave, repos, incluirInactivas = tr
       });
       huerfanas.push(...(await enParalelo(candidatas, 4, async (x) => {
         const estadoProd = await estadoEn({ repo, numero: x.number, headSha: x.headSha, origen: linea.pruebas, destino: linea.prod, baseSha: x.baseSha });
-        if (!ausenteEnProd(estadoProd) || (await cubiertaPor(repo, linea, x.number))) return null;
+        if (!ausenteEnProd(estadoProd) || (await cubiertaPor(repo, linea, x.number, x.headSha))) return null;
         const explicacion = leerJson(rutaExplicacion(p.salida, repo, x.number));
-        const archivos = await archivosPr(p.owner, repo, x.number);
+        const archivos = await archivosPr(p.owner, repo, x.number, x.headSha);
         const adiciones = archivos.reduce((n, a) => n + a.additions, 0);
         const eliminaciones = archivos.reduce((n, a) => n + a.deletions, 0);
         return {

@@ -61,6 +61,16 @@ test('cambiar never runs on haiku, whatever the source', (t) => {
   assert.equal(perfil({ tipo: 'cambiar', modo: 'normal', pr: chica }).modelo, 'sonnet');
 });
 
+test('triar_checks never runs on haiku, not even when an environment variable forces it', (t) => {
+  for (const modo of MODOS) assert.notEqual(perfil({ tipo: 'triar_checks', modo, pr: chica }).modelo, 'haiku');
+  fijarEnv(t, 'SEKI_IA_MODELO', 'haiku');
+  assert.equal(perfil({ tipo: 'triar_checks', modo: 'ahorro', pr: chica }).modelo, 'sonnet');
+  fijarEnv(t, 'SEKI_IA_MODELO_TRIAR_CHECKS', 'haiku');
+  assert.equal(perfil({ tipo: 'triar_checks', modo: 'normal', pr: chica }).modelo, 'sonnet');
+  fijarEnv(t, 'SEKI_IA_MODELO_TRIAR_CHECKS', 'opus');
+  assert.equal(perfil({ tipo: 'triar_checks', modo: 'normal', pr: chica }).modelo, 'opus');
+});
+
 test('precedence: per-type env > general env > mode row > default', (t) => {
   assert.equal(perfil({ tipo: 'explicar', modo: 'ahorro', pr: chica }).modelo, 'sonnet');
   fijarEnv(t, 'SEKI_IA_MODELO', 'opus');
@@ -244,4 +254,10 @@ test('topeRevisarPlantillas(2) equals 2 * plantilla cap + ultra_verificar cap', 
   assert.equal(topeRevisarPlantillas(2), 2 * perfil({ tipo: 'plantilla', modo: 'normal' }).topeUsd + perfil({ tipo: 'ultra_verificar', modo: 'normal' }).topeUsd);
   assert.equal(topeRevisarPlantillas(2), 3);
   assert.equal(topeRevisarPlantillas(0), 0);
+});
+
+test('triar_checks is a regular job: sonnet in ahorro, difficulty rule in normal, cap 1', () => {
+  assert.equal(perfil({ tipo: 'triar_checks', modo: 'ahorro' }).modelo, 'sonnet');
+  assert.deepEqual(PERFILES.normal.triar_checks, { modelo: null, topeUsd: 1, turnos: 25, segundaPasada: false });
+  assert.equal(topeDeTrabajo({ tipo: 'triar_checks', modo: 'normal' }), 1);
 });
