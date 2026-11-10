@@ -417,3 +417,12 @@ test('a stored triage file without a verdict list does not break dismissing or f
   assert.equal((await e.llamar('/api/checks/descartar', { ...R(), huellas: [huella(ALTO)], motivo: 'Reviewed' })).status, 200);
   assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), confirmar: true, huella: huella(MEDIO_1) })).status, 202);
 });
+
+test('POST /api/checks/arreglar leaves out the reason of a triage from an earlier commit', async (t) => {
+  const e = await entorno({ ejecutarCambios: cambiosFalsos([]) });
+  t.after(e.cerrar);
+  triaje(e.p, [falso(MEDIO_1, 'Judged on other code')], 'b'.repeat(40));
+  const r = await e.llamar('/api/checks/arreglar', { ...R(), confirmar: true, huella: huella(MEDIO_1) });
+  assert.equal(r.status, 202);
+  assert.equal((await r.json()).comentario.origenCheck.razon, undefined);
+});

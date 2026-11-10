@@ -640,7 +640,10 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         if (!Number.isInteger(h.linea) || h.linea < 1) throw falloHttp(409, 'The finding has no line: it cannot be sent to a fix');
         if (leerComentarios(p, pr.repo, pr.numero).some((c) => bloqueaArreglo(c, huella, pr.headSha))) throw falloHttp(409, 'This finding already has a fix request');
         const modo = modoDe(p, modoPedido);
-        const comentario = crearCambioDeCheck(p, pr, h, { razon: leerTriaje(p, pr.repo, pr.numero, pr.headSha)?.veredictos.find((v) => v.huella === huella)?.razon });
+        // A triage from an earlier commit judged other code: its reason would mislead the fix.
+        const triajeActual = leerTriaje(p, pr.repo, pr.numero, pr.headSha);
+        const razon = triajeActual && !triajeActual.desactualizado ? triajeActual.veredictos.find((v) => v.huella === huella)?.razon : undefined;
+        const comentario = crearCambioDeCheck(p, pr, h, { razon });
         // The fingerprint keeps two fixes of one PR requested in the same millisecond apart.
         const encolados = cola.encolar([{ id: `${pr.id}:cambiar:${huella}:${Date.now()}`, tipo: 'cambiar', prId: pr.id, topeUsd: topeDeTrabajo({ tipo: 'cambiar', modo, n: 1 }), ...conRescate(pr, [comentario.id], () => ejecutarCambios(p, pr, [comentario.id], { modo })) }]);
         if (!encolados) {
