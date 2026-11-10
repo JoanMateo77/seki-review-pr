@@ -186,3 +186,22 @@ test('tipo-any skips comment lines but not a trailing comment', () => {
   });
   assert.deepEqual(hallazgos.filter((h) => h.regla === 'tipo-any').map((h) => h.linea), [4, 5]);
 });
+
+test('ejs-sin-escapar skips tags that only emit literals', () => {
+  const { hallazgos } = verificar({
+    repo: 'acme/api',
+    archivos: [archivo('views/list.ejs', [
+      `<a <%- p.prev ? '' : 'aria-disabled="true"' %>>`,
+      `<%- 'static' %>`,
+      `<%- p?.prev ?? x ? "a" : "b" %>`,
+      `<%- include('partials/nav') %>`,
+      `<%- p.html %>`,
+      `<%- a ? b : c ? 'x' : 'y' %>`,
+      `<%- ok ? '' : \`x \${v}\` %>`,
+      `<a <%- p.prev ? '' : 'x' %>><%- p.html %></a>`,
+    ])],
+  });
+
+  const ejs = hallazgos.filter((h) => h.regla === 'ejs-sin-escapar');
+  assert.deepEqual(ejs.map((h) => h.linea), [5, 6, 7, 8]);
+});

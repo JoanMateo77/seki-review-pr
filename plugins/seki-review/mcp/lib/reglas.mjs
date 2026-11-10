@@ -10,6 +10,24 @@ import { AGOTADO, compilarPatron, probarSeguro } from './patrones.mjs';
 
 const VISTAS = /\.(ejs|html)$/;
 const CODIGO = /\.(ts|js|mjs|cjs)$/;
+const LITERAL_EJS = String.raw`(?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|` + '`(?:(?!\\$\\{)[^`\\\\]|\\\\.)*`)';
+const SOLO_LITERAL = new RegExp(`^${LITERAL_EJS}$`);
+const TERNARIO_LITERAL = new RegExp(`^([\\s\\S]*?)\\?\\s*${LITERAL_EJS}\\s*:\\s*${LITERAL_EJS}$`);
+
+function cuerpoSoloLiteral(cuerpo) {
+  const texto = cuerpo.trim();
+  if (SOLO_LITERAL.test(texto)) return true;
+  const m = TERNARIO_LITERAL.exec(texto);
+  return Boolean(m) && !m[1].replace(/\?\.|\?\?/g, '').includes('?');
+}
+
+export function soloLiteralesEjs(linea) {
+  const etiquetas = [...linea.matchAll(/<%-([\s\S]*?)%>/g)];
+  if (!etiquetas.length) return false;
+  if (linea.split('<%-').length - 1 !== etiquetas.length) return false;
+  return etiquetas.every((e) => cuerpoSoloLiteral(e[1]));
+}
+
 export const PRUEBAS = /(__tests__|\.spec\.|\.test\.)/;
 const FRAGMENTO_SQL = /^(filtro|filtros|where|condicion\w*|clausula\w*|orden|order\w*|limit\w*|offset|paginacion|sql\w*|campos?|columnas?|placeholders?|tabla|schema|esquema)$/i;
 
@@ -58,6 +76,8 @@ export const REGLAS = [
     severidad: 'alto',
     archivos: /\.ejs$/,
     patron: /<%-(?!\s*include\b)/,
+    // A tag that can only print string literals cannot carry request data, so it is not an XSS sink.
+    cuando: (linea) => !soloLiteralesEjs(linea),
     // Embedded JSON with < escaped is the safe way to pass data to a <script type="application/json">.
     excluir: /<%-\s*JSON\.stringify\(.*\.replace\(\/<\/g/,
     mensaje: 'Use <%= %> unless the value is trusted HTML; confirm it does not come from the request.',
