@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { crearCambioDeCheck, guardarComentarios, leerComentarios } from '../mcp/lib/comentarios.mjs';
 import { aprobar, descartar, leerPropuestas, proponerCambios, resuelveCheck, tituloCommit } from '../mcp/lib/propuestas.mjs';
 import { escribirJson, leerJson, rutaCopia, rutaPropuestas } from '../mcp/lib/cache.mjs';
+import { verificar } from '../mcp/lib/verificar.mjs';
 import { falsoClaude, llamadas } from './util/claude.mjs';
 import { falsoGh } from './util/gh.mjs';
 import { repoConPr, sh } from './util/repo.mjs';
@@ -266,6 +267,17 @@ test('resuelveCheck counts only the flagged line, not another copy of the same t
 test('resuelveCheck is false when the patch only adds lines or the line removed is another', () => {
   assert.equal(resuelveCheck(parche('+  <p>nuevo</p>'), HALLAZGO, []), false);
   assert.equal(resuelveCheck(parche('-  <p>otro</p>\n+  <p>nuevo</p>'), HALLAZGO, []), false);
+});
+
+test('resuelveCheck recognises a removed line over 200 characters, by its hash or by the stored prefix', () => {
+  const largo = `<%- item %>${' x'.repeat(150)}`;
+  const [h] = verificar({ repo: 'demo', archivos: [{ filename: 'views/list.ejs', status: 'added', patch: `@@ -0,0 +1,2 @@\n+<ul>\n+${largo}` }] }).hallazgos.filter((x) => x.regla === 'ejs-sin-escapar');
+  assert.equal(h.texto.length, 200);
+  const patch = parche(`-${largo}\n+<%= item %>`);
+  assert.equal(resuelveCheck(patch, h, []), true);
+  // A request stored before the hash existed only has the cut text.
+  assert.equal(resuelveCheck(patch, { ...h, hashLinea: undefined }, []), true);
+  assert.equal(resuelveCheck(parche(`-${largo} y\n+<%= item %>`), h, []), false);
 });
 
 test('resuelveCheck is false when the same rule fires again in that file', () => {

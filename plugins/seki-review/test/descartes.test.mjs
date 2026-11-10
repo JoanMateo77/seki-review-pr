@@ -5,7 +5,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { aplicarDescartes, descartar, huellaHallazgo, leerDescartes, reabrir, TRIABLES, triablesOrdenados } from '../mcp/lib/descartes.mjs';
-import { resumir } from '../mcp/lib/verificar.mjs';
+import { resumir, verificar } from '../mcp/lib/verificar.mjs';
 
 const p = () => ({ salida: mkdtempSync(join(tmpdir(), 'seki-desc-')) });
 const h = { regla: 'ejs-sin-escapar', titulo: 'Unescaped output', severidad: 'alto', archivo: 'views/list.ejs', linea: 4, texto: '<%- item.name %>', mensaje: 'm', origen: 'regla' };
@@ -17,6 +17,26 @@ test('fingerprint ignores line and inner spaces, follows the text', () => {
   assert.notEqual(huellaHallazgo({ ...h, regla: 'otra-regla' }), huellaHallazgo(h));
   assert.notEqual(huellaHallazgo({ ...h, archivo: 'views/other.ejs' }), huellaHallazgo(h));
   assert.match(huellaHallazgo(h), /^[0-9a-f]{16}$/);
+});
+
+test('lines over 200 characters that differ only after column 200 get different fingerprints and dismissals', () => {
+  const cola = 'x'.repeat(250);
+  const archivos = [{ filename: 'views/list.ejs', status: 'added', patch: `@@ -0,0 +1,2 @@\n+<%- item.name %>${cola}A\n+<%- item.name %>${cola}B` }];
+  const [a, b] = verificar({ repo: 'demo', archivos }).hallazgos.filter((x) => x.regla === 'ejs-sin-escapar');
+  assert.equal(a.texto, b.texto);
+  assert.match(a.hashLinea, /^[0-9a-f]{16}$/);
+  assert.notEqual(huellaHallazgo(a), huellaHallazgo(b));
+  const pr = p();
+  descartar(pr, 'api', 1, a, { motivo: 'Literal', propuestoPor: 'persona' });
+  assert.equal(leerDescartes(pr, 'api', 1)[0].hashLinea, a.hashLinea);
+  const r = aplicarDescartes({ hallazgos: [a, b] }, leerDescartes(pr, 'api', 1));
+  assert.deepEqual(r.descartados.map((x) => x.huella), [huellaHallazgo(a)]);
+  assert.deepEqual(r.hallazgos.map((x) => x.huella), [huellaHallazgo(b)]);
+});
+
+test('a cached finding without hashLinea keeps the fingerprint of its text', () => {
+  assert.equal(huellaHallazgo({ ...h, hashLinea: undefined }), huellaHallazgo(h));
+  assert.notEqual(huellaHallazgo({ ...h, hashLinea: '0123456789abcdef' }), huellaHallazgo(h));
 });
 
 test('descartar validates motivo and propuestoPor', () => {

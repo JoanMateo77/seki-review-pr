@@ -169,6 +169,11 @@ test('a check fix comment without an AI reason has no triage line', () => {
   assert.equal(c.texto, 'Fix the check "Unescaped output" (ejs-sin-escapar) on this line. Escape it. Change only what the finding needs.');
 });
 
+test('the origin of a check fix keeps the hash of the whole line when the finding has one', () => {
+  const c = crearCambioDeCheck(p(), { repo: 'acme/api', numero: 7, headSha: 'abc' }, { ...hallazgoCheck, hashLinea: '0123456789abcdef' }, {});
+  assert.equal(c.origenCheck.hashLinea, '0123456789abcdef');
+});
+
 test('a finding without a line cannot be sent to a fix', () => {
   const pr = p();
   assert.throws(() => crearCambioDeCheck(pr, { repo: 'acme/api', numero: 7, headSha: 'abc' }, { ...hallazgoCheck, linea: undefined }, {}), /line/);

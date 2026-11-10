@@ -83,8 +83,9 @@ export function guardarComentarios(p, repo, numero, entrantes, borrados = []) {
 }
 
 // A check finding sent to the change pipeline. Created here, not by the browser, so `origenCheck` cannot be forged.
-// `origenCheck: { huella, regla, archivo, linea, texto }` is stored because `resuelveCheck` needs the file, the
-// line and the text to tell whether the finding is gone, without reading the snapshot.
+// `origenCheck: { huella, regla, archivo, linea, texto, hashLinea? }` is stored because `resuelveCheck` needs the file,
+// the line and the text (the hash for a line longer than the cut text) to tell whether the finding is gone, without
+// reading the snapshot.
 export function crearCambioDeCheck(p, pr, h, { razon } = {}) {
   if (!Number.isInteger(h.linea) || h.linea < 1) throw new Error('The finding has no line: it cannot be sent to a fix');
   const ahora = new Date().toISOString();
@@ -94,7 +95,7 @@ export function crearCambioDeCheck(p, pr, h, { razon } = {}) {
     tipo: 'cambio', estado: 'en_cola', archivo: h.archivo, lado: 'nuevo', desde: h.linea, hasta: h.linea,
     texto: `Fix the check "${h.titulo}" (${h.regla}) on this line. ${h.mensaje} Change only what the finding needs.${triaje}`,
     headSha: pr.headSha, creado: ahora, actualizado: ahora,
-    origenCheck: { huella: h.huella ?? huellaHallazgo(h), regla: h.regla, archivo: h.archivo, linea: h.linea, texto: h.texto },
+    origenCheck: { huella: h.huella ?? huellaHallazgo(h), regla: h.regla, archivo: h.archivo, linea: h.linea, texto: h.texto, ...(h.hashLinea ? { hashLinea: h.hashLinea } : {}) },
   };
   // A retry replaces the failed or discarded request of the same finding instead of leaving it next to the new one.
   const previos = leerComentarios(p, pr.repo, pr.numero).filter((x) => !(x.origenCheck?.huella === c.origenCheck.huella && REINTENTABLES.has(x.estado)));

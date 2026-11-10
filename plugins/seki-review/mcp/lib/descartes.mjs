@@ -22,9 +22,10 @@ const MOTIVO_MAX = 500;
 const AUTORES = new Set(['ia', 'persona']);
 
 // The line is left out on purpose: a push that only shifts the code must not reopen a dismissed finding.
+// A finding cached before `hashLinea` existed keeps the fingerprint of its cut text until the checks run again.
 export function huellaHallazgo(h) {
-  const texto = String(h.texto ?? '').replace(/\s+/g, ' ').trim();
-  return createHash('sha256').update([h.regla, h.archivo, texto].join('\0')).digest('hex').slice(0, 16);
+  const contenido = h.hashLinea ?? String(h.texto ?? '').replace(/\s+/g, ' ').trim();
+  return createHash('sha256').update([h.regla, h.archivo, contenido].join('\0')).digest('hex').slice(0, 16);
 }
 
 export const leerDescartes = (p, repo, numero) => leerJson(rutaDescartes(p.salida, repo, numero), []);
@@ -50,6 +51,7 @@ export function descartar(p, repo, numero, hallazgo, { motivo, propuestoPor }) {
     regla: hallazgo.regla,
     archivo: hallazgo.archivo,
     texto: hallazgo.texto,
+    ...(hallazgo.hashLinea ? { hashLinea: hallazgo.hashLinea } : {}),
     motivo: limpio,
     autor: 'persona',
     propuestoPor,

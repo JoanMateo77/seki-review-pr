@@ -12,7 +12,7 @@ import { borrarCopia, crearCopia, diffCopia, reiniciarCopia } from './copias.mjs
 import { argsClaude, ejecutarClaude, registrarCosto, sistemaDe } from './ia.mjs';
 import { modoDe, perfil } from './perfiles.mjs';
 import { ghJson, git } from './proceso.mjs';
-import { archivosDeDiff, lineasQuitadas } from './verificar.mjs';
+import { archivosDeDiff, hashLinea, lineasQuitadas } from './verificar.mjs';
 import { contarHerramienta, fijarAvance, quitarAvance } from './avance.mjs';
 
 const PENDIENTES = new Set(['borrador', 'en_cola', 'en_curso', 'error']);
@@ -54,10 +54,12 @@ function guardar(p, repo, numero, prop) {
 const colapsar = (t) => String(t ?? '').replace(/\s+/g, ' ').trim();
 
 // The finding is gone when its own line was removed (same old-side line number, not another copy of the same text)
-// and the same rule does not fire again in that file.
+// and the same rule does not fire again in that file. The stored text is cut to 200 characters: the hash of the whole
+// line decides when there is one, and a request stored before it compares the removed line cut the same way.
 export function resuelveCheck(patch, h, hallazgosReglas) {
   const archivo = archivosDeDiff(patch).find((a) => a.filename === h.archivo);
-  const quitada = lineasQuitadas(archivo?.patch).some((l) => l.linea === h.linea && colapsar(l.texto) === colapsar(h.texto));
+  const mismaLinea = h.hashLinea ? (t) => hashLinea(t) === h.hashLinea : (t) => colapsar(t.trim().slice(0, 200)) === colapsar(h.texto);
+  const quitada = lineasQuitadas(archivo?.patch).some((l) => l.linea === h.linea && mismaLinea(l.texto));
   return quitada && !hallazgosReglas.some((x) => x.regla === h.regla && x.archivo === h.archivo);
 }
 

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { SEVERIDADES, probarRegla, reglasDelRepo } from './reglas.mjs';
 
 // Accepts both `ignore` and the original Spanish `ignorar`, so existing directives keep working.
@@ -42,6 +43,9 @@ export function archivosDeDiff(diff) {
   });
 }
 
+// The stored text of a finding is cut to 200 characters; its identity and the check of a fix need the whole line.
+export const hashLinea = (texto) => createHash('sha256').update(String(texto ?? '').replace(/\s+/g, ' ').trim()).digest('hex').slice(0, 16);
+
 const ATRIBUCION_IA = /co-authored-by:\s*claude|claude-session:|generated with \[?claude/i;
 
 export function verificar({ repo, archivos, commits = [], omitidas = [], extra = [] }) {
@@ -69,7 +73,7 @@ export function verificar({ repo, archivos, commits = [], omitidas = [], extra =
         const severidad = r.severidadPara ? r.severidadPara(texto) : r.severidad;
         if (!severidad) continue;
         if (++n > MAX_POR_REGLA_Y_ARCHIVO) break;
-        hallazgos.push({ ...hallazgo(r, a.filename, linea, texto.trim().slice(0, 200)), severidad });
+        hallazgos.push({ ...hallazgo(r, a.filename, linea, texto.trim().slice(0, 200)), hashLinea: hashLinea(texto), severidad });
       }
     }
   }
