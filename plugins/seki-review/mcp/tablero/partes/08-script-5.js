@@ -113,6 +113,7 @@ document.addEventListener('click', (ev) => {
   if (d.tab) { estado.tab = d.tab; history.replaceState(null, '', `#${encodeURIComponent(estado.seleccion)}/${estado.tab}`); return pintarDetalle(); }
   if (d.tabIr) { ev.preventDefault(); estado.tab = d.tabIr; return pintarDetalle(); }
   if (d.copiar) return copiar(t, d.copiar);
+  if (d.checkAccion) { const pr = FOTO.prs.find((x) => x.id === d.checkPr); return pr && accionCheck(d.checkAccion, pr, d); }
   if (d.accion === 'limpiar') { estado.filtros.clear(); estado.portal = null; estado.filtroIa = null; $('buscar').value = ''; return pintarTodo(); }
   if (d.accion === 'filtrarIa') return filtrarConIa();
   if (d.accion === 'forzarFiltroIa') { const q = estado.filtroIa?.consulta; estado.filtroIa = null; return filtrarConIa(q, { forzar: true }); }

@@ -32,21 +32,6 @@ function tabResumen(pr) {
     <p class="nota-pie">Explanation from ${esc(e.fecha?.slice(0, 10))} on commit <span class="mono">${esc(e.headSha?.slice(0, 7))}</span>${e.riesgo ? ` · ${esc(nivel(e.riesgo))} risk` : ''}${e.esfuerzo ? ` · effort ${e.esfuerzo} of 5` : ''}.${API ? ` <button type="button" class="btn-texto" data-accion="analizar" ${trabajoActivo(pr) ? 'disabled' : ''}>Analyze again with AI</button>` : ''}</p>`;
 }
 
-function tabVerificaciones(pr) {
-  const v = pr.verificaciones;
-  if (!v) return '<p class="sin-dato">No checks for this PR.</p>';
-  if (!v.hallazgos.length) return '<p class="tenue">The added lines pass all rules.</p>';
-  const color = { bloqueante: 'rojo', alto: 'ambar', medio: '', aviso: '' };
-  return `<div class="tabla"><table><thead><tr><th>Severity</th><th>Finding</th><th>Where</th></tr></thead><tbody>
-    ${v.hallazgos.map((h) => `<tr>
-      <td><span class="estado ${color[h.severidad]}">${esc(nivel(h.severidad))}</span></td>
-      <td><strong>${esc(h.titulo)}</strong><br><span class="tenue">${esc(h.mensaje)}</span><br><span class="muy-tenue">${esc(h.origen)}</span></td>
-      <td><a class="mono" href="${esc(pr.url)}/files" target="_blank" rel="noopener">${esc(h.archivo)}${h.linea ? ':' + h.linea : ''}</a>${h.texto ? `<code class="codigo">${esc(h.texto)}</code>` : ''}</td>
-    </tr>`).join('')}
-  </tbody></table></div>
-  <p class="nota-pie">Fixed rules over the added lines, no AI: they flag patterns, they don’t confirm there is a problem. A line is excluded from a rule with the comment <span class="mono">seki-review: ignore &lt;rule&gt;</span>.</p>`;
-}
-
 function tabDescripcion(pr) {
   const texto = (pr.descripcion ?? '').replace(/<!--[\s\S]*?-->/g, '').trim();
   let cuerpo = `<div class="md-desc lectura">${md(texto)}</div>`;
