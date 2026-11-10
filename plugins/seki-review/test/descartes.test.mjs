@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { aplicarDescartes, descartar, huellaHallazgo, leerDescartes, reabrir, TRIABLES, triablesOrdenados } from '../mcp/lib/descartes.mjs';
+import { aplicarDescartes, descartar, huellaHallazgo, leerDescartes, reabrir, REGLAS_NO_TRIABLES, TRIABLES, triablesOrdenados } from '../mcp/lib/descartes.mjs';
 import { resumir, verificar } from '../mcp/lib/verificar.mjs';
 
 const p = () => ({ salida: mkdtempSync(join(tmpdir(), 'seki-desc-')) });
@@ -99,6 +99,12 @@ test('triablesOrdenados keeps triable severities, highest first, at most 40, eac
   assert.deepEqual(r.slice(0, 3).map((h) => h.severidad), ['bloqueante', 'alto', 'medio']);
   assert.ok(r.every((h) => h.huella === huellaHallazgo(h)));
   assert.deepEqual(triablesOrdenados(undefined), []);
+});
+
+test('findings of a rule that is not triable are never selected for the AI', () => {
+  assert.deepEqual([...REGLAS_NO_TRIABLES], ['atribucion-ia']);
+  const atribucion = { regla: 'atribucion-ia', archivo: 'commit abc1234', severidad: 'alto', texto: 'feat: x' };
+  assert.deepEqual(triablesOrdenados([atribucion, h]).map((x) => x.regla), ['ejs-sin-escapar']);
 });
 
 test('two processes dismissing at once do not lose entries', async () => {

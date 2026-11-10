@@ -1,7 +1,7 @@
 // AI triage of the fixed-rule check findings of one PR: one read-only call, one verdict per finding fingerprint.
 // Explicit, confirmed job; the verdicts only advise, a person still dismisses or fixes.
 import { escribirJson, leerJson, rutaTriaje } from './cache.mjs';
-import { leerDescartes, MOTIVO_SIN_VEREDICTO, TRIABLES, triablesOrdenados } from './descartes.mjs';
+import { esTriable, leerDescartes, MOTIVO_SIN_VEREDICTO, triablesOrdenados } from './descartes.mjs';
 import { crearCopia } from './copias.mjs';
 import { argsClaude, ejecutarClaude, leerCostos, MOTIVO_FORMATO, reglasSecretos, registrarCosto, sistemaDe } from './ia.mjs';
 import { estimarCosto, modoDe, perfil, topeDeTrabajo } from './perfiles.mjs';
@@ -21,7 +21,7 @@ export const SCHEMA_TRIAJE = {
 };
 
 const redondear = (n) => Math.round(n * 1e6) / 1e6;
-const abiertosTriables = (verificaciones) => (verificaciones?.hallazgos ?? []).filter((h) => TRIABLES.has(h.severidad));
+const abiertosTriables = (verificaciones) => (verificaciones?.hallazgos ?? []).filter(esTriable);
 
 // A stored triage of an older commit stays readable: verdicts are matched to findings by fingerprint, not by commit.
 export function leerTriaje(p, repo, numero, headSha) {

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { actualizarComentario, crearCambioDeCheck, fusionarComentarios, guardarComentarios, leerComentarios, recuperarInterrumpidos, rescatarPendientes, separarEnviables } from '../mcp/lib/comentarios.mjs';
+import { actualizarComentario, cancelarPendientes, crearCambioDeCheck, fusionarComentarios, guardarComentarios, leerComentarios, recuperarInterrumpidos, rescatarPendientes, separarEnviables } from '../mcp/lib/comentarios.mjs';
 
 const p = () => ({ salida: mkdtempSync(join(tmpdir(), 'seki-com-')) });
 const base = { tipo: 'pregunta', archivo: 'a.ts', lado: 'nuevo', desde: 1, hasta: 1, claves: ['n1'], textoOriginal: 'x', texto: 'Why?', headSha: 'abc' };
@@ -159,14 +159,38 @@ test('a check fix comment is queued on the finding line with the finding recorde
   assert.equal(c.hasta, 4);
   assert.equal(c.archivo, 'views/list.ejs');
   assert.equal(c.headSha, 'abc');
-  assert.deepEqual(c.origenCheck, { huella: 'abcd1234abcd1234', regla: 'ejs-sin-escapar', archivo: 'views/list.ejs', linea: 4, texto: '<%- item %>' });
-  assert.equal(c.texto, 'Fix the check "Unescaped output" (ejs-sin-escapar) on this line. Escape it. Change only what the finding needs.\nAI triage: The value comes from the user');
+  assert.deepEqual(c.origenCheck, { huella: 'abcd1234abcd1234', regla: 'ejs-sin-escapar', archivo: 'views/list.ejs', linea: 4, texto: '<%- item %>', razon: 'The value comes from the user' });
+  // The AI reason is stored apart, never inside the request the change job follows.
+  assert.equal(c.texto, 'Fix the check "Unescaped output" (ejs-sin-escapar) on this line. Escape it. Change only what the finding needs.');
   assert.deepEqual(leerComentarios(pr, 'acme/api', 7), [c]);
 });
 
-test('a check fix comment without an AI reason has no triage line', () => {
+test('a check fix comment without an AI reason stores none', () => {
   const c = crearCambioDeCheck(p(), { repo: 'acme/api', numero: 7, headSha: 'abc' }, hallazgoCheck, {});
   assert.equal(c.texto, 'Fix the check "Unescaped output" (ejs-sin-escapar) on this line. Escape it. Change only what the finding needs.');
+  assert.equal('razon' in c.origenCheck, false);
+});
+
+test('a request in progress or approved on this commit blocks a new one; one approved on an earlier commit does not', () => {
+  const pr = p();
+  const ref = { repo: 'acme/api', numero: 7, headSha: 'abc' };
+  const primero = crearCambioDeCheck(pr, ref, hallazgoCheck, {});
+  assert.throws(() => crearCambioDeCheck(pr, ref, hallazgoCheck, {}), (e) => e.codigo === 409);
+  actualizarComentario(pr, 'acme/api', 7, primero.id, { estado: 'aprobado' });
+  assert.throws(() => crearCambioDeCheck(pr, ref, hallazgoCheck, {}), (e) => e.codigo === 409);
+  const segundo = crearCambioDeCheck(pr, { ...ref, headSha: 'def' }, hallazgoCheck, {});
+  assert.deepEqual(leerComentarios(pr, 'acme/api', 7).map((c) => c.id), [primero.id, segundo.id]);
+});
+
+test('cancelling queued comments turns a check fix into a failed request and other comments back into drafts', () => {
+  const pr = p();
+  const deCheck = crearCambioDeCheck(pr, { repo: 'acme/api', numero: 7, headSha: 'abc' }, hallazgoCheck, {});
+  guardarComentarios(pr, 'acme/api', 7, [{ ...base, id: 'c-0009', tipo: 'cambio', estado: 'borrador' }]);
+  actualizarComentario(pr, 'acme/api', 7, 'c-0009', { estado: 'en_cola' });
+  assert.equal(cancelarPendientes(pr, 'acme/api', 7, [deCheck.id, 'c-0009']), 2);
+  const [a, b] = leerComentarios(pr, 'acme/api', 7);
+  assert.deepEqual([a.estado, a.motivo], ['error', 'Cancelled']);
+  assert.deepEqual([b.estado, b.motivo], ['borrador', null]);
 });
 
 test('the origin of a check fix keeps the hash of the whole line when the finding has one', () => {

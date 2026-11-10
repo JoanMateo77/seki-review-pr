@@ -87,6 +87,15 @@ test('the verdict column shows Real, Unclear and a dash, and flags an earlier co
   assert.doesNotMatch(tablero().ctx.tabVerificaciones(pr({ hallazgos: hs, t: triaje([veredicto('h1', 'real')]) })), /earlier commit/);
 });
 
+test('the bulk button is hidden when the triage is from an earlier commit', () => {
+  const t = triaje([veredicto('h1', 'falso_positivo'), veredicto('h2', 'falso_positivo')], { desactualizado: true });
+  const p = pr({ hallazgos: [hallazgo('h1'), hallazgo('h2')], t });
+  const b = tablero();
+  assert.doesNotMatch(b.ctx.tabVerificaciones(p), /Dismiss all false positives/);
+  b.ctx.accionCheck('descartar-lote', p, {});
+  assert.equal(b.modales.length, 0);
+});
+
 test('the bulk button needs at least two medium false positives', () => {
   const uno = pr({ hallazgos: [hallazgo('h1'), hallazgo('h2'), hallazgo('h3', { severidad: 'alto' })], t: triaje([veredicto('h1', 'falso_positivo'), veredicto('h2', 'real'), veredicto('h3', 'falso_positivo')]) });
   assert.doesNotMatch(tablero().ctx.tabVerificaciones(uno), /Dismiss all false positives/);
@@ -140,6 +149,30 @@ test('Dismiss opens the dialog with the AI reason, blocking warning and a disabl
   t.ctx.accionCheck('descartar', p, { checkHuella: 'h2' });
   assert.match(t.modales.at(-1), /data-check-accion="descartar-confirmar"[^>]*disabled/);
   assert.doesNotMatch(t.modales.at(-1), /blocks the PR/);
+});
+
+test('the reason is prefilled only from a false positive verdict of the current commit', () => {
+  const casos = [
+    [triaje([veredicto('h1', 'real', 'Reaches the page')]), ''],
+    [triaje([veredicto('h1', 'dudoso', 'Depends on a helper')]), ''],
+    [triaje([veredicto('h1', 'falso_positivo', 'Escaped upstream')], { desactualizado: true }), ''],
+    [triaje([veredicto('h1', 'falso_positivo', 'Escaped upstream')]), 'Escaped upstream'],
+  ];
+  for (const [t, esperado] of casos) {
+    const b = tablero();
+    b.ctx.accionCheck('descartar', pr({ hallazgos: [hallazgo('h1')], t }), { checkHuella: 'h1' });
+    const html = b.modales.at(-1);
+    assert.equal(/<textarea[^>]*>([^<]*)<\/textarea>/.exec(html)[1], esperado, `${t.veredictos[0].veredicto} ${t.desactualizado}`);
+    assert.equal(/data-check-accion="descartar-confirmar"[^>]*disabled/.test(html), !esperado);
+  }
+});
+
+test('a reason typed equal to a reason that was not prefilled is sent as the person\'s', async () => {
+  const p = pr({ hallazgos: [hallazgo('h1')], t: triaje([veredicto('h1', 'real', 'Reaches the page')]) });
+  const t = tablero({ api: async (ruta) => (ruta === '/api/foto' ? { owner: 'o', prs: [] } : { descartados: 1 }) });
+  t.cajas.motivoCheck.value = 'Reaches the page';
+  await t.ctx.accionCheck('descartar-confirmar', p, { checkHuella: 'h1' });
+  assert.deepEqual(t.llamadas[0][1], { repo: 'acme/api', numero: 7, huellas: ['h1'], motivo: 'Reaches the page' });
 });
 
 test('confirming a dismissal sends the trimmed reason, or none when the AI reason is kept, and reloads the snapshot', async () => {
@@ -259,7 +292,7 @@ test('Fix is offered on rows with a line and no active request, and only on an o
 
 test('a row with a request shows its state instead of Fix, and links the proposal', () => {
   const p = pr({ hallazgos: [hallazgo('h1'), hallazgo('h2'), hallazgo('h3'), hallazgo('h4')] });
-  const html = tablero({ comentarios: [peticion('h1'), peticion('h2', { estado: 'propuesta', propuestaId: 'p-1' }), peticion('h3', { estado: 'error', motivo: MAL }), peticion('h4', { estado: 'aprobado' })] }).ctx.tabVerificaciones(p);
+  const html = tablero({ comentarios: [peticion('h1'), peticion('h2', { estado: 'propuesta', propuestaId: 'p-1' }), peticion('h3', { estado: 'error', motivo: MAL }), peticion('h4', { estado: 'aprobado', headSha: SHA })] }).ctx.tabVerificaciones(p);
   const fila = (n) => html.split('<tr>').find((f) => f.includes(`Finding h${n}`));
   assert.ok(fila(1).includes('Fix requested') && !/arreglar/.test(fila(1)));
   assert.ok(fila(2).includes('Proposal ready') && !/arreglar/.test(fila(2)));
@@ -308,6 +341,31 @@ test('Request fix is disabled while the request is in flight and enabled again a
   assert.equal(estadoEnVuelo, true);
   assert.equal(boton.disabled, false);
   assert.equal(t.cajas.modalIaError.textContent, 'Server down');
+});
+
+test('a fix approved on an earlier commit offers Fix again', () => {
+  const p = pr({ hallazgos: [hallazgo('h1')] });
+  const html = tablero({ comentarios: [peticion('h1', { estado: 'aprobado', headSha: 'b'.repeat(40) })] }).ctx.tabVerificaciones(p);
+  assert.ok(html.includes('Fix approved on an earlier commit'));
+  assert.match(html, /data-check-accion="arreglar"[^>]*data-check-huella="h1"/);
+});
+
+test('an AI attribution finding offers no Validate with AI and no Fix, but can be dismissed', () => {
+  const p = pr({ hallazgos: [hallazgo('h1', { regla: 'atribucion-ia', severidad: 'alto', archivo: 'commit abc1234', linea: undefined })] });
+  const html = tablero().ctx.tabVerificaciones(p);
+  assert.doesNotMatch(html, /data-check-accion="validar"/);
+  assert.doesNotMatch(html, /data-check-accion="arreglar"/);
+  assert.match(html, /data-check-accion="descartar"[^>]*data-check-huella="h1"/);
+  assert.match(tablero().ctx.tabVerificaciones(pr({ hallazgos: [...p.verificaciones.hallazgos, hallazgo('h2')] })), /data-check-accion="validar"/);
+});
+
+test('a malformed PR link shows the notice instead of throwing', () => {
+  const t = tablero({ foto: { owner: 'o', prs: [pr()] }, hash: '#/pr/acme%E0%A4%A/7?checks=1' });
+  const avisos = [];
+  t.ctx.avisar = (m) => avisos.push(m);
+  t.ctx.abrirChecksDesdeEnlace();
+  assert.deepEqual(avisos, ['The PR is not in this dashboard.']);
+  assert.deepEqual(t.seleccionados, []);
 });
 
 test('a discarded request shows Fix discarded together with Fix', () => {

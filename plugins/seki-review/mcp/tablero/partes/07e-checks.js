@@ -2,8 +2,10 @@
 // confirmation dialogs for validating with AI and for dismissing. Evaluated before 08-script-5.js, which routes the clicks.
 const VEREDICTO_CHECK = { real: ['Real', 'rojo'], falso_positivo: ['False positive', 'verde'], dudoso: ['Unclear', 'ambar'] };
 const COLOR_SEVERIDAD = { bloqueante: 'rojo', alto: 'ambar', medio: '', aviso: '' };
-// Same set the server triages: lower severities are never sent to the AI.
+// Same set the server triages: lower severities and commit-level rules are never sent to the AI.
 const SEVERIDADES_TRIABLES = ['bloqueante', 'alto', 'medio'];
+const REGLAS_NO_TRIABLES = ['atribucion-ia'];
+const triableCheck = (h) => SEVERIDADES_TRIABLES.includes(h.severidad) && !REGLAS_NO_TRIABLES.includes(h.regla);
 const LOTE_MINIMO = 2;
 
 const trabajoChecks = (pr) => estado.trabajos.get(`${pr.id}:checks`);
@@ -14,8 +16,10 @@ const hallazgoCheck = (pr, huella) => pr.verificaciones?.hallazgos.find((h) => h
 const lugarCheck = (h) => `${h.archivo}${h.linea ? `:${h.linea}` : ''}`;
 const fechaCheck = (f) => (f ? new Date(f).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '');
 
-// Only medium findings the AI called false positives can be dismissed together (the server enforces the same rule).
+// Only medium findings the AI called false positives on the current commit can be dismissed together (the server
+// enforces the same rule).
 function candidatosLote(pr) {
+  if (pr.triaje?.desactualizado) return [];
   const v = veredictosCheck(pr);
   return (pr.verificaciones?.hallazgos ?? []).filter((h) => h.severidad === 'medio' && v.get(h.huella)?.veredicto === 'falso_positivo');
 }
@@ -30,16 +34,20 @@ function celdaVeredicto(v, vieja) {
 const peticionCheck = (pr, huella) => comentarios(pr).filter((c) => c.origenCheck?.huella === huella)
   .sort((a, b) => (a.creado ?? '').localeCompare(b.creado ?? '')).at(-1);
 
-// Same rule as the server: a request can be made again only after it failed or its proposal was discarded.
+// Same rule as the server: a request can be made again after it failed, its proposal was discarded, or its fix was
+// approved on an earlier commit.
 const REINTENTABLES_CHECK = ['error', 'descartado'];
+const aprobadoAntes = (pr, c) => c.estado === 'aprobado' && c.headSha !== pr.headSha;
 function celdaArreglo(pr, h) {
   const c = peticionCheck(pr, h.huella);
-  if (c && !REINTENTABLES_CHECK.includes(c.estado)) {
+  if (c && !REINTENTABLES_CHECK.includes(c.estado) && !aprobadoAntes(pr, c)) {
     if (c.estado === 'propuesta') return '<a href="#" data-tab-ir="archivos" title="The proposal is in the diff, on the line of the finding">Proposal ready</a>';
     const texto = c.estado === 'aprobado' ? 'Fix approved' : 'Fix requested';
     return `<span class="muy-tenue">${texto}</span>`;
   }
-  const falla = !c ? '' : c.estado === 'descartado' ? '<span class="muy-tenue">Fix discarded</span> ' : `<span class="estado rojo">Fix failed: ${esc(c.motivo ?? 'unknown error')}</span> `;
+  const falla = !c ? '' : c.estado === 'descartado' ? '<span class="muy-tenue">Fix discarded</span> '
+    : c.estado === 'aprobado' ? '<span class="muy-tenue">Fix approved on an earlier commit</span> '
+    : `<span class="estado rojo">Fix failed: ${esc(c.motivo ?? 'unknown error')}</span> `;
   const arreglar = pr.estadoPr === 'OPEN' && h.linea ? `<button type="button" class="btn chico" data-check-accion="arreglar" data-check-pr="${esc(pr.id)}" data-check-huella="${esc(h.huella)}" title="Sends the finding to a change proposal; nothing is pushed until it is approved">Fix</button> ` : '';
   return falla + arreglar;
 }
@@ -84,7 +92,7 @@ function cabeceraCheck(pr, abiertos) {
   if (!API) return '';
   const activo = checksActivo(pr);
   const actual = pr.triaje && !pr.triaje.desactualizado;
-  const triables = abiertos.some((h) => SEVERIDADES_TRIABLES.includes(h.severidad));
+  const triables = abiertos.some(triableCheck);
   const lote = candidatosLote(pr);
   const validar = pr.estadoPr === 'OPEN' && triables
     ? `<button type="button" class="btn" data-check-accion="validar" data-check-pr="${esc(pr.id)}" ${activo ? 'disabled' : ''} title="One read-only call that gives each blocking, high or medium finding a verdict and a reason">${activo ? `${icono('actualizar', 'girando')} Validation in progress` : `${icono('chispa')} ${actual ? 'Run again' : 'Validate with AI'}`}</button>` : '';
@@ -126,10 +134,17 @@ async function enviarCheck(ruta, cuerpo) {
   pintarTodo();
 }
 
+// The AI reason is offered as the motivo only when it argues for the dismissal: a false positive of the current commit.
+// The server applies the same rule when no motivo is sent.
+function razonPropuesta(pr, huella) {
+  const v = veredictosCheck(pr).get(huella);
+  return v?.veredicto === 'falso_positivo' && !pr.triaje?.desactualizado ? v.razon ?? '' : '';
+}
+
 function abrirDescarte(pr, huella) {
   const h = hallazgoCheck(pr, huella);
   if (!h) return;
-  const razon = veredictosCheck(pr).get(huella)?.razon ?? '';
+  const razon = razonPropuesta(pr, huella);
   abrirModal(`<h3 id="modalIaTitulo">Dismiss a finding</h3>
     <p><strong>${esc(h.titulo)}</strong> <span class="mono muy-tenue">${esc(lugarCheck(h))}</span></p>
     ${h.severidad === 'bloqueante' ? '<p><span class="estado rojo">Blocking</span> This finding blocks the PR. Dismiss it only if the code shows it is not a problem.</p>' : ''}
@@ -147,8 +162,8 @@ function confirmarDescarte(pr, huella) {
   const motivo = $('motivoCheck')?.value.trim();
   if (!motivo) return;
   // The AI reason kept as is is sent as no reason, so the server records the AI as its proposer.
-  const razon = veredictosCheck(pr).get(huella)?.razon?.trim();
-  return enviarCheck('/api/checks/descartar', { repo: pr.repo, numero: pr.numero, huellas: [huella], ...(motivo === razon ? {} : { motivo }) });
+  const razon = razonPropuesta(pr, huella).trim();
+  return enviarCheck('/api/checks/descartar', { repo: pr.repo, numero: pr.numero, huellas: [huella], ...(razon && motivo === razon ? {} : { motivo }) });
 }
 
 function abrirLote(pr) {
@@ -237,7 +252,7 @@ async function pedirArreglo(pr, huella) {
     return errorDeCheck(err.message);
   }
   cerrarModal();
-  // The server drops the failed or discarded request of the same finding: the local copy does too.
+  // The server drops the failed or discarded request of the same finding (an approved one stays): the local copy does too.
   const resto = comentarios(pr).filter((c) => !(c.origenCheck?.huella === huella && REINTENTABLES_CHECK.includes(c.estado)));
   escribirComentarios(pr, fusionarComentarios(resto, [comentario]));
   pintarDetalle();
@@ -269,8 +284,10 @@ document.addEventListener('input', (ev) => {
 function abrirChecksDesdeEnlace() {
   const m = /^#\/pr\/([^/?]+)\/(\d+)\?checks=1$/.exec(location.hash);
   if (!m) return;
-  const id = `${decodeURIComponent(m[1])}#${m[2]}`;
-  if (!FOTO.prs.some((x) => x.id === id)) return avisar('The PR is not in this dashboard.');
+  let id;
+  // A hand-edited link may hold a malformed escape: it is treated as a PR that is not here.
+  try { id = `${decodeURIComponent(m[1])}#${m[2]}`; } catch { id = null; }
+  if (!id || !FOTO.prs.some((x) => x.id === id)) return avisar('The PR is not in this dashboard.');
   estado.tab = 'verificaciones';
   seleccionar(id);
 }

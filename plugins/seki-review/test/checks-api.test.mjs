@@ -137,6 +137,27 @@ test('dismissing one finding with a motivo stores it as a person proposal, at an
   assert.equal(d.propuestoPor, 'persona');
 });
 
+test('the AI reason is taken as the motivo only from a false positive verdict of the current commit', async (t) => {
+  const e = await entorno();
+  t.after(e.cerrar);
+  triaje(e.p, [{ huella: huella(MEDIO_1), veredicto: 'real', razon: 'Reaches the page' }, { huella: huella(MEDIO_2), veredicto: 'dudoso', razon: 'Depends on a helper' }]);
+  for (const h of [MEDIO_1, MEDIO_2]) assert.equal((await e.llamar('/api/checks/descartar', { ...R(), huellas: [huella(h)] })).status, 400, h.texto);
+  triaje(e.p, [falso(ALTO, 'Only literals reach the tag')], 'b'.repeat(40));
+  assert.equal((await e.llamar('/api/checks/descartar', { ...R(), huellas: [huella(ALTO)] })).status, 400);
+  assert.deepEqual(leerDescartes(e.p, 'acme/api', 1), []);
+  // A person's own reason is enough whatever the verdict.
+  assert.equal((await e.llamar('/api/checks/descartar', { ...R(), huellas: [huella(MEDIO_1)], motivo: 'Reviewed by hand' })).status, 200);
+});
+
+test('bulk dismissal needs a triage of the current commit', async (t) => {
+  const e = await entorno();
+  t.after(e.cerrar);
+  triaje(e.p, [falso(MEDIO_1), falso(MEDIO_2)], 'b'.repeat(40));
+  assert.equal((await e.llamar('/api/checks/descartar', { ...R(), huellas: [huella(MEDIO_1), huella(MEDIO_2)] })).status, 400);
+  assert.equal((await e.llamar('/api/checks/descartar', { ...R(), huellas: [huella(MEDIO_1), huella(MEDIO_2)], motivo: 'Reviewed' })).status, 400);
+  assert.deepEqual(leerDescartes(e.p, 'acme/api', 1), []);
+});
+
 test('dismissing one finding without a motivo takes the AI reason, and fails without one', async (t) => {
   const e = await entorno();
   t.after(e.cerrar);
@@ -262,12 +283,14 @@ test('POST /api/checks/arreglar creates the fix comment and queues the change jo
   assert.equal(comentario.estado, 'en_cola');
   assert.equal(comentario.desde, MEDIO_1.linea);
   assert.equal(comentario.origenCheck.huella, huella(MEDIO_1));
-  assert.match(comentario.texto, /^Fix the check "Unescaped output" \(ejs-sin-escapar\) on this line\. Escape it Change only what the finding needs\.\nAI triage: The value is user input$/);
+  // The AI reason is kept apart from the request text: the change job reads it as data, never as the instruction.
+  assert.equal(comentario.texto, 'Fix the check "Unescaped output" (ejs-sin-escapar) on this line. Escape it Change only what the finding needs.');
+  assert.equal(comentario.origenCheck.razon, 'The value is user input');
   assert.deepEqual(leerComentarios(e.p, 'acme/api', 1).map((c) => c.id), [comentario.id]);
   await esperar(() => recibido.length);
   assert.deepEqual(recibido, [{ pr: 'acme/api#1', ids: [comentario.id], modo: 'ahorro' }]);
   const trabajo = (await (await e.llamar('/api/estado')).json()).trabajos.find((x) => x.tipo === 'cambiar');
-  assert.match(trabajo.id, /^acme\/api#1:cambiar:/);
+  assert.match(trabajo.id, new RegExp(`^acme/api#1:cambiar:${huella(MEDIO_1)}:\\d+$`));
 });
 
 test('POST /api/checks/arreglar refuses a second request for the same finding but allows a retry after an error', async (t) => {
@@ -325,4 +348,63 @@ test('GET /api/checks exposes the cap of a fix job', async (t) => {
   const d = await (await e.llamar('/api/checks?repo=acme/api&numero=1')).json();
   assert.equal(typeof d.topeArreglo, 'number');
   assert.ok(d.topeArreglo > 0);
+});
+
+const ATRIBUCION = { regla: 'atribucion-ia', titulo: 'Commit with AI attribution', severidad: 'alto', archivo: 'commit abc1234', texto: 'feat: x', mensaje: 'Remove the trailer.', origen: 'Standing rule' };
+
+test('an AI attribution finding is not triable and has no fix, but a person can dismiss it with a reason', async (t) => {
+  const e = await entorno({ prs: [conChecks(1, [ATRIBUCION]), conChecks(2, [ATRIBUCION, ALTO])], ejecutarCambios: cambiosFalsos([]) });
+  t.after(e.cerrar);
+  assert.equal((await (await e.llamar('/api/checks?repo=acme/api&numero=1')).json()).triables, 0);
+  assert.equal((await (await e.llamar('/api/checks?repo=acme/api&numero=2')).json()).triables, 1);
+  assert.equal((await e.llamar('/api/checks/triar', { ...R(), confirmar: true })).status, 409);
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), confirmar: true, huella: huella(ATRIBUCION) })).status, 409);
+  assert.equal((await e.llamar('/api/checks/descartar', { ...R(), huellas: [huella(ATRIBUCION)], motivo: 'Trailer removed on merge' })).status, 200);
+});
+
+test('a fix approved on an earlier commit no longer blocks a new request; one approved on this commit does', async (t) => {
+  const e = await entorno({ ejecutarCambios: cambiosFalsos([]) });
+  t.after(e.cerrar);
+  const primero = await (await e.llamar('/api/checks/arreglar', { ...R(), confirmar: true, huella: huella(MEDIO_1) })).json();
+  await esperar(() => leerComentarios(e.p, 'acme/api', 1).every((c) => c.estado === 'propuesta'));
+  actualizarComentario(e.p, 'acme/api', 1, primero.comentario.id, { estado: 'aprobado' });
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), confirmar: true, huella: huella(MEDIO_1) })).status, 409);
+  actualizarComentario(e.p, 'acme/api', 1, primero.comentario.id, { headSha: 'b'.repeat(40) });
+  const r = await e.llamar('/api/checks/arreglar', { ...R(), confirmar: true, huella: huella(MEDIO_1) });
+  assert.equal(r.status, 202);
+  // The approved request stays as the record of what was pushed.
+  assert.deepEqual(leerComentarios(e.p, 'acme/api', 1).map((c) => c.id), [primero.comentario.id, (await r.json()).comentario.id]);
+});
+
+test('cancelling the queue leaves a check fix failed with the reason Cancelled, so it can be requested again', async (t) => {
+  const e = await entorno({ ia: { presupuestoDiarioUsd: 0.01 }, ejecutarCambios: cambiosFalsos([]) });
+  t.after(e.cerrar);
+  const { comentario } = await (await e.llamar('/api/checks/arreglar', { ...R(), confirmar: true, huella: huella(MEDIO_1) })).json();
+  assert.equal((await (await e.llamar('/api/estado')).json()).trabajos.find((x) => x.tipo === 'cambiar').estado, 'bloqueado_presupuesto');
+  assert.equal((await (await e.llamar('/api/cancelar-cola', {})).json()).cancelados, 1);
+  const c = leerComentarios(e.p, 'acme/api', 1).find((x) => x.id === comentario.id);
+  assert.deepEqual([c.estado, c.motivo], ['error', 'Cancelled']);
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), confirmar: true, huella: huella(MEDIO_1) })).status, 202);
+});
+
+test('a fix that cannot be queued answers 409 and leaves its request failed', async (t) => {
+  const e = await entorno({ ia: { presupuestoDiarioUsd: 0.01 }, ejecutarCambios: cambiosFalsos([]) });
+  t.after(e.cerrar);
+  const ahora = Date.now;
+  const fijo = ahora();
+  // Two requests in the same millisecond get the same job id while the first one still waits in the queue.
+  Date.now = () => fijo;
+  try {
+    const primero = await (await e.llamar('/api/checks/arreglar', { ...R(), confirmar: true, huella: huella(MEDIO_1) })).json();
+    actualizarComentario(e.p, 'acme/api', 1, primero.comentario.id, { estado: 'error', motivo: 'x' });
+    const r = await e.llamar('/api/checks/arreglar', { ...R(), confirmar: true, huella: huella(MEDIO_1) });
+    assert.equal(r.status, 409);
+    assert.equal((await r.json()).error, 'The fix could not be queued');
+    const [c] = leerComentarios(e.p, 'acme/api', 1);
+    assert.deepEqual([c.estado, c.motivo], ['error', 'The fix could not be queued']);
+    // Another finding in the same millisecond gets its own job.
+    assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), confirmar: true, huella: huella(MEDIO_2) })).status, 202);
+  } finally {
+    Date.now = ahora;
+  }
 });

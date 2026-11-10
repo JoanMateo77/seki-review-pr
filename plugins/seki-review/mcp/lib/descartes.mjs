@@ -4,15 +4,19 @@ import { leerJson, rutaDescartes } from './cache.mjs';
 import { resumir } from './verificar.mjs';
 
 export const TRIABLES = new Set(['bloqueante', 'alto', 'medio']);
+// A commit-level finding has no file the AI could read to judge it: only a person dismisses it.
+export const REGLAS_NO_TRIABLES = new Set(['atribucion-ia']);
 export const MOTIVO_SIN_VEREDICTO = 'The triage gave no verdict';
 
 const MAX_TRIABLES = 40;
 const ORDEN_SEVERIDAD = ['bloqueante', 'alto', 'medio'];
 
+export const esTriable = (h) => TRIABLES.has(h.severidad) && !REGLAS_NO_TRIABLES.has(h.regla);
+
 // One selection for the standalone triage and for Ultra, so both judge the same findings.
 export function triablesOrdenados(hallazgos) {
   return (hallazgos ?? [])
-    .filter((h) => TRIABLES.has(h.severidad))
+    .filter(esTriable)
     .map((h) => ({ ...h, huella: h.huella ?? huellaHallazgo(h) }))
     .sort((a, b) => ORDEN_SEVERIDAD.indexOf(a.severidad) - ORDEN_SEVERIDAD.indexOf(b.severidad))
     .slice(0, MAX_TRIABLES);

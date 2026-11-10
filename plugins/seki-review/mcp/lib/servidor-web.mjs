@@ -11,7 +11,7 @@ import { construirHtml, fotoConExplicaciones, nombresDeArchivos, versionEnDisco 
 const VERSION = versionEnDisco();
 import { crearCola } from './trabajos.mjs';
 import { asegurarDiff, diffParaTablero } from './diffs.mjs';
-import { actualizarComentario, crearCambioDeCheck, guardarComentarios, leerComentarios, marcasComentarios, REINTENTABLES, recuperarInterrumpidos, rescatarPendientes, separarEnviables } from './comentarios.mjs';
+import { actualizarComentario, bloqueaArreglo, cancelarPendientes, crearCambioDeCheck, guardarComentarios, leerComentarios, marcasComentarios, recuperarInterrumpidos, rescatarPendientes, separarEnviables } from './comentarios.mjs';
 import { investigarPregunta, responderPreguntas } from './preguntas.mjs';
 import { ajustarPropuesta, aprobar, descartar, leerPropuesta, proponerCambios } from './propuestas.mjs';
 import { explicarConIa } from './explicar.mjs';
@@ -342,7 +342,7 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
     ejecutar: async () => {
       try { return await ejecutar(); } finally { rescatarPendientes(p, pr.repo, pr.numero, ids, { estado: 'error', motivo: 'The job finished without completing this comment' }); }
     },
-    alCancelar: () => rescatarPendientes(p, pr.repo, pr.numero, ids, { estado: 'borrador', motivo: null }),
+    alCancelar: () => cancelarPendientes(p, pr.repo, pr.numero, ids),
   });
 
   const servidor = createServer(async (req, res) => {
@@ -609,15 +609,18 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         const abiertos = new Map((pr.verificaciones?.hallazgos ?? []).map((h) => [h.huella, h]));
         const elegidos = unicas.map((x) => abiertos.get(x));
         if (elegidos.includes(undefined)) throw falloHttp(404, 'A finding is not an open finding of the PR');
-        const veredictos = new Map((leerTriaje(p, pr.repo, pr.numero, pr.headSha)?.veredictos ?? []).map((v) => [v.huella, v]));
+        // A verdict of an earlier commit judged other code: it backs neither a batch nor the AI reason as the motivo.
+        const triaje = leerTriaje(p, pr.repo, pr.numero, pr.headSha);
+        const veredictos = new Map((triaje && !triaje.desactualizado ? triaje.veredictos : []).map((v) => [v.huella, v]));
+        const falsoPositivo = (h) => veredictos.get(h.huella)?.veredicto === 'falso_positivo';
         // Several at once is only for the batch the AI called false positives at medium severity.
-        if (unicas.length > 1 && !elegidos.every((h) => h.severidad === 'medio' && veredictos.get(h.huella)?.veredicto === 'falso_positivo')) throw falloHttp(400, 'Several findings can be dismissed together only when all are medium with a false positive verdict');
+        if (unicas.length > 1 && !elegidos.every((h) => h.severidad === 'medio' && falsoPositivo(h))) throw falloHttp(400, 'Several findings can be dismissed together only when all are medium with a false positive verdict of the current commit');
         const propio = motivo?.trim();
         // Everything is resolved before the first write so a rejected batch leaves nothing half dismissed.
         const entradas = elegidos.map((h) => {
-          const razon = veredictos.get(h.huella)?.razon?.trim();
+          const razon = falsoPositivo(h) ? veredictos.get(h.huella).razon?.trim() : '';
           const texto = propio || razon;
-          if (!texto) throw falloHttp(400, 'A motivo is required: the finding has no AI reason');
+          if (!texto) throw falloHttp(400, 'A motivo is required: the finding has no false positive verdict of the current commit');
           if (texto.length > 500) throw falloHttp(400, 'motivo must have between 1 and 500 characters');
           return [h, { motivo: texto, propuestoPor: propio ? 'persona' : 'ia' }];
         });
@@ -635,10 +638,15 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         if (!h) throw falloHttp((pr.verificaciones?.descartados ?? []).some((x) => x.huella === huella) ? 409 : 404, 'The finding is not an open finding of the PR');
         if (pr.verificaciones.headSha !== pr.headSha) throw falloHttp(409, 'The checks are from an earlier commit');
         if (!Number.isInteger(h.linea) || h.linea < 1) throw falloHttp(409, 'The finding has no line: it cannot be sent to a fix');
-        if (leerComentarios(p, pr.repo, pr.numero).some((c) => c.tipo === 'cambio' && c.origenCheck?.huella === huella && !REINTENTABLES.has(c.estado))) throw falloHttp(409, 'This finding already has a fix request');
+        if (leerComentarios(p, pr.repo, pr.numero).some((c) => bloqueaArreglo(c, huella, pr.headSha))) throw falloHttp(409, 'This finding already has a fix request');
         const modo = modoDe(p, modoPedido);
         const comentario = crearCambioDeCheck(p, pr, h, { razon: leerTriaje(p, pr.repo, pr.numero, pr.headSha)?.veredictos.find((v) => v.huella === huella)?.razon });
-        cola.encolar([{ id: `${pr.id}:cambiar:${Date.now()}`, tipo: 'cambiar', prId: pr.id, topeUsd: topeDeTrabajo({ tipo: 'cambiar', modo, n: 1 }), ...conRescate(pr, [comentario.id], () => ejecutarCambios(p, pr, [comentario.id], { modo })) }]);
+        // The fingerprint keeps two fixes of one PR requested in the same millisecond apart.
+        const encolados = cola.encolar([{ id: `${pr.id}:cambiar:${huella}:${Date.now()}`, tipo: 'cambiar', prId: pr.id, topeUsd: topeDeTrabajo({ tipo: 'cambiar', modo, n: 1 }), ...conRescate(pr, [comentario.id], () => ejecutarCambios(p, pr, [comentario.id], { modo })) }]);
+        if (!encolados) {
+          actualizarComentario(p, pr.repo, pr.numero, comentario.id, { estado: 'error', motivo: 'The fix could not be queued' });
+          throw falloHttp(409, 'The fix could not be queued');
+        }
         return responder(res, 202, { comentario });
       }
       if (req.method === 'POST' && url.pathname === '/api/checks/reabrir') {

@@ -128,6 +128,14 @@ test('a triage of an older commit is read as outdated; datosChecks reports count
   assert.equal(d.triaje.desactualizado, true);
 });
 
+test('an AI attribution finding is neither counted as triable nor sent', async () => {
+  const atribucion = { regla: 'atribucion-ia', titulo: 'Commit with AI attribution', severidad: 'alto', archivo: 'commit abc1234', texto: 'ATRIBUCION', mensaje: 'm', origen: 'o' };
+  const { p, deps, llamadas, verificaciones } = entorno({ n: 1, extra: [atribucion] });
+  assert.equal(datosChecks(p, pr, verificaciones).triables, 1);
+  await triarChecks(p, pr, deps);
+  assert.doesNotMatch(llamadas[0].prompt, /ATRIBUCION/);
+});
+
 test('a false positive needs valid evidence, otherwise it is stored as dudoso without it', async () => {
   const razon = 'Literal';
   const evidencias = [undefined, { archivo: '', linea: 1 }, { archivo: 'views/list.ejs', linea: 0 }, { archivo: 'views/list.ejs', linea: 1.5 }, { archivo: 7, linea: 1 }, { archivo: 'views/list.ejs', linea: '1' }, { archivo: 'views/list.ejs', linea: 1 }];
