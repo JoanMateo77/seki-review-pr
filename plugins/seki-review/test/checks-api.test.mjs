@@ -243,7 +243,7 @@ test('POST /api/checks/arreglar creates the fix comment and queues the change jo
   const e = await entorno({ ejecutarCambios: cambiosFalsos(recibido) });
   t.after(e.cerrar);
   triaje(e.p, [falso(MEDIO_1, 'The value is user input')]);
-  const r = await e.llamar('/api/checks/arreglar', { ...R(), huella: huella(MEDIO_1), modo: 'ahorro' });
+  const r = await e.llamar('/api/checks/arreglar', { ...R(), confirmar: true, huella: huella(MEDIO_1), modo: 'ahorro' });
   assert.equal(r.status, 202);
   const { comentario } = await r.json();
   assert.equal(comentario.tipo, 'cambio');
@@ -261,12 +261,12 @@ test('POST /api/checks/arreglar creates the fix comment and queues the change jo
 test('POST /api/checks/arreglar refuses a second request for the same finding but allows a retry after an error', async (t) => {
   const e = await entorno({ ejecutarCambios: cambiosFalsos([]) });
   t.after(e.cerrar);
-  const primero = await (await e.llamar('/api/checks/arreglar', { ...R(), huella: huella(MEDIO_1) })).json();
-  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), huella: huella(MEDIO_1) })).status, 409);
-  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), huella: huella(MEDIO_2) })).status, 202);
+  const primero = await (await e.llamar('/api/checks/arreglar', { ...R(), confirmar: true, huella: huella(MEDIO_1) })).json();
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), confirmar: true, huella: huella(MEDIO_1) })).status, 409);
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), confirmar: true, huella: huella(MEDIO_2) })).status, 202);
   await esperar(() => leerComentarios(e.p, 'acme/api', 1).every((c) => c.estado === 'propuesta'));
   actualizarComentario(e.p, 'acme/api', 1, primero.comentario.id, { estado: 'error', motivo: 'The AI made no changes' });
-  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), huella: huella(MEDIO_1) })).status, 202);
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), confirmar: true, huella: huella(MEDIO_1) })).status, 202);
 });
 
 test('POST /api/checks/arreglar refuses dismissed findings, findings without line, closed PRs and bad input', async (t) => {
@@ -274,12 +274,43 @@ test('POST /api/checks/arreglar refuses dismissed findings, findings without lin
   const e = await entorno({ prs: [conChecks(1, [MEDIO_1, SIN_LINEA]), conChecks(4, HALLAZGOS, { estadoPr: 'MERGED' })], ejecutarCambios: cambiosFalsos([]) });
   t.after(e.cerrar);
   await e.llamar('/api/checks/descartar', { ...R(), huellas: [huella(MEDIO_1)], motivo: 'Reviewed' });
-  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), huella: huella(MEDIO_1) })).status, 409);
-  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), huella: huella(SIN_LINEA) })).status, 409);
-  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(4), huella: huella(MEDIO_1) })).status, 409);
-  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), huella: 'no-existe' })).status, 404);
-  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), huella: 7 })).status, 400);
-  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(99), huella: huella(MEDIO_1) })).status, 404);
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), confirmar: true, huella: huella(MEDIO_1) })).status, 409);
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), confirmar: true, huella: huella(SIN_LINEA) })).status, 409);
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(4), confirmar: true, huella: huella(MEDIO_1) })).status, 409);
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), confirmar: true, huella: 'no-existe' })).status, 404);
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), confirmar: true, huella: 7 })).status, 400);
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), huella: huella(SIN_LINEA) })).status, 400);
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), confirmar: 'true', huella: huella(SIN_LINEA) })).status, 400);
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(99), confirmar: true, huella: huella(MEDIO_1) })).status, 404);
   assert.deepEqual(leerComentarios(e.p, 'acme/api', 1), []);
   assert.equal((await e.llamar('/api/estado').then((r) => r.json())).trabajos.length, 0);
+});
+
+test('POST /api/checks/arreglar allows a retry after a discarded proposal', async (t) => {
+  const e = await entorno({ ejecutarCambios: cambiosFalsos([]) });
+  t.after(e.cerrar);
+  const primero = await (await e.llamar('/api/checks/arreglar', { ...R(), confirmar: true, huella: huella(MEDIO_1) })).json();
+  await esperar(() => leerComentarios(e.p, 'acme/api', 1).every((c) => c.estado === 'propuesta'));
+  actualizarComentario(e.p, 'acme/api', 1, primero.comentario.id, { estado: 'descartado' });
+  const r = await e.llamar('/api/checks/arreglar', { ...R(), confirmar: true, huella: huella(MEDIO_1) });
+  assert.equal(r.status, 202);
+  assert.deepEqual(leerComentarios(e.p, 'acme/api', 1).map((c) => c.id), [(await r.json()).comentario.id]);
+});
+
+test('POST /api/checks/arreglar refuses findings of an earlier commit and lines that are not valid', async (t) => {
+  const viejo = prDe(1, { verificaciones: { headSha: 'b'.repeat(40), hallazgos: [MEDIO_1], resumen: resumir([MEDIO_1]) } });
+  const CERO = hallazgo(0, 'alto', { linea: 0, texto: 'cero' });
+  const e = await entorno({ prs: [viejo, conChecks(2, [CERO])], ejecutarCambios: cambiosFalsos([]) });
+  t.after(e.cerrar);
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), confirmar: true, huella: huella(MEDIO_1) })).status, 409);
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(2), confirmar: true, huella: huella(CERO) })).status, 409);
+  assert.deepEqual(leerComentarios(e.p, 'acme/api', 2), []);
+});
+
+test('GET /api/checks exposes the cap of a fix job', async (t) => {
+  const e = await entorno();
+  t.after(e.cerrar);
+  const d = await (await e.llamar('/api/checks?repo=acme/api&numero=1')).json();
+  assert.equal(typeof d.topeArreglo, 'number');
+  assert.ok(d.topeArreglo > 0);
 });

@@ -53,10 +53,11 @@ function guardar(p, repo, numero, prop) {
 
 const colapsar = (t) => String(t ?? '').replace(/\s+/g, ' ').trim();
 
-// The finding is gone when its line was removed from the file and the same rule does not fire again there.
+// The finding is gone when its own line was removed (same old-side line number, not another copy of the same text)
+// and the same rule does not fire again in that file.
 export function resuelveCheck(patch, h, hallazgosReglas) {
   const archivo = archivosDeDiff(patch).find((a) => a.filename === h.archivo);
-  const quitada = lineasQuitadas(archivo?.patch).some((l) => colapsar(l.texto) === colapsar(h.texto));
+  const quitada = lineasQuitadas(archivo?.patch).some((l) => l.linea === h.linea && colapsar(l.texto) === colapsar(h.texto));
   return quitada && !hallazgosReglas.some((x) => x.regla === h.regla && x.archivo === h.archivo);
 }
 

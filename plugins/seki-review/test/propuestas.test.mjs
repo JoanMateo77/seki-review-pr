@@ -256,6 +256,13 @@ test('resuelveCheck is true when the finding line is removed and the rule does n
   assert.equal(resuelveCheck(patch, HALLAZGO, [{ regla: 'otra-regla', archivo: 'views/list.ejs' }, { regla: 'ejs-sin-escapar', archivo: 'views/otro.ejs' }]), true);
 });
 
+test('resuelveCheck counts only the flagged line, not another copy of the same text', () => {
+  const dos = (quitar) => `diff --git a/views/list.ejs b/views/list.ejs\n--- a/views/list.ejs\n+++ b/views/list.ejs\n@@ -1,4 +1,3 @@\n <ul>\n${quitar === 2 ? '-' : ' '}<%- item %>\n${quitar === 3 ? '-' : ' '}<%- item %>\n </ul>\n`;
+  const h = { ...HALLAZGO, linea: 2 };
+  assert.equal(resuelveCheck(dos(3), h, []), false);
+  assert.equal(resuelveCheck(dos(2), h, []), true);
+});
+
 test('resuelveCheck is false when the patch only adds lines or the line removed is another', () => {
   assert.equal(resuelveCheck(parche('+  <p>nuevo</p>'), HALLAZGO, []), false);
   assert.equal(resuelveCheck(parche('-  <p>otro</p>\n+  <p>nuevo</p>'), HALLAZGO, []), false);

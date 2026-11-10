@@ -166,11 +166,7 @@ document.addEventListener('click', (ev) => {
   if (d.accion === 'enviarRevision') return enviarRevision(prSel());
   if (d.comReintentar) return enviarRevision(prSel(), [d.comReintentar]);
   if (d.comRepreguntar) return repreguntar(prSel(), d.comRepreguntar);
-  if (d.propAprobar) {
-    if (necesitaConfirmar(estado.propuestas.get(d.propAprobar)) && estado.confirmarAprobar !== d.propAprobar) { estado.confirmarAprobar = d.propAprobar; return repintarDetalle(); }
-    t.disabled = true;
-    return accionPropuesta('aprobar', d.propAprobar, { confirmarFallos: estado.confirmarAprobar === d.propAprobar });
-  }
+  if (d.propAprobar) return clicAprobar(d.propAprobar, t);
   if (d.propAjustar) { estado.ajustando = estado.ajustando === d.propAjustar ? null : d.propAjustar; repintarDetalle(); return $('ajusteTexto')?.focus({ preventScroll: true }); }
   if (d.propEnviarAjuste) {
     const indicacion = $('ajusteTexto')?.value.trim();

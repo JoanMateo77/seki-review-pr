@@ -11,7 +11,7 @@ import { construirHtml, fotoConExplicaciones, nombresDeArchivos, versionEnDisco 
 const VERSION = versionEnDisco();
 import { crearCola } from './trabajos.mjs';
 import { asegurarDiff, diffParaTablero } from './diffs.mjs';
-import { actualizarComentario, crearCambioDeCheck, guardarComentarios, leerComentarios, marcasComentarios, recuperarInterrumpidos, rescatarPendientes, separarEnviables } from './comentarios.mjs';
+import { actualizarComentario, crearCambioDeCheck, guardarComentarios, leerComentarios, marcasComentarios, REINTENTABLES, recuperarInterrumpidos, rescatarPendientes, separarEnviables } from './comentarios.mjs';
 import { investigarPregunta, responderPreguntas } from './preguntas.mjs';
 import { ajustarPropuesta, aprobar, descartar, leerPropuesta, proponerCambios } from './propuestas.mjs';
 import { explicarConIa } from './explicar.mjs';
@@ -578,7 +578,9 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
       }
       if (req.method === 'GET' && url.pathname === '/api/checks') {
         const pr = prDeFoto(`${url.searchParams.get('repo')}#${url.searchParams.get('numero')}`);
-        return responder(res, 200, datosChecks(p, pr, pr.verificaciones));
+        // The cap of a fix job depends on the mode the dialog will send.
+        const modo = modoDe(p, url.searchParams.get('modo') || undefined);
+        return responder(res, 200, { ...datosChecks(p, pr, pr.verificaciones), topeArreglo: topeDeTrabajo({ tipo: 'cambiar', modo, n: 1 }) });
       }
       if (req.method === 'POST' && url.pathname === '/api/checks/triar') {
         const { repo, numero, repetir, modo: modoPedido, confirmar } = await leerJsonEstricto(req);
@@ -624,14 +626,16 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
       }
       // The finding enters the same pipeline as a "Request change" comment: nothing is pushed until a person approves the proposal.
       if (req.method === 'POST' && url.pathname === '/api/checks/arreglar') {
-        const { repo, numero, huella, modo: modoPedido } = await leerJsonEstricto(req);
+        const { repo, numero, huella, modo: modoPedido, confirmar } = await leerJsonEstricto(req);
+        if (confirmar !== true) throw falloHttp(400, 'The fix must be confirmed');
         if (typeof huella !== 'string' || !huella) throw falloHttp(400, 'huella must be a string');
         const pr = prDeFoto(`${repo}#${numero}`);
         if (pr.estadoPr !== 'OPEN') throw falloHttp(409, 'The PR is no longer open');
         const h = (pr.verificaciones?.hallazgos ?? []).find((x) => x.huella === huella);
         if (!h) throw falloHttp((pr.verificaciones?.descartados ?? []).some((x) => x.huella === huella) ? 409 : 404, 'The finding is not an open finding of the PR');
-        if (!Number.isInteger(h.linea)) throw falloHttp(409, 'The finding has no line: it cannot be sent to a fix');
-        if (leerComentarios(p, pr.repo, pr.numero).some((c) => c.tipo === 'cambio' && c.origenCheck?.huella === huella && c.estado !== 'error')) throw falloHttp(409, 'This finding already has a fix request');
+        if (pr.verificaciones.headSha !== pr.headSha) throw falloHttp(409, 'The checks are from an earlier commit');
+        if (!Number.isInteger(h.linea) || h.linea < 1) throw falloHttp(409, 'The finding has no line: it cannot be sent to a fix');
+        if (leerComentarios(p, pr.repo, pr.numero).some((c) => c.tipo === 'cambio' && c.origenCheck?.huella === huella && !REINTENTABLES.has(c.estado))) throw falloHttp(409, 'This finding already has a fix request');
         const modo = modoDe(p, modoPedido);
         const comentario = crearCambioDeCheck(p, pr, h, { razon: leerTriaje(p, pr.repo, pr.numero, pr.headSha)?.veredictos.find((v) => v.huella === huella)?.razon });
         cola.encolar([{ id: `${pr.id}:cambiar:${Date.now()}`, tipo: 'cambiar', prId: pr.id, topeUsd: topeDeTrabajo({ tipo: 'cambiar', modo, n: 1 }), ...conRescate(pr, [comentario.id], () => ejecutarCambios(p, pr, [comentario.id], { modo })) }]);

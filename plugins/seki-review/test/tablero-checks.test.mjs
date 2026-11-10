@@ -241,13 +241,45 @@ test('after a failed request the latest one decides the row', () => {
   assert.ok(t.ctx.tabVerificaciones(p).includes('Fix requested'));
 });
 
-test('Fix sends the finding, replaces the failed request locally and repaints', async () => {
+test('Fix opens a dialog with the escaped finding, the cost cap and nothing is sent yet', async () => {
+  const t = tablero({ api: async () => ({ topeArreglo: 0.5 }) });
+  await t.ctx.accionCheck('arreglar', pr({ hallazgos: [hallazgo('h1', { titulo: MAL })] }), { checkHuella: 'h1' });
+  assert.deepEqual(t.llamadas, [['/api/checks?repo=acme%2Fapi&numero=7&modo=normal', null]]);
+  const html = t.modales.at(-1);
+  assert.ok(html.includes('Fix this finding with AI'));
+  assert.ok(html.includes('&lt;img src=x onerror=alert(1)&gt;') && !html.includes('<img'));
+  assert.ok(html.includes('views/list.ejs:4'));
+  assert.ok(html.includes('An AI edits a copy of the branch and leaves a proposal. Nothing is pushed until the proposal is approved.'));
+  assert.ok(html.includes('Up to USD 0.5'));
+  assert.match(html, /data-check-accion="arreglar-confirmar"[^>]*data-check-huella="h1"[^>]*>Request fix</);
+  assert.ok(html.includes('data-modal-cerrar'));
+});
+
+test('Request fix sends the confirmation, replaces a failed or discarded request locally and repaints', async () => {
   const comentario = peticion('h1', { estado: 'en_cola' });
-  const t = tablero({ api: async () => ({ comentario }), comentarios: [peticion('h1', { id: 'c-viejo', estado: 'error', motivo: 'x' }), peticion('h9')] });
-  await t.ctx.accionCheck('arreglar', pr({ hallazgos: [hallazgo('h1')] }), { checkHuella: 'h1' });
-  assert.deepEqual(t.llamadas, [['/api/checks/arreglar', { repo: 'acme/api', numero: 7, huella: 'h1', modo: 'normal' }]]);
+  const t = tablero({ api: async () => ({ comentario }), comentarios: [peticion('h1', { id: 'c-viejo', estado: 'error', motivo: 'x' }), peticion('h1', { id: 'c-desc', estado: 'descartado' }), peticion('h9')] });
+  await t.ctx.accionCheck('arreglar-confirmar', pr({ hallazgos: [hallazgo('h1')] }), { checkHuella: 'h1' });
+  assert.deepEqual(t.llamadas, [['/api/checks/arreglar', { repo: 'acme/api', numero: 7, huella: 'h1', modo: 'normal', confirmar: true }]]);
   assert.deepEqual(t.guardados().map((c) => c.id), ['c-h9', 'c-h1']);
   assert.ok(t.repintados.length > 0);
+});
+
+test('Request fix is disabled while the request is in flight and enabled again after an error', async () => {
+  const boton = { disabled: false };
+  let estadoEnVuelo;
+  const t = tablero({ api: async () => { estadoEnVuelo = boton.disabled; throw new Error('Server down'); } });
+  t.ctx.$ = (id) => (id === 'modalIa' ? { querySelector: () => boton } : t.cajas[id] ?? null);
+  await t.ctx.accionCheck('arreglar-confirmar', pr({ hallazgos: [hallazgo('h1')] }), { checkHuella: 'h1' });
+  assert.equal(estadoEnVuelo, true);
+  assert.equal(boton.disabled, false);
+  assert.equal(t.cajas.modalIaError.textContent, 'Server down');
+});
+
+test('a discarded request shows Fix discarded together with Fix', () => {
+  const p = pr({ hallazgos: [hallazgo('h1')] });
+  const html = tablero({ comentarios: [peticion('h1', { estado: 'descartado' })] }).ctx.tabVerificaciones(p);
+  assert.ok(html.includes('Fix discarded'));
+  assert.match(html, /data-check-accion="arreglar"[^>]*data-check-huella="h1"/);
 });
 
 // The proposal card (06-script-3.js) with the stubs it needs.
@@ -291,6 +323,54 @@ test('the approve button names the author, escaped, only for a PR in the To revi
   assert.ok(tarjetaDe(tarjeta({ pr: { autor: 'ana' } }), prop).includes('Approve and push to the branch'));
   assert.ok(tarjetaDe(tarjeta({ pr: { paraRevisar: 'asignada' } }), prop).includes('Approve and push to the branch'));
   assert.doesNotMatch(tarjetaDe(tarjeta({ pr: { paraRevisar: 'asignada', autor: MAL } }), prop), /<img/);
+});
+
+test('every approve state and the confirmation paragraph name the owner on a To review PR', () => {
+  const alPropietario = { paraRevisar: 'asignada', autor: 'ana' };
+  const casos = [
+    [propuesta({ conFallos: true }), 'Approve with failures and push to ana’s branch', 'Confirm: approve with failures and push to ana’s branch'],
+    [propuesta({ check: { huella: 'h', regla: 'r', resuelto: false } }), 'Approve anyway and push to ana’s branch', 'Confirm: approve anyway and push to ana’s branch'],
+  ];
+  for (const [prop, primera, segunda] of casos) {
+    const ctx = tarjeta({ pr: alPropietario });
+    assert.ok(tarjetaDe(ctx, prop).includes(`>${primera}<`));
+    ctx.estado.confirmarAprobar = prop.id;
+    const html = tarjetaDe(ctx, prop);
+    assert.ok(html.includes(`>${segunda}<`));
+    assert.ok(html.includes('A second click pushes it to ana’s branch anyway.'));
+  }
+  const ctx = tarjeta({ pr: { paraRevisar: 'asignada', autor: MAL } });
+  ctx.estado.confirmarAprobar = 'p-1';
+  const html = tarjetaDe(ctx, propuesta({ conFallos: true }));
+  assert.doesNotMatch(html, /<img/);
+  assert.ok(html.includes('&lt;img src=x onerror=alert(1)&gt;’s branch anyway.'));
+  // Without an owner the wording is the one of the own branch.
+  const propia = tarjeta();
+  propia.estado.confirmarAprobar = 'p-1';
+  assert.ok(tarjetaDe(propia, propuesta({ conFallos: true })).includes('>Confirm: approve with failures<'));
+});
+
+test('the approve click of an unresolved check proposal sends confirmarFallos only on the second click', async () => {
+  const cuerpos = [];
+  const ctx = tarjeta({ api: async (ruta, cuerpo) => { cuerpos.push(cuerpo); return { ok: true, commit: 'abcdef123' }; } });
+  ctx.estado.propuestas.set('p-1', propuesta({ check: { huella: 'h1', regla: 'r', resuelto: false } }));
+  const boton = { disabled: false };
+  await ctx.clicAprobar('p-1', boton);
+  assert.equal(cuerpos.length, 0);
+  assert.equal(ctx.estado.confirmarAprobar, 'p-1');
+  assert.equal(boton.disabled, false);
+  await ctx.clicAprobar('p-1', boton);
+  assert.equal(cuerpos.length, 1);
+  assert.equal(cuerpos[0].confirmarFallos, true);
+  assert.equal(boton.disabled, true);
+});
+
+test('a proposal that needs no confirmation is approved at the first click', async () => {
+  const cuerpos = [];
+  const ctx = tarjeta({ api: async (ruta, cuerpo) => { cuerpos.push(cuerpo); return { ok: true, commit: 'abcdef123' }; } });
+  ctx.estado.propuestas.set('p-1', propuesta({ check: { huella: 'h1', regla: 'r', resuelto: true } }));
+  await ctx.clicAprobar('p-1', { disabled: false });
+  assert.equal(cuerpos[0].confirmarFallos, false);
 });
 
 test('after approving a check proposal the notice says the twin does not have the fix', async () => {

@@ -159,7 +159,7 @@ test('a check fix comment is queued on the finding line with the finding recorde
   assert.equal(c.hasta, 4);
   assert.equal(c.archivo, 'views/list.ejs');
   assert.equal(c.headSha, 'abc');
-  assert.deepEqual(c.origenCheck, { huella: 'abcd1234abcd1234', regla: 'ejs-sin-escapar', archivo: 'views/list.ejs', texto: '<%- item %>' });
+  assert.deepEqual(c.origenCheck, { huella: 'abcd1234abcd1234', regla: 'ejs-sin-escapar', archivo: 'views/list.ejs', linea: 4, texto: '<%- item %>' });
   assert.equal(c.texto, 'Fix the check "Unescaped output" (ejs-sin-escapar) on this line. Escape it. Change only what the finding needs.\nAI triage: The value comes from the user');
   assert.deepEqual(leerComentarios(pr, 'acme/api', 7), [c]);
 });
@@ -179,8 +179,9 @@ test('the origin of a check fix survives merges and cannot be written by the bro
   const pr = p();
   const c = crearCambioDeCheck(pr, { repo: 'acme/api', numero: 7, headSha: 'abc' }, hallazgoCheck, {});
   // A browser copy of the same comment, newer and without the field, must not erase it.
-  const fusion = fusionarComentarios([{ ...c, estado: 'borrador' }], [{ ...base, id: c.id, estado: 'borrador', actualizado: '2999-01-01T00:00:00Z' }]);
+  const fusion = fusionarComentarios([c], [{ ...base, id: c.id, estado: 'borrador', actualizado: '2999-01-01T00:00:00Z' }]);
   assert.deepEqual(fusion[0].origenCheck, c.origenCheck);
+  assert.equal(fusion[0].estado, 'en_cola');
   // Neither can the browser attach it to a comment of its own.
   guardarComentarios(pr, 'acme/api', 7, [{ ...base, id: 'c-0002', estado: 'borrador', origenCheck: { huella: 'x', regla: 'y' } }]);
   assert.equal(leerComentarios(pr, 'acme/api', 7).find((x) => x.id === 'c-0002').origenCheck, undefined);
@@ -193,6 +194,15 @@ test('a retry of a failed check fix replaces the failed comment', () => {
   const ref = { repo: 'acme/api', numero: 7, headSha: 'abc' };
   const primero = crearCambioDeCheck(pr, ref, hallazgoCheck, {});
   actualizarComentario(pr, 'acme/api', 7, primero.id, { estado: 'error', motivo: 'The AI made no changes' });
+  const segundo = crearCambioDeCheck(pr, ref, hallazgoCheck, {});
+  assert.deepEqual(leerComentarios(pr, 'acme/api', 7).map((c) => c.id), [segundo.id]);
+});
+
+test('a retry of a check fix whose proposal was discarded replaces the discarded comment', () => {
+  const pr = p();
+  const ref = { repo: 'acme/api', numero: 7, headSha: 'abc' };
+  const primero = crearCambioDeCheck(pr, ref, hallazgoCheck, {});
+  actualizarComentario(pr, 'acme/api', 7, primero.id, { estado: 'descartado' });
   const segundo = crearCambioDeCheck(pr, ref, hallazgoCheck, {});
   assert.deepEqual(leerComentarios(pr, 'acme/api', 7).map((c) => c.id), [segundo.id]);
 });

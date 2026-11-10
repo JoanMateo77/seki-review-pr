@@ -30,15 +30,16 @@ function celdaVeredicto(v, vieja) {
 const peticionCheck = (pr, huella) => comentarios(pr).filter((c) => c.origenCheck?.huella === huella)
   .sort((a, b) => (a.creado ?? '').localeCompare(b.creado ?? '')).at(-1);
 
-// Same rule as the server: only a failed request can be made again.
+// Same rule as the server: a request can be made again only after it failed or its proposal was discarded.
+const REINTENTABLES_CHECK = ['error', 'descartado'];
 function celdaArreglo(pr, h) {
   const c = peticionCheck(pr, h.huella);
-  if (c && c.estado !== 'error') {
+  if (c && !REINTENTABLES_CHECK.includes(c.estado)) {
     if (c.estado === 'propuesta') return '<a href="#" data-tab-ir="archivos" title="The proposal is in the diff, on the line of the finding">Proposal ready</a>';
-    const texto = c.estado === 'aprobado' ? 'Fix approved' : c.estado === 'descartado' ? 'Fix discarded' : 'Fix requested';
+    const texto = c.estado === 'aprobado' ? 'Fix approved' : 'Fix requested';
     return `<span class="muy-tenue">${texto}</span>`;
   }
-  const falla = c ? `<span class="estado rojo">Fix failed: ${esc(c.motivo ?? 'unknown error')}</span> ` : '';
+  const falla = !c ? '' : c.estado === 'descartado' ? '<span class="muy-tenue">Fix discarded</span> ' : `<span class="estado rojo">Fix failed: ${esc(c.motivo ?? 'unknown error')}</span> `;
   const arreglar = pr.estadoPr === 'OPEN' && h.linea ? `<button type="button" class="btn chico" data-check-accion="arreglar" data-check-pr="${esc(pr.id)}" data-check-huella="${esc(h.huella)}" title="Sends the finding to a change proposal; nothing is pushed until it is approved">Fix</button> ` : '';
   return falla + arreglar;
 }
@@ -206,11 +207,37 @@ async function confirmarValidacion(pr, repetir) {
   sondear();
 }
 
+// The fix starts an AI job: the dialog shows what it does and its cost cap before anything is sent.
+async function abrirArreglo(pr, huella) {
+  const h = hallazgoCheck(pr, huella);
+  if (!h) return;
+  const pedido = (estado.pedidoUltra = (estado.pedidoUltra ?? 0) + 1);
+  const titulo = '<h3 id="modalIaTitulo">Fix this finding with AI</h3>';
+  const cuerpo = `<p><strong>${esc(h.titulo)}</strong> <span class="mono muy-tenue">${esc(lugarCheck(h))}</span></p>`;
+  let d;
+  try { d = await api(`/api/checks?repo=${encodeURIComponent(pr.repo)}&numero=${pr.numero}&modo=${encodeURIComponent(modoActual())}`); } catch (err) { return avisar(err.message); }
+  if (pedido !== estado.pedidoUltra) return;
+  abrirModal(`${titulo}${cuerpo}
+    <p>An AI edits a copy of the branch and leaves a proposal. Nothing is pushed until the proposal is approved.</p>
+    <p><strong>Up to ${usd(d.topeArreglo)}</strong></p>
+    <div class="modal-pie">
+      <button type="button" class="btn" data-modal-cerrar>Cancel</button>
+      <button type="button" class="btn primario" data-check-accion="arreglar-confirmar" data-check-pr="${esc(pr.id)}" data-check-huella="${esc(huella)}">Request fix</button>
+    </div>
+    <p class="error-texto" id="modalIaError" role="alert" hidden></p>`);
+}
+
 async function pedirArreglo(pr, huella) {
+  const boton = $('modalIa')?.querySelector('[data-check-accion="arreglar-confirmar"]');
+  if (boton) boton.disabled = true;
   let comentario;
-  try { ({ comentario } = await api('/api/checks/arreglar', { repo: pr.repo, numero: pr.numero, huella, modo: modoActual() })); } catch (err) { return avisar(err.message); }
-  // The server drops the failed request of the same finding: the local copy does too.
-  const resto = comentarios(pr).filter((c) => !(c.origenCheck?.huella === huella && c.estado === 'error'));
+  try { ({ comentario } = await api('/api/checks/arreglar', { repo: pr.repo, numero: pr.numero, huella, modo: modoActual(), confirmar: true })); } catch (err) {
+    if (boton) boton.disabled = false;
+    return errorDeCheck(err.message);
+  }
+  cerrarModal();
+  // The server drops the failed or discarded request of the same finding: the local copy does too.
+  const resto = comentarios(pr).filter((c) => !(c.origenCheck?.huella === huella && REINTENTABLES_CHECK.includes(c.estado)));
   escribirComentarios(pr, fusionarComentarios(resto, [comentario]));
   pintarDetalle();
   sondear();
@@ -225,7 +252,8 @@ function accionCheck(accion, pr, datos = {}) {
   if (accion === 'descartar-confirmar') return confirmarDescarte(pr, datos.checkHuella);
   if (accion === 'descartar-lote') return abrirLote(pr);
   if (accion === 'descartar-lote-confirmar') return confirmarLote(pr);
-  if (accion === 'arreglar') return pedirArreglo(pr, datos.checkHuella);
+  if (accion === 'arreglar') return abrirArreglo(pr, datos.checkHuella);
+  if (accion === 'arreglar-confirmar') return pedirArreglo(pr, datos.checkHuella);
   if (accion === 'reabrir') return enviarCheck('/api/checks/reabrir', { repo: pr.repo, numero: pr.numero, huella: datos.checkHuella });
 }
 

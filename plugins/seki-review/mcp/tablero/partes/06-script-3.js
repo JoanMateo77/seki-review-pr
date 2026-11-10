@@ -229,7 +229,14 @@ function necesitaConfirmar(prop) {
 }
 
 // Names whose branch the push goes to when the PR is not the user's own (the To review list).
-const aprobarEn = (pr) => (pr?.paraRevisar && pr.autor ? `Approve and push to ${esc(pr.autor)}’s branch` : 'Approve and push to the branch');
+const propietarioDe = (pr) => (pr?.paraRevisar && pr.autor ? `${esc(pr.autor)}’s branch` : null);
+
+// Approve click: a proposal that needs confirmation waits for a second click, which is the one that sends it.
+function clicAprobar(id, boton) {
+  if (necesitaConfirmar(estado.propuestas.get(id)) && estado.confirmarAprobar !== id) { estado.confirmarAprobar = id; return repintarDetalle(); }
+  boton.disabled = true;
+  return accionPropuesta('aprobar', id, { confirmarFallos: estado.confirmarAprobar === id });
+}
 
 function propuestaHtml(c) {
   const prop = propuestaDe(c);
@@ -240,15 +247,15 @@ function propuestaHtml(c) {
   if (prop.estado === 'lista') {
     const confirmar = estado.confirmarAprobar === prop.id;
     const sigue = prop.check?.resuelto === false;
-    const aprobar = !necesitaConfirmar(prop) ? aprobarEn(pr)
-      : prop.conFallos ? (confirmar ? 'Confirm: approve with failures' : 'Approve with failures')
-      : (confirmar ? 'Confirm: approve anyway' : 'Approve anyway');
+    const destino = propietarioDe(pr);
+    const aprobar = !necesitaConfirmar(prop) ? `Approve and push to ${destino ?? 'the branch'}`
+      : `${confirmar ? 'Confirm: approve' : 'Approve'} ${prop.conFallos ? 'with failures' : 'anyway'}${destino ? ` and push to ${destino}` : ''}`;
     acciones = `<div class="prop-acciones">
       <button type="button" class="btn chico primario" data-prop-aprobar="${esc(prop.id)}">${aprobar}</button>
       <button type="button" class="btn chico" data-prop-ajustar="${esc(prop.id)}" aria-expanded="${estado.ajustando === prop.id}">Request adjustment</button>
       <button type="button" class="btn chico" data-prop-descartar="${esc(prop.id)}">Discard</button>${pie}
     </div>
-    ${confirmar ? `<p class="hilo-motivo">The proposal ${[prop.conFallos ? 'has failing checks' : '', sigue ? 'does not remove the finding' : ''].filter(Boolean).join(' and ')}. A second click pushes it to the branch anyway.</p>` : ''}
+    ${confirmar ? `<p class="hilo-motivo">The proposal ${[prop.conFallos ? 'has failing checks' : '', sigue ? 'does not remove the finding' : ''].filter(Boolean).join(' and ')}. A second click pushes it to ${destino ?? 'the branch'} anyway.</p>` : ''}
     ${estado.ajustando === prop.id ? `<div class="prop-ajuste"><textarea id="ajusteTexto" placeholder="What to change in this proposal" aria-label="What to change in this proposal"></textarea>
       <div class="prop-acciones"><button type="button" class="btn chico primario" data-prop-enviar-ajuste="${esc(prop.id)}">Send adjustment</button></div></div>` : ''}`;
   } else if (prop.estado === 'conflicto' || prop.estado === 'rechazada') {

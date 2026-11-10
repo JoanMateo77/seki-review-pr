@@ -17,6 +17,8 @@ export const SECCIONES = {
   dependencias: 'Must go first', riesgos: 'Risks', como_probar: 'How to test',
 };
 const PENDIENTES = new Set(['en_cola', 'en_curso']);
+// A check fix can be requested again when its request failed or its proposal was discarded.
+export const REINTENTABLES = new Set(['error', 'descartado']);
 // What the browser may write; answer, cost, proposal and the rest are set only by the server.
 const CAMPOS = ['id', 'tipo', 'estado', 'ambito', 'seccion', 'citado', 'citadoDe', 'respondeA', 'investigar', 'archivo', 'lado', 'desde', 'hasta', 'claves', 'textoOriginal', 'texto', 'sugerido', 'headSha', 'creado', 'actualizado'];
 
@@ -80,8 +82,9 @@ export function guardarComentarios(p, repo, numero, entrantes, borrados = []) {
   return lista;
 }
 
-// A check finding sent to the change pipeline. Created here, not by the browser, so `origenCheck` cannot be forged;
-// it keeps file and text so the proposal can tell whether the finding is gone without reading the snapshot.
+// A check finding sent to the change pipeline. Created here, not by the browser, so `origenCheck` cannot be forged.
+// `origenCheck: { huella, regla, archivo, linea, texto }` is stored because `resuelveCheck` needs the file, the
+// line and the text to tell whether the finding is gone, without reading the snapshot.
 export function crearCambioDeCheck(p, pr, h, { razon } = {}) {
   if (!Number.isInteger(h.linea) || h.linea < 1) throw new Error('The finding has no line: it cannot be sent to a fix');
   const ahora = new Date().toISOString();
@@ -91,10 +94,10 @@ export function crearCambioDeCheck(p, pr, h, { razon } = {}) {
     tipo: 'cambio', estado: 'en_cola', archivo: h.archivo, lado: 'nuevo', desde: h.linea, hasta: h.linea,
     texto: `Fix the check "${h.titulo}" (${h.regla}) on this line. ${h.mensaje} Change only what the finding needs.${triaje}`,
     headSha: pr.headSha, creado: ahora, actualizado: ahora,
-    origenCheck: { huella: h.huella ?? huellaHallazgo(h), regla: h.regla, archivo: h.archivo, texto: h.texto },
+    origenCheck: { huella: h.huella ?? huellaHallazgo(h), regla: h.regla, archivo: h.archivo, linea: h.linea, texto: h.texto },
   };
-  // A retry replaces the failed request of the same finding instead of leaving it next to the new one.
-  const previos = leerComentarios(p, pr.repo, pr.numero).filter((x) => !(x.origenCheck?.huella === c.origenCheck.huella && x.estado === 'error'));
+  // A retry replaces the failed or discarded request of the same finding instead of leaving it next to the new one.
+  const previos = leerComentarios(p, pr.repo, pr.numero).filter((x) => !(x.origenCheck?.huella === c.origenCheck.huella && REINTENTABLES.has(x.estado)));
   escribir(p, pr.repo, pr.numero, [...previos, c]);
   return c;
 }
