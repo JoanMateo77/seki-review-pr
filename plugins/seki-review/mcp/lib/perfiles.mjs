@@ -12,6 +12,7 @@ const NORMAL = {
   ultra_lente: { modelo: 'sonnet', topeUsd: 1.5, turnos: 25, segundaPasada: false },
   ultra_verificar: { modelo: 'sonnet', topeUsd: 1, turnos: 30, segundaPasada: false },
   plantilla: { modelo: 'sonnet', topeUsd: 1, turnos: 25, segundaPasada: false },
+  triar_checks: { modelo: null, topeUsd: 1, turnos: 25, segundaPasada: false },
 };
 
 const AHORRO = Object.fromEntries(Object.entries(NORMAL).map(([tipo, f]) => [tipo, {

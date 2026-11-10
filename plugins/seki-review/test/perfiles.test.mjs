@@ -245,3 +245,9 @@ test('topeRevisarPlantillas(2) equals 2 * plantilla cap + ultra_verificar cap', 
   assert.equal(topeRevisarPlantillas(2), 3);
   assert.equal(topeRevisarPlantillas(0), 0);
 });
+
+test('triar_checks is a regular job: sonnet in ahorro, difficulty rule in normal, cap 1', () => {
+  assert.equal(perfil({ tipo: 'triar_checks', modo: 'ahorro' }).modelo, 'sonnet');
+  assert.deepEqual(PERFILES.normal.triar_checks, { modelo: null, topeUsd: 1, turnos: 25, segundaPasada: false });
+  assert.equal(topeDeTrabajo({ tipo: 'triar_checks', modo: 'normal' }), 1);
+});
