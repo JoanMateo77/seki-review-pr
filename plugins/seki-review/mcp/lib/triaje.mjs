@@ -1,18 +1,15 @@
 // AI triage of the fixed-rule check findings of one PR: one read-only call, one verdict per finding fingerprint.
 // Explicit, confirmed job; the verdicts only advise, a person still dismisses or fixes.
 import { escribirJson, leerJson, rutaTriaje } from './cache.mjs';
-import { huellaHallazgo, leerDescartes, TRIABLES } from './descartes.mjs';
+import { leerDescartes, MOTIVO_SIN_VEREDICTO, TRIABLES, triablesOrdenados } from './descartes.mjs';
 import { crearCopia } from './copias.mjs';
 import { argsClaude, ejecutarClaude, leerCostos, MOTIVO_FORMATO, reglasSecretos, registrarCosto, sistemaDe } from './ia.mjs';
 import { estimarCosto, modoDe, perfil, topeDeTrabajo } from './perfiles.mjs';
 import { existeCita } from './ultra.mjs';
 
-const MAX_TRIAR = 40;
 const MAX_RAZON = 300;
 const MOTIVO_GENERICO = 'The job failed';
-const MOTIVO_SIN_VEREDICTO = 'The triage gave no verdict';
 const VEREDICTOS = new Set(['real', 'falso_positivo', 'dudoso']);
-const ORDEN = ['bloqueante', 'alto', 'medio'];
 
 export const SCHEMA_TRIAJE = {
   type: 'object',
@@ -34,6 +31,18 @@ export function leerTriaje(p, repo, numero, headSha) {
 
 export function guardarTriaje(p, pr, { origen, modelo, modo, costo, veredictos }) {
   const triaje = { headSha: pr.headSha, fecha: new Date().toISOString(), origen, modelo, modo, costo, veredictos };
+  escribirJson(rutaTriaje(p.salida, pr.repo, pr.numero), triaje);
+  return triaje;
+}
+
+// A triage of the same commit already stored keeps its verdicts (they may carry evidence); Ultra only adds the
+// fingerprints it has none for. Another commit's triage is replaced, as in any other write.
+export function fusionarTriaje(p, pr, { modelo, modo, costo, veredictos }) {
+  const guardado = leerJson(rutaTriaje(p.salida, pr.repo, pr.numero));
+  if (guardado?.headSha !== pr.headSha) return guardarTriaje(p, pr, { origen: 'ultra', modelo, modo, costo, veredictos });
+  const tenidas = new Set(guardado.veredictos.map((v) => v.huella));
+  const nuevos = veredictos.filter((v) => !tenidas.has(v.huella)).map((v) => ({ ...v, origen: 'ultra' }));
+  const triaje = { ...guardado, veredictos: [...guardado.veredictos, ...nuevos] };
   escribirJson(rutaTriaje(p.salida, pr.repo, pr.numero), triaje);
   return triaje;
 }
@@ -73,10 +82,7 @@ export async function triarChecks(p, pr, { modo, repetir = false, ejecutar = eje
   const guardado = leerJson(rutaTriaje(p.salida, pr.repo, pr.numero));
   if (!repetir && guardado?.headSha === pr.headSha) return { ok: true, motivo: null, costo: 0, modelo: guardado.modelo ?? null, resultado: guardado, desdeCache: true };
 
-  const enviados = abiertosTriables(verificaciones)
-    .map((h) => ({ ...h, huella: h.huella ?? huellaHallazgo(h) }))
-    .sort((a, b) => ORDEN.indexOf(a.severidad) - ORDEN.indexOf(b.severidad))
-    .slice(0, MAX_TRIAR);
+  const enviados = triablesOrdenados(verificaciones?.hallazgos);
   if (!enviados.length) return { ok: false, motivo: 'No findings to triage', costo: 0 };
 
   const sistema = sistemaDe(p, 'base', 'checks-triar');

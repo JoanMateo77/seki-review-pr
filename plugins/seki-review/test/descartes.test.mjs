@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { aplicarDescartes, descartar, huellaHallazgo, leerDescartes, reabrir, TRIABLES } from '../mcp/lib/descartes.mjs';
+import { aplicarDescartes, descartar, huellaHallazgo, leerDescartes, reabrir, TRIABLES, triablesOrdenados } from '../mcp/lib/descartes.mjs';
 import { resumir } from '../mcp/lib/verificar.mjs';
 
 const p = () => ({ salida: mkdtempSync(join(tmpdir(), 'seki-desc-')) });
@@ -66,4 +66,14 @@ test('reabrir removes an entry and returns false for an unknown huella', () => {
 
 test('TRIABLES holds the three upper severities', () => {
   assert.deepEqual([...TRIABLES].sort(), ['alto', 'bloqueante', 'medio']);
+});
+
+test('triablesOrdenados keeps triable severities, highest first, at most 40, each with its fingerprint', () => {
+  const f = (severidad, texto) => ({ regla: 'r', archivo: 'a', severidad, texto });
+  const lista = [f('bajo', 'l'), f('medio', 'm'), f('alto', 'a'), f('bloqueante', 'b'), ...Array.from({ length: 45 }, (_, i) => f('medio', `x${i}`))];
+  const r = triablesOrdenados(lista);
+  assert.equal(r.length, 40);
+  assert.deepEqual(r.slice(0, 3).map((h) => h.severidad), ['bloqueante', 'alto', 'medio']);
+  assert.ok(r.every((h) => h.huella === huellaHallazgo(h)));
+  assert.deepEqual(triablesOrdenados(undefined), []);
 });

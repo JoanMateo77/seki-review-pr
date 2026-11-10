@@ -3,6 +3,19 @@ import { escribirJson, leerJson, rutaDescartes } from './cache.mjs';
 import { resumir } from './verificar.mjs';
 
 export const TRIABLES = new Set(['bloqueante', 'alto', 'medio']);
+export const MOTIVO_SIN_VEREDICTO = 'The triage gave no verdict';
+
+const MAX_TRIABLES = 40;
+const ORDEN_SEVERIDAD = ['bloqueante', 'alto', 'medio'];
+
+// One selection for the standalone triage and for Ultra, so both judge the same findings.
+export function triablesOrdenados(hallazgos) {
+  return (hallazgos ?? [])
+    .filter((h) => TRIABLES.has(h.severidad))
+    .map((h) => ({ ...h, huella: h.huella ?? huellaHallazgo(h) }))
+    .sort((a, b) => ORDEN_SEVERIDAD.indexOf(a.severidad) - ORDEN_SEVERIDAD.indexOf(b.severidad))
+    .slice(0, MAX_TRIABLES);
+}
 
 const MOTIVO_MAX = 500;
 const AUTORES = new Set(['ia', 'persona']);
