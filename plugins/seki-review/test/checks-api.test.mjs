@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { escribirJson, rutaInstantanea } from '../mcp/lib/cache.mjs';
 import { proyecto as cargarProyecto } from '../mcp/lib/config.mjs';
 import { aplicarDescartes, huellaHallazgo, leerDescartes } from '../mcp/lib/descartes.mjs';
+import { actualizarComentario, leerComentarios } from '../mcp/lib/comentarios.mjs';
 import { guardarTriaje } from '../mcp/lib/triaje.mjs';
 import { resumir } from '../mcp/lib/verificar.mjs';
 import { detenerServidores, iniciarServidor } from '../mcp/lib/servidor-web.mjs';
@@ -30,7 +31,7 @@ const conChecks = (numero, hallazgos = HALLAZGOS, extra = {}) => prDe(numero, { 
 
 let n = 0;
 // The triage job never reaches git, gh or claude: the server takes this fake instead.
-async function entorno({ ia, prs = [conChecks(1), conChecks(2, []), prDe(3), conChecks(4, HALLAZGOS, { estadoPr: 'MERGED' }), conChecks(5, [BAJO])], ejecutarTriaje = async () => ({ ok: true, costo: 0, modelo: null, resultado: null }) } = {}) {
+async function entorno({ ia, prs = [conChecks(1), conChecks(2, []), prDe(3), conChecks(4, HALLAZGOS, { estadoPr: 'MERGED' }), conChecks(5, [BAJO])], ejecutarTriaje = async () => ({ ok: true, costo: 0, modelo: null, resultado: null }), ejecutarCambios } = {}) {
   const clave = `ca${++n}`;
   const dir = mkdtempSync(join(tmpdir(), 'seki-checks-api-'));
   temporales.push(dir);
@@ -41,7 +42,7 @@ async function entorno({ ia, prs = [conChecks(1), conChecks(2, []), prDe(3), con
   process.env.SEKI_REVIEW_CONFIG = ruta;
   const p = cargarProyecto(clave);
   escribirJson(rutaInstantanea(salida), { proyecto: clave, generado: new Date().toISOString(), owner: 'o', prs, recientes: [] });
-  const { url } = await iniciarServidor({ proyecto: clave, puerto: 0, abrir: false, ejecutarTriaje });
+  const { url } = await iniciarServidor({ proyecto: clave, puerto: 0, abrir: false, ejecutarTriaje, ...(ejecutarCambios ? { ejecutarCambios } : {}) });
   const u = new URL(url);
   const token = u.searchParams.get('t');
   const llamar = (r, cuerpo) => fetch(`${u.origin}${r}`, { method: cuerpo === undefined ? 'GET' : 'POST', headers: { 'x-seki-token': token, 'content-type': 'application/json' }, body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo) });
@@ -227,4 +228,58 @@ test('the snapshot carries the triage next to the checks and applying dismissals
 
 test('pr_verificaciones description says verdicts and dismissals are read-only', () => {
   assert.match(herramienta.description, /verdicts and dismissals are read-only here/i);
+});
+
+// The change job never reaches git or claude: the fake leaves the comment with a proposal, as the real one does.
+const cambiosFalsos = (recibido) => async (p, pr, ids, opciones) => {
+  recibido.push({ pr: pr.id, ids, ...opciones });
+  for (const id of ids) actualizarComentario(p, pr.repo, pr.numero, id, { estado: 'propuesta', propuestaId: 'p-0001' });
+  return { ok: true, costo: 0 };
+};
+const esperar = async (cond) => { for (let i = 0; i < 100 && !cond(); i++) await new Promise((ok) => setTimeout(ok, 20)); };
+
+test('POST /api/checks/arreglar creates the fix comment and queues the change job', async (t) => {
+  const recibido = [];
+  const e = await entorno({ ejecutarCambios: cambiosFalsos(recibido) });
+  t.after(e.cerrar);
+  triaje(e.p, [falso(MEDIO_1, 'The value is user input')]);
+  const r = await e.llamar('/api/checks/arreglar', { ...R(), huella: huella(MEDIO_1), modo: 'ahorro' });
+  assert.equal(r.status, 202);
+  const { comentario } = await r.json();
+  assert.equal(comentario.tipo, 'cambio');
+  assert.equal(comentario.estado, 'en_cola');
+  assert.equal(comentario.desde, MEDIO_1.linea);
+  assert.equal(comentario.origenCheck.huella, huella(MEDIO_1));
+  assert.match(comentario.texto, /^Fix the check "Unescaped output" \(ejs-sin-escapar\) on this line\. Escape it Change only what the finding needs\.\nAI triage: The value is user input$/);
+  assert.deepEqual(leerComentarios(e.p, 'acme/api', 1).map((c) => c.id), [comentario.id]);
+  await esperar(() => recibido.length);
+  assert.deepEqual(recibido, [{ pr: 'acme/api#1', ids: [comentario.id], modo: 'ahorro' }]);
+  const trabajo = (await (await e.llamar('/api/estado')).json()).trabajos.find((x) => x.tipo === 'cambiar');
+  assert.match(trabajo.id, /^acme\/api#1:cambiar:/);
+});
+
+test('POST /api/checks/arreglar refuses a second request for the same finding but allows a retry after an error', async (t) => {
+  const e = await entorno({ ejecutarCambios: cambiosFalsos([]) });
+  t.after(e.cerrar);
+  const primero = await (await e.llamar('/api/checks/arreglar', { ...R(), huella: huella(MEDIO_1) })).json();
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), huella: huella(MEDIO_1) })).status, 409);
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), huella: huella(MEDIO_2) })).status, 202);
+  await esperar(() => leerComentarios(e.p, 'acme/api', 1).every((c) => c.estado === 'propuesta'));
+  actualizarComentario(e.p, 'acme/api', 1, primero.comentario.id, { estado: 'error', motivo: 'The AI made no changes' });
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), huella: huella(MEDIO_1) })).status, 202);
+});
+
+test('POST /api/checks/arreglar refuses dismissed findings, findings without line, closed PRs and bad input', async (t) => {
+  const SIN_LINEA = hallazgo(0, 'alto', { linea: undefined, texto: 'sin linea' });
+  const e = await entorno({ prs: [conChecks(1, [MEDIO_1, SIN_LINEA]), conChecks(4, HALLAZGOS, { estadoPr: 'MERGED' })], ejecutarCambios: cambiosFalsos([]) });
+  t.after(e.cerrar);
+  await e.llamar('/api/checks/descartar', { ...R(), huellas: [huella(MEDIO_1)], motivo: 'Reviewed' });
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), huella: huella(MEDIO_1) })).status, 409);
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), huella: huella(SIN_LINEA) })).status, 409);
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(4), huella: huella(MEDIO_1) })).status, 409);
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), huella: 'no-existe' })).status, 404);
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(), huella: 7 })).status, 400);
+  assert.equal((await e.llamar('/api/checks/arreglar', { ...R(99), huella: huella(MEDIO_1) })).status, 404);
+  assert.deepEqual(leerComentarios(e.p, 'acme/api', 1), []);
+  assert.equal((await e.llamar('/api/estado').then((r) => r.json())).trabajos.length, 0);
 });

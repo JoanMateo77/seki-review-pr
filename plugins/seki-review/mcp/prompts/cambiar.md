@@ -8,3 +8,4 @@ Task: in the working copy (the current directory, a checkout of the PR's commit)
 - Read what is needed to understand the context with Grep and a bounded Read; edit with Edit.
 - If the request is ambiguous, impossible or contradicts project rules, edit nothing: answer hecho=false and explain the reason in resumen.
 - resumen: one line in formal, impersonal English, up to 72 characters, describing the change made (it is used as the commit message).
+- If the request starts with `Fix the check`, it comes from a fixed-rule finding: change only the lines the finding needs, and write resumen as a commit title `fix(<area>): <what>` in at most 72 characters.

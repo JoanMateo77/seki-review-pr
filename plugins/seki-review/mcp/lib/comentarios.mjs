@@ -3,6 +3,7 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { leerJson, escribirJson, rutaComentarios } from './cache.mjs';
+import { huellaHallazgo } from './descartes.mjs';
 
 const TIPOS = new Set(['pregunta', 'cambio', 'nota']);
 const DEL_NAVEGADOR = new Set(['borrador', 'nota']);
@@ -64,7 +65,8 @@ export function fusionarComentarios(actuales, entrantes) {
   for (const c of entrantes) {
     const previo = porId.get(c.id);
     if (previo && !DEL_NAVEGADOR.has(previo.estado) && DEL_NAVEGADOR.has(c.estado)) continue;
-    if (!previo || (c.actualizado ?? '') > (previo.actualizado ?? '')) porId.set(c.id, c);
+    // The origin of a check fix is written only by the server: a browser copy never carries it, and must not drop it.
+    if (!previo || (c.actualizado ?? '') > (previo.actualizado ?? '')) porId.set(c.id, previo?.origenCheck ? { ...c, origenCheck: previo.origenCheck } : c);
   }
   return [...porId.values()];
 }
@@ -76,6 +78,25 @@ export function guardarComentarios(p, repo, numero, entrantes, borrados = []) {
     .filter((c) => !(quitar.has(c.id) && DEL_NAVEGADOR.has(c.estado)));
   escribir(p, repo, numero, lista);
   return lista;
+}
+
+// A check finding sent to the change pipeline. Created here, not by the browser, so `origenCheck` cannot be forged;
+// it keeps file and text so the proposal can tell whether the finding is gone without reading the snapshot.
+export function crearCambioDeCheck(p, pr, h, { razon } = {}) {
+  if (!Number.isInteger(h.linea) || h.linea < 1) throw new Error('The finding has no line: it cannot be sent to a fix');
+  const ahora = new Date().toISOString();
+  const triaje = razon ? `\nAI triage: ${razon}` : '';
+  const c = {
+    id: `c-${Array.from({ length: 12 }, () => Math.floor(Math.random() * 36).toString(36)).join('')}`,
+    tipo: 'cambio', estado: 'en_cola', archivo: h.archivo, lado: 'nuevo', desde: h.linea, hasta: h.linea,
+    texto: `Fix the check "${h.titulo}" (${h.regla}) on this line. ${h.mensaje} Change only what the finding needs.${triaje}`,
+    headSha: pr.headSha, creado: ahora, actualizado: ahora,
+    origenCheck: { huella: h.huella ?? huellaHallazgo(h), regla: h.regla, archivo: h.archivo, texto: h.texto },
+  };
+  // A retry replaces the failed request of the same finding instead of leaving it next to the new one.
+  const previos = leerComentarios(p, pr.repo, pr.numero).filter((x) => !(x.origenCheck?.huella === c.origenCheck.huella && x.estado === 'error'));
+  escribir(p, pr.repo, pr.numero, [...previos, c]);
+  return c;
 }
 
 export function actualizarComentario(p, repo, numero, id, cambios) {

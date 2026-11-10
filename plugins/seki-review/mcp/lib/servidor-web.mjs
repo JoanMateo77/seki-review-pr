@@ -11,7 +11,7 @@ import { construirHtml, fotoConExplicaciones, nombresDeArchivos, versionEnDisco 
 const VERSION = versionEnDisco();
 import { crearCola } from './trabajos.mjs';
 import { asegurarDiff, diffParaTablero } from './diffs.mjs';
-import { actualizarComentario, guardarComentarios, leerComentarios, marcasComentarios, recuperarInterrumpidos, rescatarPendientes, separarEnviables } from './comentarios.mjs';
+import { actualizarComentario, crearCambioDeCheck, guardarComentarios, leerComentarios, marcasComentarios, recuperarInterrumpidos, rescatarPendientes, separarEnviables } from './comentarios.mjs';
 import { investigarPregunta, responderPreguntas } from './preguntas.mjs';
 import { ajustarPropuesta, aprobar, descartar, leerPropuesta, proponerCambios } from './propuestas.mjs';
 import { explicarConIa } from './explicar.mjs';
@@ -182,7 +182,7 @@ export async function detenerServidores() {
 }
 
 // intervaloVigiaMs, relojVigia, the ejecutar* jobs and diffPlantillas and shaRama are injected by tests only.
-export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true, soloPuerto = false, intervaloVigiaMs = null, relojVigia, ejecutarUltra = revisarUltra, ejecutarPlantillas = revisarPlantillas, ejecutarTriaje = triarChecks, diffPlantillas = asegurarDiff, shaRama } = {}) {
+export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true, soloPuerto = false, intervaloVigiaMs = null, relojVigia, ejecutarUltra = revisarUltra, ejecutarPlantillas = revisarPlantillas, ejecutarTriaje = triarChecks, ejecutarCambios = proponerCambios, diffPlantillas = asegurarDiff, shaRama } = {}) {
   if (servidores.has(proyecto)) {
     const s = servidores.get(proyecto);
     if (abrir) execFile('open', [s.url]);
@@ -621,6 +621,21 @@ export async function iniciarServidor({ proyecto, puerto = PUERTO, abrir = true,
         });
         for (const [h, datos] of entradas) descartarCheck(p, pr.repo, pr.numero, h, datos);
         return responder(res, 200, { descartados: entradas.length });
+      }
+      // The finding enters the same pipeline as a "Request change" comment: nothing is pushed until a person approves the proposal.
+      if (req.method === 'POST' && url.pathname === '/api/checks/arreglar') {
+        const { repo, numero, huella, modo: modoPedido } = await leerJsonEstricto(req);
+        if (typeof huella !== 'string' || !huella) throw falloHttp(400, 'huella must be a string');
+        const pr = prDeFoto(`${repo}#${numero}`);
+        if (pr.estadoPr !== 'OPEN') throw falloHttp(409, 'The PR is no longer open');
+        const h = (pr.verificaciones?.hallazgos ?? []).find((x) => x.huella === huella);
+        if (!h) throw falloHttp((pr.verificaciones?.descartados ?? []).some((x) => x.huella === huella) ? 409 : 404, 'The finding is not an open finding of the PR');
+        if (!Number.isInteger(h.linea)) throw falloHttp(409, 'The finding has no line: it cannot be sent to a fix');
+        if (leerComentarios(p, pr.repo, pr.numero).some((c) => c.tipo === 'cambio' && c.origenCheck?.huella === huella && c.estado !== 'error')) throw falloHttp(409, 'This finding already has a fix request');
+        const modo = modoDe(p, modoPedido);
+        const comentario = crearCambioDeCheck(p, pr, h, { razon: leerTriaje(p, pr.repo, pr.numero, pr.headSha)?.veredictos.find((v) => v.huella === huella)?.razon });
+        cola.encolar([{ id: `${pr.id}:cambiar:${Date.now()}`, tipo: 'cambiar', prId: pr.id, topeUsd: topeDeTrabajo({ tipo: 'cambiar', modo, n: 1 }), ...conRescate(pr, [comentario.id], () => ejecutarCambios(p, pr, [comentario.id], { modo })) }]);
+        return responder(res, 202, { comentario });
       }
       if (req.method === 'POST' && url.pathname === '/api/checks/reabrir') {
         const { repo, numero, huella } = await leerJsonEstricto(req);

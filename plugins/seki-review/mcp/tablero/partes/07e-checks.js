@@ -26,10 +26,27 @@ function celdaVeredicto(v, vieja) {
   return `<span class="estado ${clase}">${esc(texto)}</span>${vieja ? ' <span class="muy-tenue">from an earlier commit</span>' : ''}${v.razon ? `<br><span class="tenue">${esc(v.razon)}</span>` : ''}`;
 }
 
+// The latest fix request of a finding: a retry after an error creates a newer comment.
+const peticionCheck = (pr, huella) => comentarios(pr).filter((c) => c.origenCheck?.huella === huella)
+  .sort((a, b) => (a.creado ?? '').localeCompare(b.creado ?? '')).at(-1);
+
+// Same rule as the server: only a failed request can be made again.
+function celdaArreglo(pr, h) {
+  const c = peticionCheck(pr, h.huella);
+  if (c && c.estado !== 'error') {
+    if (c.estado === 'propuesta') return '<a href="#" data-tab-ir="archivos" title="The proposal is in the diff, on the line of the finding">Proposal ready</a>';
+    const texto = c.estado === 'aprobado' ? 'Fix approved' : c.estado === 'descartado' ? 'Fix discarded' : 'Fix requested';
+    return `<span class="muy-tenue">${texto}</span>`;
+  }
+  const falla = c ? `<span class="estado rojo">Fix failed: ${esc(c.motivo ?? 'unknown error')}</span> ` : '';
+  const arreglar = pr.estadoPr === 'OPEN' && h.linea ? `<button type="button" class="btn chico" data-check-accion="arreglar" data-check-pr="${esc(pr.id)}" data-check-huella="${esc(h.huella)}" title="Sends the finding to a change proposal; nothing is pushed until it is approved">Fix</button> ` : '';
+  return falla + arreglar;
+}
+
 // Row actions live in one cell so later actions are added next to Dismiss.
 function accionesFila(pr, h) {
   if (!API) return '';
-  return `<button type="button" class="btn chico" data-check-accion="descartar" data-check-pr="${esc(pr.id)}" data-check-huella="${esc(h.huella)}">Dismiss</button>`;
+  return `${celdaArreglo(pr, h)}<button type="button" class="btn chico" data-check-accion="descartar" data-check-pr="${esc(pr.id)}" data-check-huella="${esc(h.huella)}">Dismiss</button>`;
 }
 
 function filaCheck(pr, h, v, vieja) {
@@ -189,6 +206,16 @@ async function confirmarValidacion(pr, repetir) {
   sondear();
 }
 
+async function pedirArreglo(pr, huella) {
+  let comentario;
+  try { ({ comentario } = await api('/api/checks/arreglar', { repo: pr.repo, numero: pr.numero, huella, modo: modoActual() })); } catch (err) { return avisar(err.message); }
+  // The server drops the failed request of the same finding: the local copy does too.
+  const resto = comentarios(pr).filter((c) => !(c.origenCheck?.huella === huella && c.estado === 'error'));
+  escribirComentarios(pr, fusionarComentarios(resto, [comentario]));
+  pintarDetalle();
+  sondear();
+}
+
 // Entry point of the click delegation in 08-script-5.js: `datos` is the dataset of the button.
 function accionCheck(accion, pr, datos = {}) {
   if (!API) return;
@@ -198,6 +225,7 @@ function accionCheck(accion, pr, datos = {}) {
   if (accion === 'descartar-confirmar') return confirmarDescarte(pr, datos.checkHuella);
   if (accion === 'descartar-lote') return abrirLote(pr);
   if (accion === 'descartar-lote-confirmar') return confirmarLote(pr);
+  if (accion === 'arreglar') return pedirArreglo(pr, datos.checkHuella);
   if (accion === 'reabrir') return enviarCheck('/api/checks/reabrir', { repo: pr.repo, numero: pr.numero, huella: datos.checkHuella });
 }
 

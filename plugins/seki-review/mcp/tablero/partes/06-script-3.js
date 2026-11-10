@@ -223,6 +223,14 @@ function checksPropuesta(prop) {
     ${(c.avisos ?? []).map((a) => `<p class="muy-tenue" style="margin:6px 0 0">${esc(a)}</p>`).join('')}`;
 }
 
+// A proposal that keeps the finding in place needs the same second click as one with failing checks.
+function necesitaConfirmar(prop) {
+  return !!(prop?.conFallos || prop?.check?.resuelto === false);
+}
+
+// Names whose branch the push goes to when the PR is not the user's own (the To review list).
+const aprobarEn = (pr) => (pr?.paraRevisar && pr.autor ? `Approve and push to ${esc(pr.autor)}’s branch` : 'Approve and push to the branch');
+
 function propuestaHtml(c) {
   const prop = propuestaDe(c);
   if (!prop) return `<div class="propuesta tenue">${API ? 'Loading the proposal.' : 'The proposal is only visible with the dashboard opened from Claude Code.'}</div>`;
@@ -231,12 +239,16 @@ function propuestaHtml(c) {
   let acciones = '';
   if (prop.estado === 'lista') {
     const confirmar = estado.confirmarAprobar === prop.id;
+    const sigue = prop.check?.resuelto === false;
+    const aprobar = !necesitaConfirmar(prop) ? aprobarEn(pr)
+      : prop.conFallos ? (confirmar ? 'Confirm: approve with failures' : 'Approve with failures')
+      : (confirmar ? 'Confirm: approve anyway' : 'Approve anyway');
     acciones = `<div class="prop-acciones">
-      <button type="button" class="btn chico primario" data-prop-aprobar="${esc(prop.id)}">${prop.conFallos ? (confirmar ? 'Confirm: approve with failures' : 'Approve with failures') : 'Approve and push to the branch'}</button>
+      <button type="button" class="btn chico primario" data-prop-aprobar="${esc(prop.id)}">${aprobar}</button>
       <button type="button" class="btn chico" data-prop-ajustar="${esc(prop.id)}" aria-expanded="${estado.ajustando === prop.id}">Request adjustment</button>
       <button type="button" class="btn chico" data-prop-descartar="${esc(prop.id)}">Discard</button>${pie}
     </div>
-    ${confirmar ? '<p class="hilo-motivo">The proposal has failing checks. A second click pushes it to the branch anyway.</p>' : ''}
+    ${confirmar ? `<p class="hilo-motivo">The proposal ${[prop.conFallos ? 'has failing checks' : '', sigue ? 'does not remove the finding' : ''].filter(Boolean).join(' and ')}. A second click pushes it to the branch anyway.</p>` : ''}
     ${estado.ajustando === prop.id ? `<div class="prop-ajuste"><textarea id="ajusteTexto" placeholder="What to change in this proposal" aria-label="What to change in this proposal"></textarea>
       <div class="prop-acciones"><button type="button" class="btn chico primario" data-prop-enviar-ajuste="${esc(prop.id)}">Send adjustment</button></div></div>` : ''}`;
   } else if (prop.estado === 'conflicto' || prop.estado === 'rechazada') {
@@ -247,7 +259,7 @@ function propuestaHtml(c) {
     acciones = `<div class="prop-acciones"><span class="punto-estado violeta">Pushed to the branch</span><a href="${esc(pr?.url ?? '')}/commits/${esc(prop.commit)}" target="_blank" rel="noopener" class="mono">${esc(prop.commit.slice(0, 7))} ${icono('externo')}</a>${pie}</div>`;
   }
   return `<div class="propuesta">
-    <div class="prop-cab"><strong>Proposal</strong><span>${esc(prop.resumen)}</span></div>
+    <div class="prop-cab"><strong>Proposal</strong><span>${esc(prop.resumen)}</span>${prop.check?.resuelto === false ? '<span class="estado ambar">Does not remove the finding</span>' : ''}</div>
     ${diffPropuesta(prop)}
     ${checksPropuesta(prop)}
     ${acciones}
@@ -258,12 +270,13 @@ async function accionPropuesta(accion, id, extra = {}) {
   const pr = prSel();
   try {
     const r = await api(`/api/propuesta/${accion}`, { pr: pr.id, id, ...extra });
+    const prop = estado.propuestas.get(id);
     estado.propuestas.delete(id);
     if (accion === 'aprobar' && !r.ok) {
       if (r.motivo === 'requiere_confirmacion') { estado.confirmarAprobar = id; return repintarDetalle(); }
       avisar(r.motivo);
     }
-    if (accion === 'aprobar' && r.ok) avisar(`Change pushed to the branch (${r.commit.slice(0, 7)}).`);
+    if (accion === 'aprobar' && r.ok) avisar(`Change pushed to the branch (${r.commit.slice(0, 7)}).${prop?.check && pr.gemela ? ` The twin #${pr.gemela.numero} does not have this fix.` : ''}`);
     estado.confirmarAprobar = null;
     estado.ajustando = null;
     await sincronizarComentarios(pr);

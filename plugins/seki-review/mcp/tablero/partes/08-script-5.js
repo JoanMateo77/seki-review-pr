@@ -167,7 +167,7 @@ document.addEventListener('click', (ev) => {
   if (d.comReintentar) return enviarRevision(prSel(), [d.comReintentar]);
   if (d.comRepreguntar) return repreguntar(prSel(), d.comRepreguntar);
   if (d.propAprobar) {
-    if (estado.propuestas.get(d.propAprobar)?.conFallos && estado.confirmarAprobar !== d.propAprobar) { estado.confirmarAprobar = d.propAprobar; return repintarDetalle(); }
+    if (necesitaConfirmar(estado.propuestas.get(d.propAprobar)) && estado.confirmarAprobar !== d.propAprobar) { estado.confirmarAprobar = d.propAprobar; return repintarDetalle(); }
     t.disabled = true;
     return accionPropuesta('aprobar', d.propAprobar, { confirmarFallos: estado.confirmarAprobar === d.propAprobar });
   }

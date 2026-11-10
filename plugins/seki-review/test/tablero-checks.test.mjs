@@ -17,12 +17,13 @@ const pr = ({ hallazgos = [], descartados = [], t = null } = {}) => ({
 });
 
 // The board script parts, evaluated with minimal stubs (as in tablero-plantillas.test.mjs).
-function tablero({ api = async () => ({}), sinApi = false, trabajos = [], foto, hash = '' } = {}) {
+function tablero({ api = async () => ({}), sinApi = false, trabajos = [], foto, hash = '', comentarios: iniciales = [] } = {}) {
   const escape = (x) => String(x ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const llamadas = [];
   const modales = [];
   const cajas = { motivoCheck: { value: '' }, modalIaError: { textContent: '', hidden: true } };
   const repintados = [];
+  let guardados = iniciales;
   const seleccionados = [];
   const ctx = createContext({
     API: sinApi ? null : { token: 't' }, FOTO: foto ?? { owner: 'o', prs: [] },
@@ -33,13 +34,15 @@ function tablero({ api = async () => ({}), sinApi = false, trabajos = [], foto, 
     // Bodies are copied out of the vm realm so deepEqual compares plain values.
     api: async (ruta, cuerpo) => { llamadas.push(JSON.parse(JSON.stringify([ruta, cuerpo ?? null]))); return api(ruta, cuerpo); },
     document: { addEventListener() {}, activeElement: null }, window: { addEventListener() {} }, location: { hash }, history: { replaceState() {} },
+    comentarios: () => guardados, escribirComentarios: (_pr, lista) => { guardados = lista; }, sincronizarComentarios: async () => {},
+    fusionarComentarios: (a, b) => [...a, ...b],
     setTimeout() {}, clearTimeout() {}, sessionStorage: { getItem: () => null, setItem() {} },
   });
   runInContext(readFileSync(new URL('07b-modos.js', PARTES), 'utf8'), ctx);
   runInContext(readFileSync(new URL('07e-checks.js', PARTES), 'utf8'), ctx);
   // The dialog helpers of 07b-modos.js need a DOM: they are replaced by recorders.
   Object.assign(ctx, { abrirModal: (h) => modales.push(h), cerrarModal() {}, modoActual: () => 'normal' });
-  return { ctx, llamadas, modales, cajas, repintados, seleccionados };
+  return { ctx, llamadas, modales, cajas, repintados, seleccionados, guardados: () => guardados };
 }
 
 test('every field written by the model or a person is escaped', () => {
@@ -206,6 +209,99 @@ test('the ?checks=1 link selects the PR on the Checks tab and nothing else', () 
   assert.deepEqual(t.seleccionados, ['acme/api#7']);
   assert.equal(t.llamadas.length, 0);
   assert.equal(t.modales.length, 0);
+});
+
+const peticion = (huella, extra = {}) => ({ id: `c-${huella}`, tipo: 'cambio', estado: 'en_cola', origenCheck: { huella }, creado: '2026-11-10T10:00:00Z', ...extra });
+
+test('Fix is offered on rows with a line and no active request, and only on an open PR', () => {
+  const p = pr({ hallazgos: [hallazgo('h1'), hallazgo('h2', { linea: undefined })] });
+  const html = tablero().ctx.tabVerificaciones(p);
+  assert.match(html, /data-check-accion="arreglar"[^>]*data-check-huella="h1"/);
+  assert.doesNotMatch(html, /data-check-accion="arreglar"[^>]*data-check-huella="h2"/);
+  assert.doesNotMatch(tablero().ctx.tabVerificaciones({ ...p, estadoPr: 'MERGED' }), /data-check-accion="arreglar"/);
+  assert.doesNotMatch(tablero({ sinApi: true }).ctx.tabVerificaciones(p), /arreglar|>Fix</);
+});
+
+test('a row with a request shows its state instead of Fix, and links the proposal', () => {
+  const p = pr({ hallazgos: [hallazgo('h1'), hallazgo('h2'), hallazgo('h3'), hallazgo('h4')] });
+  const html = tablero({ comentarios: [peticion('h1'), peticion('h2', { estado: 'propuesta', propuestaId: 'p-1' }), peticion('h3', { estado: 'error', motivo: MAL }), peticion('h4', { estado: 'aprobado' })] }).ctx.tabVerificaciones(p);
+  const fila = (n) => html.split('<tr>').find((f) => f.includes(`Finding h${n}`));
+  assert.ok(fila(1).includes('Fix requested') && !/arreglar/.test(fila(1)));
+  assert.ok(fila(2).includes('Proposal ready') && !/arreglar/.test(fila(2)));
+  assert.match(fila(2), /<a [^>]*data-tab-ir="archivos"[^>]*>[^<]*Proposal ready/);
+  assert.ok(fila(3).includes('Fix failed: &lt;img src=x onerror=alert(1)&gt;'));
+  assert.match(fila(3), /data-check-accion="arreglar"[^>]*data-check-huella="h3"/);
+  assert.doesNotMatch(html, /<img/);
+  assert.ok(fila(4).includes('Fix approved') && !/arreglar/.test(fila(4)));
+});
+
+test('after a failed request the latest one decides the row', () => {
+  const p = pr({ hallazgos: [hallazgo('h1')] });
+  const t = tablero({ comentarios: [peticion('h1', { estado: 'error', motivo: 'old', creado: '2026-11-10T09:00:00Z' }), peticion('h1')] });
+  assert.ok(t.ctx.tabVerificaciones(p).includes('Fix requested'));
+});
+
+test('Fix sends the finding, replaces the failed request locally and repaints', async () => {
+  const comentario = peticion('h1', { estado: 'en_cola' });
+  const t = tablero({ api: async () => ({ comentario }), comentarios: [peticion('h1', { id: 'c-viejo', estado: 'error', motivo: 'x' }), peticion('h9')] });
+  await t.ctx.accionCheck('arreglar', pr({ hallazgos: [hallazgo('h1')] }), { checkHuella: 'h1' });
+  assert.deepEqual(t.llamadas, [['/api/checks/arreglar', { repo: 'acme/api', numero: 7, huella: 'h1', modo: 'normal' }]]);
+  assert.deepEqual(t.guardados().map((c) => c.id), ['c-h9', 'c-h1']);
+  assert.ok(t.repintados.length > 0);
+});
+
+// The proposal card (06-script-3.js) with the stubs it needs.
+function tarjeta({ pr: prDe = {}, api = async () => ({ ok: true, commit: 'abcdef123' }), confirmar = null } = {}) {
+  const avisos = [];
+  const ctx = createContext({
+    API: { token: 't' }, avisos,
+    estado: { propuestas: new Map(), confirmarAprobar: confirmar, ajustando: null, seleccion: 'acme/api#7' },
+    esc: (x) => String(x ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])),
+    prSel: () => ({ id: 'acme/api#7', url: 'https://github.test/acme/api/pull/7', estadoPr: 'OPEN', ...prDe }),
+    plural: (a, b, c) => `${a} ${a === 1 ? b : c}`, icono: () => '', usd: (x) => `USD ${x}`, nombreModelo: (m) => m, check: () => '',
+    SekiAnclaje: { lineasDePatch: () => [] }, api: async (...a) => api(...a), avisar: (m) => avisos.push(m), sincronizarComentarios: async () => {},
+    pintarDetalle() {}, sondear() {}, transcurrido: () => '', almacen: {}, $: () => ({ scrollTop: 0, querySelector: () => null, querySelectorAll: () => [] }),
+  });
+  runInContext(readFileSync(new URL('06-script-3.js', PARTES), 'utf8'), ctx);
+  return ctx;
+}
+const propuesta = (extra = {}) => ({ id: 'p-1', estado: 'lista', resumen: 'fix: x', patch: '', archivos: [], fueraDelComentario: [], modelo: 'm', conFallos: false, comprobaciones: { reglas: { bloqueantes: 0, hallazgos: [], resumen: {} }, tipos: null, tests: null }, ...extra });
+const tarjetaDe = (ctx, prop) => { ctx.estado.propuestas.set(prop.id, prop); return ctx.propuestaHtml({ propuestaId: prop.id }); };
+
+test('the proposal card flags a check proposal that keeps the finding and needs the second click', () => {
+  const ctx = tarjeta();
+  const ok = tarjetaDe(ctx, propuesta({ check: { huella: 'h1', regla: 'r', resuelto: true } }));
+  assert.doesNotMatch(ok, /Does not remove the finding/);
+  assert.ok(ok.includes('Approve and push to the branch'));
+  const no = propuesta({ check: { huella: 'h1', regla: 'r', resuelto: false } });
+  assert.equal(ctx.necesitaConfirmar(no), true);
+  assert.equal(ctx.necesitaConfirmar(propuesta({ conFallos: true })), true);
+  assert.equal(ctx.necesitaConfirmar(propuesta()), false);
+  const primera = tarjetaDe(ctx, no);
+  assert.ok(primera.includes('Does not remove the finding'));
+  assert.doesNotMatch(primera, /Approve and push to the branch/);
+  assert.doesNotMatch(primera, /A second click pushes/);
+  ctx.estado.confirmarAprobar = 'p-1';
+  assert.match(tarjetaDe(ctx, no), /A second click pushes it to the branch anyway/);
+});
+
+test('the approve button names the author, escaped, only for a PR in the To review list', () => {
+  const prop = propuesta();
+  assert.ok(tarjetaDe(tarjeta({ pr: { paraRevisar: 'asignada', autor: MAL } }), prop).includes('Approve and push to &lt;img src=x onerror=alert(1)&gt;’s branch'));
+  assert.ok(tarjetaDe(tarjeta({ pr: { autor: 'ana' } }), prop).includes('Approve and push to the branch'));
+  assert.ok(tarjetaDe(tarjeta({ pr: { paraRevisar: 'asignada' } }), prop).includes('Approve and push to the branch'));
+  assert.doesNotMatch(tarjetaDe(tarjeta({ pr: { paraRevisar: 'asignada', autor: MAL } }), prop), /<img/);
+});
+
+test('after approving a check proposal the notice says the twin does not have the fix', async () => {
+  const conGemela = tarjeta({ pr: { gemela: { numero: 12, estado: 'OPEN' } } });
+  conGemela.estado.propuestas.set('p-1', propuesta({ check: { huella: 'h1', regla: 'r', resuelto: true } }));
+  await conGemela.accionPropuesta('aprobar', 'p-1', { confirmarFallos: false });
+  assert.deepEqual(conGemela.avisos, ['Change pushed to the branch (abcdef1). The twin #12 does not have this fix.']);
+  const sinCheck = tarjeta({ pr: { gemela: { numero: 12, estado: 'OPEN' } } });
+  sinCheck.estado.propuestas.set('p-1', propuesta());
+  await sinCheck.accionPropuesta('aprobar', 'p-1');
+  assert.deepEqual(sinCheck.avisos, ['Change pushed to the branch (abcdef1).']);
 });
 
 test('the built page carries the Checks tab parts in order and parses', () => {

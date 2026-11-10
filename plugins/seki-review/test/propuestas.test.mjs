@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { guardarComentarios, leerComentarios } from '../mcp/lib/comentarios.mjs';
-import { aprobar, descartar, leerPropuestas, proponerCambios } from '../mcp/lib/propuestas.mjs';
+import { crearCambioDeCheck, guardarComentarios, leerComentarios } from '../mcp/lib/comentarios.mjs';
+import { aprobar, descartar, leerPropuestas, proponerCambios, resuelveCheck, tituloCommit } from '../mcp/lib/propuestas.mjs';
 import { escribirJson, leerJson, rutaCopia, rutaPropuestas } from '../mcp/lib/cache.mjs';
 import { falsoClaude, llamadas } from './util/claude.mjs';
 import { falsoGh } from './util/gh.mjs';
@@ -245,4 +245,61 @@ test('if preparation fails the requests end in error, not queued', async () => {
   const [c] = leerComentarios(p, 'x', 7);
   assert.equal(c.estado, 'error');
   assert.ok(c.motivo);
+});
+
+const HALLAZGO = { huella: 'abcd1234abcd1234', regla: 'ejs-sin-escapar', titulo: 'Unescaped output', severidad: 'medio', archivo: 'views/list.ejs', linea: 2, texto: '<%- item %>', mensaje: 'Escape it.' };
+const parche = (lineas) => `diff --git a/views/list.ejs b/views/list.ejs\n--- a/views/list.ejs\n+++ b/views/list.ejs\n@@ -1,3 +1,3 @@\n <ul>\n${lineas}\n </ul>\n`;
+
+test('resuelveCheck is true when the finding line is removed and the rule does not fire again in the file', () => {
+  const patch = parche('-  <%-   item   %>\n+  <%= item %>');
+  assert.equal(resuelveCheck(patch, HALLAZGO, []), true);
+  assert.equal(resuelveCheck(patch, HALLAZGO, [{ regla: 'otra-regla', archivo: 'views/list.ejs' }, { regla: 'ejs-sin-escapar', archivo: 'views/otro.ejs' }]), true);
+});
+
+test('resuelveCheck is false when the patch only adds lines or the line removed is another', () => {
+  assert.equal(resuelveCheck(parche('+  <p>nuevo</p>'), HALLAZGO, []), false);
+  assert.equal(resuelveCheck(parche('-  <p>otro</p>\n+  <p>nuevo</p>'), HALLAZGO, []), false);
+});
+
+test('resuelveCheck is false when the same rule fires again in that file', () => {
+  const patch = parche('-  <%- item %>\n+  <%- item.nombre %>');
+  assert.equal(resuelveCheck(patch, HALLAZGO, [{ regla: 'ejs-sin-escapar', archivo: 'views/list.ejs' }]), false);
+});
+
+test('tituloCommit keeps a conventional title, prefixes a plain one and leaves a proposal without check as it was', () => {
+  const check = { huella: 'h', regla: 'r', resuelto: true };
+  assert.equal(tituloCommit({ resumen: 'fix(views): escape pager links', check }), 'fix(views): escape pager links');
+  assert.equal(tituloCommit({ resumen: 'fix: escape pager links', check }), 'fix: escape pager links');
+  assert.equal(tituloCommit({ resumen: 'Escaped the value', check }), 'fix: Escaped the value');
+  assert.equal(tituloCommit({ resumen: 'Escaped the value' }), 'Escaped the value');
+  assert.equal(tituloCommit({ resumen: '   ' }), 'Change requested in the PR review');
+  assert.equal(tituloCommit({ resumen: 'x'.repeat(300), check }).length, 200);
+});
+
+// The finding is the line `b` the AI removes from a.ts: the patch decides whether it was resolved.
+const origenCheck = { huella: 'abcd1234abcd1234', regla: 'regla-de-prueba', archivo: 'a.ts', texto: 'b' };
+function conPeticionDeCheck({ texto = origenCheck.texto, ...opciones } = {}) {
+  const e = preparar({ ...opciones, pedidos: [] });
+  const c = crearCambioDeCheck(e.p, e.pr, { ...origenCheck, texto, titulo: 'Test rule', mensaje: 'Change it.', linea: 1 }, {});
+  return { ...e, c };
+}
+
+test('a proposal from a check records whether it removes the finding and commits with a fix title', async () => {
+  const { r, p, pr, c } = conPeticionDeCheck();
+  await proponerCambios(p, pr, [c.id], deps);
+  const [prop] = leerPropuestas(p, 'x', 7);
+  assert.deepEqual(prop.check, { huella: origenCheck.huella, regla: origenCheck.regla, resuelto: true });
+  assert.equal((await aprobar(p, pr, prop.id)).ok, true);
+  assert.equal(sh(r.remoto, 'log', '-1', '--format=%s', r.rama), 'fix: Validate the date range');
+});
+
+test('a proposal that keeps the finding needs the same confirmation as one with failures', async () => {
+  const { r, p, pr, c } = conPeticionDeCheck({ texto: 'otra linea' });
+  await proponerCambios(p, pr, [c.id], deps);
+  const [prop] = leerPropuestas(p, 'x', 7);
+  assert.equal(prop.check.resuelto, false);
+  assert.equal(prop.conFallos, false);
+  assert.equal((await aprobar(p, pr, prop.id)).motivo, 'requiere_confirmacion');
+  assert.equal(sh(r.remoto, 'rev-parse', r.rama), r.head);
+  assert.equal((await aprobar(p, pr, prop.id, { confirmarFallos: true })).ok, true);
 });
