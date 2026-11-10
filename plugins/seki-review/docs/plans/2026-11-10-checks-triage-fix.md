@@ -37,6 +37,14 @@ All paths are relative to `plugins/seki-review/`. Work on branch `feat/seki-chec
 10. **Commit title (F).** For a proposal with `check`, the commit message is `prop.resumen` when it matches `/^fix(\([\w./-]+\))?: \S/`, otherwise `fix: ` + `prop.resumen`; cut to 200 characters as today.
 11. **Ultra (G).** Check cards have `id: 'check-' + huella`, `lente: 'checks'`. They never enter Ultra's `hallazgos` or `descartadas`; their verdicts are written with `guardarTriaje` (`origen: 'ultra'`, `costo: 0`). A failed verification writes nothing.
 
+### Amendments during execution
+
+- **Ruling 4.** A `falso_positivo` also needs a valid `evidencia` (`archivo` a non-empty string, `linea` an integer of 1 or more); without it the verdict is stored as `dudoso`. A malformed `evidencia` is dropped from any stored verdict. Verdicts added from Ultra (`fusionarTriaje`) are exempt. The PR title travels inside the JSON data block of the triage prompt.
+- **Ruling 8.** `origenCheck` is `{ huella, regla, archivo, linea, texto }`. A finding can be sent to Fix again when its previous request is in state `error` or `descartado`; any other state is rejected with 409. `POST /api/checks/arreglar` needs `confirmar: true`, and the dialog that sends it shows the cost cap of the job.
+- **Ruling 9.** `resuelto` requires the removed line to be the flagged line: same line number and same whitespace-collapsed text. When it is false, Approve asks for a second confirmation.
+- **Ruling 11.** Ultra writes verdicts only for fingerprints that a stored triage of the same commit has not judged and never replaces that triage; a `REJECTED` without a reason is stored as `dudoso`. The verification step receives the flagged code in each check card.
+- **Approve on other authors' branches.** The approve button names the branch owner in every state.
+
 ## Review Focus
 
 - A PR line changed by a later push: the dismissal must stop applying and the finding must show again (new `huella`).

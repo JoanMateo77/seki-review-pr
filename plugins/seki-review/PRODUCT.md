@@ -30,6 +30,7 @@ Unlike GitHub's PR list, it checks with git whether the code is already in testi
 - Self-contained HTML, no build or dependencies; only Mermaid is loaded from the CDN, and without network the text is shown.
 - What the reviewer marks lives in their browser; to hand it back to the author it is exported and imported as a file.
 - With the dashboard served, approving a change proposal commits and pushes to the PR's branch: it is the only write to GitHub. It never merges or posts comments.
+- Dismissals of check findings (and the AI verdicts on them) are local: they live in the output folder, never in the PR code, and change nothing on GitHub. The push of Approve stays the only write, and it is the only way a fix of a finding reaches a branch, also on another author's branch (the button names the owner). The check triage and the fix start only from the dashboard, after a confirmation with its cost cap.
 - Deliveries board (default tab): PRs of one change across repos and environments are grouped by shared branch key, finding ID or cross-reference, with stage, next action and alerts. Join, split, rename and close are local adjustments.
 - Append-only event history of merges and closures, a "since last visit" banner and the `entregas` MCP tool; none of them calls GitHub when read.
 - While the dashboard tab is visible a watcher polls GitHub for merges (default 300 s, minimum 120 s); it is read-only.
