@@ -15,6 +15,16 @@ They are adapted, not copied: the questions are rewritten for pull-request revie
 | `nube-despliegue` | CLOUD-AND-DEPLOYMENT.md |
 | `ia-llm` | AI-AND-LLM.md |
 
+From the same source, the "Core principles" and "Anti-patterns" of SKILL.md and the validation rules of
+VALIDATION-AND-REPORTING.md are adapted, for a read-only review, into these prompts:
+
+- `mcp/prompts/ultra-seguridad.md`: a finding names the lower-trust actor, the accepted input or action, the control
+  that should stop it and the concrete result; what is not a finding; the severity anchors.
+- `mcp/prompts/ultra-verificar.md`: verify by trying to disprove; a deciding control outside the repository makes the
+  verdict PLAUSIBLE; a control already in the code or self-impact makes it REJECTED.
+- `mcp/prompts/plantilla.md`: `falla` needs a crossable boundary; a deciding control outside the code makes the item
+  `no_verificable`; a redundant layer is `cumple`, citing the control that already prevents the attack.
+
 The source is distributed under the following license.
 
 ```text

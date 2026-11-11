@@ -242,3 +242,22 @@ test('the attribution of the audit-derived templates names the source commit and
   assert.match(aviso, /THE SOFTWARE IS PROVIDED "AS IS"/);
   for (const id of Object.keys(AUDITORIA)) assert.ok(aviso.includes(`\`${id}\``), id);
 });
+
+test('the security, verification and template prompts require a crossed boundary and a concrete result', () => {
+  const prompt = (n) => leerArchivo(new URL(`../mcp/prompts/${n}.md`, import.meta.url), 'utf8');
+  const seguridad = prompt('ultra-seguridad');
+  assert.match(seguridad, /lower-trust actor/);
+  assert.match(seguridad, /self-impact/);
+  assert.match(seguridad, /never `alta`/);
+  assert.match(seguridad, /cannot exceed the result/);
+  const verificar = prompt('ultra-verificar');
+  assert.match(verificar, /disprove/);
+  assert.match(verificar, /outside the repository[^\n]*PLAUSIBLE/);
+  assert.match(verificar, /own resources[^\n]*REJECTED|REJECTED[^\n]*own resources/);
+  const plantilla = prompt('plantilla');
+  assert.match(plantilla, /boundary can be crossed/);
+  assert.match(plantilla, /outside the available code[^\n]*`no_verificable`/);
+  assert.match(plantilla, /redundant[^\n]*`cumple`/);
+  const aviso = leerArchivo(new URL('../plantillas/NOTICE.md', import.meta.url), 'utf8');
+  for (const n of ['ultra-seguridad.md', 'ultra-verificar.md', 'plantilla.md']) assert.ok(aviso.includes(n), n);
+});
