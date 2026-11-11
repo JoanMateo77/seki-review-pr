@@ -248,7 +248,11 @@ test('the security, verification and template prompts require a crossed boundary
   const seguridad = prompt('ultra-seguridad');
   assert.match(seguridad, /lower-trust actor/);
   assert.match(seguridad, /self-impact/);
-  assert.match(seguridad, /never `alta`/);
+  assert.match(seguridad, /Without all four it is not a finding, except a hardening note, which is only `baja`/);
+  assert.match(seguridad, /whoever can read that place/);
+  assert.match(seguridad, /duplicate charge or refund/);
+  assert.match(seguridad, /assuming the deployment, proxy or provider is misconfigured/);
+  assert.match(seguridad, /name the external fact to confirm/);
   assert.match(seguridad, /cannot exceed the result/);
   const verificar = prompt('ultra-verificar');
   assert.match(verificar, /disprove/);
