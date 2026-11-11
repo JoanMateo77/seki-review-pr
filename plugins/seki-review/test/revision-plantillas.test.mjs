@@ -521,6 +521,19 @@ test('a template whose fingerprint did not change is not called again and keeps 
   assert.equal(leerCostos(e.p).at(-1).plantillasIa, 1);
 });
 
+test('a template is asked again when the instructions the model receives change', async () => {
+  const registro = [];
+  const e = mundo({ registro });
+  await revisarPlantillas(e.p, pr, e.deps);
+  registro.length = 0;
+  // A new commit with the same patches: nothing the model read changed.
+  await revisarPlantillas(e.p, { ...pr, headSha: NUEVA }, e.deps);
+  assert.equal(registro.filter((c) => /^Template: /m.test(c.prompt)).length, 0);
+  // The project context is part of the system prompt, like the bundled instructions.
+  await revisarPlantillas({ ...e.p, contexto: 'Payments are settled in COP.' }, { ...pr, headSha: 'c'.repeat(40) }, e.deps);
+  assert.ok(registro.filter((c) => /^Template: /m.test(c.prompt)).length > 0);
+});
+
 test('only new failing items are verified; reused ones are not sent again', async () => {
   const registro = [];
   const e = mundo({ registro, respuestas: { ligera: { items: [cita('L1', 'falla', 1, 'import { suma }')] }, pci: { items: [cita('P1', 'falla', 1, 'import { suma }')] } } });
