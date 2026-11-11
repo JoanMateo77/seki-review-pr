@@ -1,0 +1,119 @@
+{
+  "id": "mensajeria-webhooks",
+  "version": 1,
+  "titulo": "Webhooks, queues and RPC",
+  "idioma": "en",
+  "siempre": false,
+  "aplicaA": [
+    "**/*webhook*",
+    "**/*Webhook*",
+    "**/*callback*",
+    "**/*Callback*",
+    "**/*queue*",
+    "**/*Queue*",
+    "**/cola.*",
+    "**/colas.*",
+    "**/*Cola.*",
+    "**/*Colas.*",
+    "**/*consumer*",
+    "**/*Consumer*",
+    "**/*subscriber*",
+    "**/*Subscriber*",
+    "**/*worker*",
+    "**/*Worker*",
+    "**/*kafka*",
+    "**/*Kafka*",
+    "**/*sqs*",
+    "**/*Sqs*",
+    "**/*SQS*",
+    "**/*rabbit*",
+    "**/*Rabbit*",
+    "**/*amqp*",
+    "**/*Amqp*",
+    "**/*pubsub*",
+    "**/*PubSub*",
+    "**/*grpc*",
+    "**/*Grpc*",
+    "**/*gRPC*",
+    "**/*.proto",
+    "**/*webhook*/**",
+    "**/*queue*/**",
+    "**/colas/**",
+    "**/*consumer*/**",
+    "**/*worker*/**",
+    "**/*kafka*/**"
+  ],
+  "excluir": [
+    "**/__tests__/**",
+    "**/*.spec.*",
+    "**/*.test.*"
+  ],
+  "items": [
+    {
+      "id": "M1-firma",
+      "pregunta": "Does the webhook or callback handler verify the sender's signature over the raw body (HMAC with a constant-time comparison, or a public key) before acting, and refuse the request when the signature or the secret is missing?",
+      "evidencia": "The signature computation and comparison, and the branch taken when the header or the secret is absent",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "M2-identidad",
+      "pregunta": "Does the consumer take the tenant, user or account from the authenticated producer or the signed envelope, rather than from fields of the message body that the sender chooses?",
+      "evidencia": "Where the handler reads the tenant or account it acts on",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "M3-deserializacion",
+      "pregunta": "Is every message decoded with a data-only parser (JSON, protobuf) and checked against the expected event types, never with a deserialiser that can build arbitrary classes or evaluate code?",
+      "evidencia": "The decode call and the switch or schema over the event type",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "M4-repeticion",
+      "pregunta": "Is a replayed or redelivered message (same event id, or a timestamp outside the tolerance) refused or made harmless before its side effect?",
+      "evidencia": "The event id or timestamp check and where it runs relative to the side effect",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "suggestion",
+        "bloqueante": false,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "M5-orden",
+      "pregunta": "Does the consumer refuse an event older than the state it already holds (version, sequence or status check), so a late message cannot overwrite a newer state?",
+      "evidencia": "The version or status comparison before the update",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "suggestion",
+        "bloqueante": false,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "M6-errores",
+      "pregunta": "Do dead-letter queues, retry logs and error topics keep secrets and full payloads of other tenants out of readers that should not see them?",
+      "evidencia": "What the failure path logs or forwards and who reads that destination",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "question",
+        "bloqueante": false,
+        "tema": "security"
+      }
+    }
+  ]
+}

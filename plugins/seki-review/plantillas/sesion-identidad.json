@@ -1,0 +1,121 @@
+{
+  "id": "sesion-identidad",
+  "version": 1,
+  "titulo": "Sessions and identity",
+  "idioma": "en",
+  "siempre": false,
+  "aplicaA": [
+    "**/*auth*",
+    "**/*Auth*",
+    "**/*login*",
+    "**/*Login*",
+    "**/*session*",
+    "**/*Session*",
+    "**/*sesion*",
+    "**/*Sesion*",
+    "**/*token*",
+    "**/*Token*",
+    "**/*jwt*",
+    "**/*Jwt*",
+    "**/*JWT*",
+    "**/sso*",
+    "**/Sso*",
+    "**/SSO*",
+    "**/*passport*",
+    "**/*Passport*",
+    "**/*password*",
+    "**/*Password*",
+    "**/*clave*",
+    "**/*Clave*",
+    "**/*mfa*",
+    "**/*Mfa*",
+    "**/*MFA*",
+    "**/otp*",
+    "**/*Otp*",
+    "**/*OTP*",
+    "**/*apikey*",
+    "**/*apiKey*",
+    "**/*ApiKey*",
+    "**/*api-key*",
+    "**/*auth*/**",
+    "**/*Auth*/**",
+    "**/*login*/**",
+    "**/*session*/**",
+    "**/*sesion*/**",
+    "**/sso/**",
+    "**/mfa/**"
+  ],
+  "excluir": [
+    "**/__tests__/**",
+    "**/*.spec.*",
+    "**/*.test.*"
+  ],
+  "items": [
+    {
+      "id": "S1-token-verificado",
+      "pregunta": "Is every token the change accepts (JWT, ID token, signed cookie) verified with a server-chosen algorithm and key, and checked for expiry, issuer and audience, before any of its claims are used?",
+      "evidencia": "The verify call with its algorithm, key and claim options, and no path that decodes the token without verifying it",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "S2-callback-federado",
+      "pregunta": "Does the OAuth, OIDC or SAML callback accept only a response bound to the session that started the flow (state or nonce checked, signed assertion is the one used), so a response started by someone else is refused?",
+      "evidencia": "The comparison of state, nonce or the signed element against what the session stored",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "S3-csrf",
+      "pregunta": "Does every state-changing route authenticated by a cookie refuse a cross-site request (anti-CSRF token, SameSite on that cookie, or an exact Origin check)?",
+      "evidencia": "The CSRF middleware or Origin check on the route, or the SameSite attribute where the session cookie is set; bearer-only routes do not need it",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "S4-recuperacion",
+      "pregunta": "Do password reset, MFA enrolment or removal, and email or phone change require the current factor or a single-use, expiring token bound to that account and that action?",
+      "evidencia": "Token generation and consumption (expiry, one-time use, account binding) or the re-authentication check before the change",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "S5-api-key",
+      "pregunta": "Is an API key resolved to its server-side record, with the tenant, scopes and environment taken from that record and never from request parameters?",
+      "evidencia": "The key lookup and where the tenant and scopes used by the handler come from",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "S6-ciclo-sesion",
+      "pregunta": "Is the session identifier replaced at login and at a privilege change, and revoked on the server at logout and password change, so an earlier or copied identifier stops working?",
+      "evidencia": "The regenerate, rotate or revoke calls on the login, logout and password-change paths",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "suggestion",
+        "bloqueante": false,
+        "tema": "security"
+      }
+    }
+  ]
+}

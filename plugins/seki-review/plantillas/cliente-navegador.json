@@ -1,0 +1,83 @@
+{
+  "id": "cliente-navegador",
+  "version": 1,
+  "titulo": "Browser client",
+  "idioma": "en",
+  "siempre": false,
+  "aplicaA": [
+    "**/*.tsx",
+    "**/*.jsx",
+    "**/*.vue",
+    "**/*.svelte",
+    "**/public/**/*.js",
+    "**/public/**/*.mjs",
+    "**/static/**/*.js",
+    "**/static/**/*.mjs",
+    "**/assets/**/*.js",
+    "**/assets/**/*.mjs",
+    "**/*.html",
+    "**/*.htm"
+  ],
+  "excluir": [
+    "**/__tests__/**",
+    "**/*.spec.*",
+    "**/*.test.*"
+  ],
+  "items": [
+    {
+      "id": "C1-sumidero-dom",
+      "pregunta": "Does data that the URL, a message or another user can control reach the page only through framework escaping, never through innerHTML, dangerouslySetInnerHTML, v-html, {@html}, document.write, eval-like calls or a javascript: URL without sanitising?",
+      "evidencia": "Each HTML or script sink in the changed code and the origin of the value it receives",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "C2-postmessage",
+      "pregunta": "Does every message listener check event.origin against an exact allowed origin before acting on event.data, and does every postMessage that carries private data name an exact target origin instead of \"*\"?",
+      "evidencia": "The origin comparison in the listener and the target origin of each postMessage call",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "C3-almacenamiento",
+      "pregunta": "Are tokens and private data kept out of localStorage, sessionStorage and IndexedDB, or removed at logout and account switch, so the next account in the same browser cannot read them?",
+      "evidencia": "The storage writes and the logout or account-switch code that clears them",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "suggestion",
+        "bloqueante": false,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "C4-navegacion",
+      "pregunta": "Is every redirect or navigation target taken from the URL or user data limited to the same origin or an allowlist?",
+      "evidencia": "The check applied to the value before location, router push or window.open receives it",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "suggestion",
+        "bloqueante": false,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "C5-prototipo",
+      "pregunta": "Do the deep-merge or path-assignment helpers that receive parsed user input refuse the keys __proto__, constructor and prototype?",
+      "evidencia": "The key filter in the merge or set helper, or the use of objects without a prototype",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "suggestion",
+        "bloqueante": false,
+        "tema": "security"
+      }
+    }
+  ]
+}

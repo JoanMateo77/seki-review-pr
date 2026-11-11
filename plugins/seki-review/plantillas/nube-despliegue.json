@@ -1,0 +1,104 @@
+{
+  "id": "nube-despliegue",
+  "version": 1,
+  "titulo": "Cloud and deployment",
+  "idioma": "en",
+  "siempre": false,
+  "aplicaA": [
+    "**/*.tf",
+    "**/*.tfvars",
+    "**/terraform/**",
+    "**/k8s/**",
+    "**/kubernetes/**",
+    "**/helm/**",
+    "**/charts/**",
+    "**/kustomization.y*ml",
+    "**/serverless.y*ml",
+    "**/docker-compose*.y*ml",
+    "**/compose.y*ml",
+    "**/cloudformation/**",
+    "**/*.bicep",
+    "**/wrangler.toml",
+    "**/wrangler.json*",
+    "**/nginx/**",
+    "**/nginx*.conf",
+    "**/*ingress*.y*ml",
+    "**/ingress/**",
+    "**/Caddyfile",
+    "**/task-definition*.json",
+    "**/appspec.y*ml"
+  ],
+  "excluir": [
+    "**/__tests__/**",
+    "**/*.spec.*",
+    "**/*.test.*"
+  ],
+  "items": [
+    {
+      "id": "N1-secretos",
+      "pregunta": "Are secret values referenced from a secret store or injected at deploy time, never written literally in Terraform variables, manifests, compose files or chart values?",
+      "evidencia": "The line that sets each credential, key or password",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "N2-exposicion",
+      "pregunta": "Are admin, debug, metrics and database ports kept off public ingress, public load balancers and 0.0.0.0/0 rules?",
+      "evidencia": "The ingress, service, port mapping or security group rule that exposes the port",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "N3-almacenamiento",
+      "pregunta": "Are new buckets and object stores private (public access blocked, no public ACL or anonymous policy) unless the PR states the content is public?",
+      "evidencia": "The bucket ACL, public access block or policy statement",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "N4-iam",
+      "pregunta": "Do the roles and policies grant only the actions and resources the workload uses, with no wildcard action or resource over data stores, secrets or IAM?",
+      "evidencia": "The Action and Resource entries of each policy",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "suggestion",
+        "bloqueante": false,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "N5-privilegios",
+      "pregunta": "Do the containers run without privileged mode, host network or PID namespaces, hostPath mounts, the container runtime socket or added capabilities?",
+      "evidencia": "The securityContext, privileged, volumes and cap_add entries",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "suggestion",
+        "bloqueante": false,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "N6-cabeceras-proxy",
+      "pregunta": "Does the proxy or ingress strip client-supplied identity headers (X-Forwarded-For, user or client-certificate headers) before the backend trusts them?",
+      "evidencia": "The header directives of the proxy and the backend code that reads those headers",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "question",
+        "bloqueante": false,
+        "tema": "security"
+      }
+    }
+  ]
+}
