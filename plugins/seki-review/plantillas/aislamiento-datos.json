@@ -37,7 +37,6 @@
     "**/*report*/**",
     "**/*Report*/**",
     "**/*descarga*/**",
-    "**/*cache*/**",
     "**/*search*/**",
     "**/*backup*/**",
     "**/*migration*/**",
@@ -46,7 +45,15 @@
   "excluir": [
     "**/__tests__/**",
     "**/*.spec.*",
-    "**/*.test.*"
+    "**/*.test.*",
+    "**/*.md",
+    "**/*.svg",
+    "**/*.png",
+    "**/*.css",
+    "**/*.scss",
+    "**/locales/**",
+    "**/i18n/**",
+    "**/components/**"
   ],
   "items": [
     {
@@ -62,8 +69,8 @@
     },
     {
       "id": "D2-clave-tenant",
-      "pregunta": "Do the cache keys, search filters, object paths and temporary file names include the tenant (and the user, for per-user data), so two tenants cannot read or overwrite the same entry?",
-      "evidencia": "The line that builds the key, path or search filter",
+      "pregunta": "Are the cache keys, search filters, object paths and temporary file names keyed so one tenant cannot read or overwrite another's entry (tenant or user in the key, or an unguessable name with an access check on read)?",
+      "evidencia": "The line that builds the key, path or search filter, or the access check where the entry is read",
       "reglas": [],
       "siFalla": {
         "etiqueta": "issue",

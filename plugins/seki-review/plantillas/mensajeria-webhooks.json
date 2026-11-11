@@ -17,10 +17,6 @@
     "**/*Colas.*",
     "**/*consumer*",
     "**/*Consumer*",
-    "**/*subscriber*",
-    "**/*Subscriber*",
-    "**/*worker*",
-    "**/*Worker*",
     "**/*kafka*",
     "**/*Kafka*",
     "**/*sqs*",
@@ -36,17 +32,25 @@
     "**/*Grpc*",
     "**/*gRPC*",
     "**/*.proto",
+    "**/workers/**",
+    "**/*-worker.*",
     "**/*webhook*/**",
     "**/*queue*/**",
     "**/colas/**",
     "**/*consumer*/**",
-    "**/*worker*/**",
     "**/*kafka*/**"
   ],
   "excluir": [
     "**/__tests__/**",
     "**/*.spec.*",
-    "**/*.test.*"
+    "**/*.test.*",
+    "**/*.md",
+    "**/*.svg",
+    "**/*.png",
+    "**/*.css",
+    "**/*.scss",
+    "**/locales/**",
+    "**/i18n/**"
   ],
   "items": [
     {

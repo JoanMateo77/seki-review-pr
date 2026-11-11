@@ -1,6 +1,6 @@
 # Notice
 
-The following review templates are adapted from Cloudflare's security-audit skill,
+The following review templates, and one item of `pci-dss`, are adapted from Cloudflare's security-audit skill,
 https://github.com/cloudflare/security-audit-skill, at commit c1c8a8c1471069fb0e188eeaff69b8e8db6564a8.
 They are adapted, not copied: the questions are rewritten for pull-request review.
 
@@ -14,6 +14,7 @@ They are adapted, not copied: the questions are rewritten for pull-request revie
 | `disponibilidad` | RESOURCE-EXHAUSTION-AND-AVAILABILITY.md |
 | `nube-despliegue` | CLOUD-AND-DEPLOYMENT.md |
 | `ia-llm` | AI-AND-LLM.md |
+| `pci-dss` `P7-notificacion-firmada` (one item of a template that predates this source) | PROTOCOLS-RPC-AND-MESSAGING.md |
 
 From the same source, the "Core principles" and "Anti-patterns" of SKILL.md and the validation rules of
 VALIDATION-AND-REPORTING.md are adapted, for a read-only review, into these prompts:

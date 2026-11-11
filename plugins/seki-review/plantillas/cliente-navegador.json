@@ -16,12 +16,20 @@
     "**/assets/**/*.js",
     "**/assets/**/*.mjs",
     "**/*.html",
-    "**/*.htm"
+    "**/*.htm",
+    "**/views/**/*.ejs"
   ],
   "excluir": [
     "**/__tests__/**",
     "**/*.spec.*",
-    "**/*.test.*"
+    "**/*.test.*",
+    "**/*.md",
+    "**/*.svg",
+    "**/*.png",
+    "**/*.css",
+    "**/*.scss",
+    "**/locales/**",
+    "**/i18n/**"
   ],
   "items": [
     {

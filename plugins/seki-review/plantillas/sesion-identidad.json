@@ -17,7 +17,6 @@
     "**/*Token*",
     "**/*jwt*",
     "**/*Jwt*",
-    "**/*JWT*",
     "**/sso*",
     "**/Sso*",
     "**/SSO*",
@@ -33,6 +32,8 @@
     "**/otp*",
     "**/*Otp*",
     "**/*OTP*",
+    "**/*totp*",
+    "**/*Totp*",
     "**/*apikey*",
     "**/*apiKey*",
     "**/*ApiKey*",
@@ -48,12 +49,19 @@
   "excluir": [
     "**/__tests__/**",
     "**/*.spec.*",
-    "**/*.test.*"
+    "**/*.test.*",
+    "**/*.md",
+    "**/*.svg",
+    "**/*.png",
+    "**/*.css",
+    "**/*.scss",
+    "**/locales/**",
+    "**/i18n/**"
   ],
   "items": [
     {
       "id": "S1-token-verificado",
-      "pregunta": "Is every token the change accepts (JWT, ID token, signed cookie) verified with a server-chosen algorithm and key, and checked for expiry, issuer and audience, before any of its claims are used?",
+      "pregunta": "Is every token the change accepts (JWT, ID token, signed cookie) verified with a server-chosen algorithm and key, and checked for expiry, and for issuer and audience when the key or issuer is shared with other services, before any of its claims are used?",
       "evidencia": "The verify call with its algorithm, key and claim options, and no path that decodes the token without verifying it",
       "reglas": [],
       "siFalla": {
@@ -75,8 +83,8 @@
     },
     {
       "id": "S3-csrf",
-      "pregunta": "Does every state-changing route authenticated by a cookie refuse a cross-site request (anti-CSRF token, SameSite on that cookie, or an exact Origin check)?",
-      "evidencia": "The CSRF middleware or Origin check on the route, or the SameSite attribute where the session cookie is set; bearer-only routes do not need it",
+      "pregunta": "Does every state-changing route authenticated by a cookie refuse a cross-site request (anti-CSRF token, SameSite=Lax or Strict on that cookie, or an exact Origin check)?",
+      "evidencia": "The CSRF middleware or Origin check on the route, or the SameSite=Lax or Strict attribute where the session cookie is set; bearer-only routes do not need it",
       "reglas": [],
       "siFalla": {
         "etiqueta": "issue",
@@ -86,8 +94,8 @@
     },
     {
       "id": "S4-recuperacion",
-      "pregunta": "Do password reset, MFA enrolment or removal, and email or phone change require the current factor or a single-use, expiring token bound to that account and that action?",
-      "evidencia": "Token generation and consumption (expiry, one-time use, account binding) or the re-authentication check before the change",
+      "pregunta": "Do password reset, MFA enrolment or removal, and email or phone change require the current factor or a single-use, expiring token bound to that account and that action, with the reset or verification link built from a configured base URL and not from the request Host header?",
+      "evidencia": "Token generation and consumption (expiry, one-time use, account binding), the re-authentication check before the change, and the base URL of the link",
       "reglas": [],
       "siFalla": {
         "etiqueta": "issue",

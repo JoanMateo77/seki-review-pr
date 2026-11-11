@@ -36,7 +36,14 @@
   "excluir": [
     "**/__tests__/**",
     "**/*.spec.*",
-    "**/*.test.*"
+    "**/*.test.*",
+    "**/*.md",
+    "**/*.svg",
+    "**/*.png",
+    "**/*.css",
+    "**/*.scss",
+    "**/locales/**",
+    "**/i18n/**"
   ],
   "items": [
     {
@@ -67,8 +74,8 @@
       "evidencia": "The COPY or ADD lines and the .dockerignore entries",
       "reglas": [],
       "siFalla": {
-        "etiqueta": "issue",
-        "bloqueante": true,
+        "etiqueta": "question",
+        "bloqueante": false,
         "tema": "security"
       }
     },

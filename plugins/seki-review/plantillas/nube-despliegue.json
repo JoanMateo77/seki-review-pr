@@ -31,7 +31,14 @@
   "excluir": [
     "**/__tests__/**",
     "**/*.spec.*",
-    "**/*.test.*"
+    "**/*.test.*",
+    "**/*.md",
+    "**/*.svg",
+    "**/*.png",
+    "**/*.css",
+    "**/*.scss",
+    "**/locales/**",
+    "**/i18n/**"
   ],
   "items": [
     {
@@ -91,7 +98,7 @@
     },
     {
       "id": "N6-cabeceras-proxy",
-      "pregunta": "Does the proxy or ingress strip client-supplied identity headers (X-Forwarded-For, user or client-certificate headers) before the backend trusts them?",
+      "pregunta": "Does the proxy or ingress overwrite client-supplied identity headers (X-Forwarded-For, user or client-certificate headers), or does the backend trust only the hops the proxy adds?",
       "evidencia": "The header directives of the proxy and the backend code that reads those headers",
       "reglas": [],
       "siFalla": {
