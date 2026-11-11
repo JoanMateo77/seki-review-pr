@@ -56,7 +56,9 @@ Unlike GitHub's PR list, it checks with git whether the code is already in testi
   action for each submission, with the diff open.
 
 - **Shared templates (noted 2026-10-27, partly delivered in 0.25.0).** Since 0.25.0 the plugin bundles base review
-  templates (`ligera`, `owasp-web`, `pci-dss`) and each project can point `plantillas` to a folder of its own, which
+  templates (`ligera`, `owasp-web`, `pci-dss`; since 0.27.0 also eight narrow ones adapted from Cloudflare's
+  security-audit skill: `sesion-identidad`, `cliente-navegador`, `aislamiento-datos`, `cadena-suministro`,
+  `mensajeria-webhooks`, `disponibilidad`, `nube-despliegue`, `ia-llm`) and each project can point `plantillas` to a folder of its own, which
   replaces a base template with the same `id`. Still to do: sharing templates from a repository (versioned with it)
   instead of a folder on each machine, and the remaining base sets (SQL/DDL migration, screens and copy, integrations).
 
