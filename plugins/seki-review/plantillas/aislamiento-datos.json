@@ -1,0 +1,126 @@
+{
+  "id": "aislamiento-datos",
+  "version": 1,
+  "titulo": "Data isolation and lifecycle",
+  "idioma": "en",
+  "siempre": false,
+  "aplicaA": [
+    "**/*export*",
+    "**/*Export*",
+    "**/*report*",
+    "**/*Report*",
+    "**/*download*",
+    "**/*Download*",
+    "**/*descarga*",
+    "**/*Descarga*",
+    "**/*cache*",
+    "**/*Cache*",
+    "**/*search*",
+    "**/*Search*",
+    "**/*busqueda*",
+    "**/*Busqueda*",
+    "**/*backup*",
+    "**/*Backup*",
+    "**/*migration*",
+    "**/*Migration*",
+    "**/*migracion*",
+    "**/*Migracion*",
+    "**/*delete*",
+    "**/*Delete*",
+    "**/*eliminar*",
+    "**/*Eliminar*",
+    "**/*purge*",
+    "**/*Purge*",
+    "**/*retention*",
+    "**/*Retention*",
+    "**/*export*/**",
+    "**/*report*/**",
+    "**/*Report*/**",
+    "**/*descarga*/**",
+    "**/*search*/**",
+    "**/*backup*/**",
+    "**/*migration*/**",
+    "**/*migracion*/**"
+  ],
+  "excluir": [
+    "**/__tests__/**",
+    "**/*.spec.*",
+    "**/*.test.*",
+    "**/*.md",
+    "**/*.svg",
+    "**/*.png",
+    "**/*.css",
+    "**/*.scss",
+    "**/locales/**",
+    "**/i18n/**",
+    "**/components/**"
+  ],
+  "items": [
+    {
+      "id": "D1-exportacion",
+      "pregunta": "Does the export, report or download select its rows by the tenant of the credential and check the requester's access again before the file is served?",
+      "evidencia": "The tenant filter in the query that builds the file and the authorization check on the download route",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "D2-clave-tenant",
+      "pregunta": "Are the cache keys, search filters, object paths and temporary file names keyed so one tenant cannot read or overwrite another's entry (tenant or user in the key, or an unguessable name with an access check on read)?",
+      "evidencia": "The line that builds the key, path or search filter, or the access check where the entry is read",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "D3-copias-derivadas",
+      "pregunta": "When a record is deleted, soft-deleted or its access changes, are its cached, indexed and exported copies invalidated or filtered at read time?",
+      "evidencia": "The invalidation call on the delete or update path, or the filter applied when the copy is read",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "suggestion",
+        "bloqueante": false,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "D4-borrado-logico",
+      "pregunta": "Do the new queries (lookups, lists, counts, joins and background jobs) apply the same soft-delete or revocation condition as the main read path?",
+      "evidencia": "The deleted or revoked condition in each new query",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "suggestion",
+        "bloqueante": false,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "D5-migracion",
+      "pregunta": "Does the migration or backfill give existing rows their correct tenant, owner and access fields, rather than a default that shows them to every tenant?",
+      "evidencia": "The default value or backfill statement for the tenant and access columns",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "D6-importacion",
+      "pregunta": "Does an import or restore authorise each resulting write against the requester's tenant, instead of trusting the tenant or owner ids inside the file?",
+      "evidencia": "Where the tenant of each imported row comes from and the check before it is written",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    }
+  ]
+}

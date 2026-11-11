@@ -1,0 +1,129 @@
+{
+  "id": "disponibilidad",
+  "version": 1,
+  "titulo": "Resource exhaustion",
+  "idioma": "en",
+  "siempre": false,
+  "aplicaA": [
+    "**/*upload*",
+    "**/*Upload*",
+    "**/carga*",
+    "**/*Carga*",
+    "**/*import.*",
+    "**/*Import.*",
+    "**/*importer*",
+    "**/*Importer*",
+    "**/*ImportController*",
+    "**/*ImportService*",
+    "**/*importar*",
+    "**/*Importar*",
+    "**/*importacion*",
+    "**/*Importacion*",
+    "**/*bulk*",
+    "**/*Bulk*",
+    "**/*batch*",
+    "**/*Batch*",
+    "**/*masiv*",
+    "**/*Masiv*",
+    "**/*parser*",
+    "**/*Parser*",
+    "**/*cron*",
+    "**/*Cron*",
+    "**/*job*",
+    "**/*Job*",
+    "**/*schedul*",
+    "**/*Schedul*",
+    "**/*Stream*",
+    "**/stream*",
+    "**/*upload*/**",
+    "**/carga*/**",
+    "**/import/**",
+    "**/imports/**",
+    "**/*importer*/**",
+    "**/*parser*/**",
+    "**/jobs/**",
+    "**/cron*/**",
+    "**/*batch*/**",
+    "**/*bulk*/**"
+  ],
+  "excluir": [
+    "**/__tests__/**",
+    "**/*.spec.*",
+    "**/*.test.*",
+    "**/*.md",
+    "**/*.svg",
+    "**/*.png",
+    "**/*.css",
+    "**/*.scss",
+    "**/locales/**",
+    "**/i18n/**"
+  ],
+  "items": [
+    {
+      "id": "R1-tamano",
+      "pregunta": "Is the size of the accepted upload, body or file limited before it is buffered, parsed or decompressed, and limited again after decompression?",
+      "evidencia": "The size limit option or check and where it runs relative to the read",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "suggestion",
+        "bloqueante": false,
+        "tema": "availability"
+      }
+    },
+    {
+      "id": "R2-cardinalidad",
+      "pregunta": "Is the number of rows, items or pages one request or job processes bounded, so a single bulk or import request cannot run unbounded queries or downstream calls?",
+      "evidencia": "The limit, page size or chunking applied to the loop or query",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "suggestion",
+        "bloqueante": false,
+        "tema": "availability"
+      }
+    },
+    {
+      "id": "R3-expresiones",
+      "pregunta": "Are the regular expressions and recursive parsers applied to user input free of nested quantifiers and unbounded depth, so one crafted value cannot hold the process?",
+      "evidencia": "The regular expression or the depth limit of the parser",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "suggestion",
+        "bloqueante": false,
+        "tema": "availability"
+      }
+    },
+    {
+      "id": "R4-trabajo-previo",
+      "pregunta": "Is expensive work (parsing large input, hashing, paid external calls) done only after authentication and the size or rate check?",
+      "evidencia": "The order of the authentication and limit middlewares relative to the expensive call",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "suggestion",
+        "bloqueante": false,
+        "tema": "availability"
+      }
+    },
+    {
+      "id": "R5-reintentos",
+      "pregunta": "Are retries of failing jobs and downstream calls capped with backoff, and is a record that keeps failing set aside instead of blocking the queue or the job?",
+      "evidencia": "The retry limit and backoff, and the dead-letter or skip branch",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "suggestion",
+        "bloqueante": false,
+        "tema": "availability"
+      }
+    },
+    {
+      "id": "R6-solapamiento",
+      "pregunta": "Does a scheduled job avoid starting a new run while the previous one is still running, and stop when its time limit passes?",
+      "evidencia": "The lock, overlap guard or timeout of the job",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "question",
+        "bloqueante": false,
+        "tema": "availability"
+      }
+    }
+  ]
+}

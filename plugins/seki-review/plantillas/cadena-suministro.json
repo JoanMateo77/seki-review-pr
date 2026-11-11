@@ -1,0 +1,116 @@
+{
+  "id": "cadena-suministro",
+  "version": 1,
+  "titulo": "Supply chain and release",
+  "idioma": "en",
+  "siempre": false,
+  "aplicaA": [
+    "**/package.json",
+    "**/package-lock.json",
+    "**/npm-shrinkwrap.json",
+    "**/yarn.lock",
+    "**/pnpm-lock.yaml",
+    "**/pnpm-workspace.yaml",
+    "**/bun.lock",
+    "**/bun.lockb",
+    "**/.npmrc",
+    "**/.yarnrc*",
+    "**/Dockerfile*",
+    "**/dockerfile*",
+    "**/*.dockerfile",
+    "**/.dockerignore",
+    "**/.github/workflows/**",
+    "**/.github/actions/**",
+    "**/.gitlab-ci.yml",
+    "**/Jenkinsfile*",
+    "**/bitbucket-pipelines.yml",
+    "**/azure-pipelines.yml",
+    "**/.circleci/**",
+    "**/scripts/*publish*",
+    "**/scripts/*release*",
+    "**/bin/*publish*",
+    "**/bin/*release*",
+    "**/.releaserc*",
+    "**/release.config.*"
+  ],
+  "excluir": [
+    "**/__tests__/**",
+    "**/*.spec.*",
+    "**/*.test.*",
+    "**/*.md",
+    "**/*.svg",
+    "**/*.png",
+    "**/*.css",
+    "**/*.scss",
+    "**/locales/**",
+    "**/i18n/**"
+  ],
+  "items": [
+    {
+      "id": "K1-codigo-no-confiable",
+      "pregunta": "Does no workflow triggered by pull_request_target, workflow_run, issue_comment or another event a fork can cause check out or run the contributor's code while secrets or a write token are available?",
+      "evidencia": "The trigger, the ref passed to checkout and the secrets or permissions of the job",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "K2-inyeccion-ci",
+      "pregunta": "Do untrusted event fields (branch names, PR titles, commit messages, issue bodies) reach shell steps only through environment variables, never interpolated with ${{ }} into the script?",
+      "evidencia": "The run step and how it receives each event field",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "K3-contexto-imagen",
+      "pregunta": "Does the image build keep .env files, keys and local configuration out of the image (a .dockerignore entry or an explicit COPY list)?",
+      "evidencia": "The COPY or ADD lines and the .dockerignore entries",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "question",
+        "bloqueante": false,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "K4-fijado",
+      "pregunta": "Are third-party CI actions and container base images pinned to an immutable reference (a commit SHA or a digest), and do jobs declare only the permissions they use?",
+      "evidencia": "The uses: and FROM lines and the permissions block of each job",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "suggestion",
+        "bloqueante": false,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "K5-dependencias",
+      "pregunta": "Is each dependency change reflected in the committed lockfile, resolved from the expected registry, without new git, URL or tarball sources or install scripts that download and run code?",
+      "evidencia": "The lockfile diff, the registry configuration and the preinstall or postinstall scripts",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "question",
+        "bloqueante": false,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "K6-publicacion",
+      "pregunta": "Can only the protected branch or tag, in a job without untrusted input, publish packages or images and use the publishing credential?",
+      "evidencia": "The trigger and branch or tag condition of the publish step and where its credential is exposed",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "question",
+        "bloqueante": false,
+        "tema": "security"
+      }
+    }
+  ]
+}

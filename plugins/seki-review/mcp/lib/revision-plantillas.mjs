@@ -157,9 +157,9 @@ function itemDeterminista(base, item, { hallazgos, conocidas, reposListos, commi
 const USO_VACIO = { entrada: 0, cacheCreada: 0, cacheLeida: 0, salida: 0 };
 const sumarUso = (a, b) => Object.fromEntries(Object.keys(USO_VACIO).map((k) => [k, (a?.[k] ?? 0) + (b?.[k] ?? 0)]));
 
-// What the AI read of this template: its items and the patches of the files that activate it. The same fingerprint
-// means the same question over the same changes, so the stored answer still holds.
-function huellaDe(t, archivos) {
+// What the AI read of this template: its instructions, its items and the patches of the files that activate it. The
+// same fingerprint means the same question over the same changes, so the stored answer still holds.
+function huellaDe(t, archivos, sistema) {
   const patches = archivosDePlantilla(t, archivos.map((a) => a.filename))
     .sort()
     .map((nombre) => {
@@ -167,7 +167,7 @@ function huellaDe(t, archivos) {
       // A file without patch (too large, binary) is told apart by its blob sha.
       return [nombre, a?.patch ?? null, a?.sha ?? null];
     });
-  return createHash('sha256').update(JSON.stringify([t.id, t.version, itemsIa(t), patches])).digest('hex');
+  return createHash('sha256').update(JSON.stringify([t.id, t.version, itemsIa(t), patches, sistema])).digest('hex');
 }
 
 // A stored template entry can stand in for a new call when nothing it read changed, it succeeded, it holds an answer
@@ -198,7 +198,7 @@ export async function revisarPlantillas(p, pr, {
   const seleccion = seleccionarPlantillas(plantillas, archivos.map((a) => a.filename));
   const activas = activasDe(plantillas, seleccion);
   const conIaActivas = activas.filter((t) => itemsIa(t).length);
-  const huellas = new Map(conIaActivas.map((t) => [t.id, huellaDe(t, archivos)]));
+  const huellas = new Map(conIaActivas.map((t) => [t.id, huellaDe(t, archivos, sistemas.plantilla)]));
   const dir = conIaActivas.length ? await copiar(p, pr.repo, pr.numero, pr.headSha, { sufijo: '-lectura' }) : null;
   const usa = (regla) => activas.some((t) => t.items.some((i) => i.reglas.includes(regla)));
   // The other repositories serve the AI (read and quoted) and the cross-repo route rule; nothing else needs them.
@@ -271,7 +271,8 @@ export async function revisarPlantillas(p, pr, {
     // One prompt per template, always the shared context first and the template's own items last, so the calls
     // share the cached prefix. The first call is awaited alone: it writes the cache the others then read.
     const consultar = async (t) => {
-      const fichas = itemsIa(t).map(({ id, pregunta, evidencia }) => ({ id, pregunta, evidencia }));
+      // `siFalla` lets the prompt apply the crossable-boundary rule only to blocking security items.
+      const fichas = itemsIa(t).map(({ id, pregunta, evidencia, siFalla }) => ({ id, pregunta, evidencia, siFalla: { bloqueante: siFalla.bloqueante, ...(siFalla.tema ? { tema: siFalla.tema } : {}) } }));
       const prompt = `${contexto}\n\nTemplate: ${t.id} v${t.version}. Language: ${t.idioma}.\n\nItems:\n${JSON.stringify(fichas, null, 1)}`;
       const r = await llamar(t.id, 'plantilla', prompt, SCHEMA_PLANTILLA);
       const motivo = falla(r, Array.isArray(r.salida?.items));

@@ -1,6 +1,6 @@
 {
   "id": "pci-dss",
-  "version": 1,
+  "version": 2,
   "titulo": "PCI DSS",
   "idioma": "en",
   "siempre": false,
@@ -94,6 +94,17 @@
       "siFalla": {
         "etiqueta": "suggestion",
         "bloqueante": false
+      }
+    },
+    {
+      "id": "P7-notificacion-firmada",
+      "pregunta": "Does every inbound notification, callback or webhook from a processor, acquirer or bank verify its signature or authenticated origin over the raw body before it changes the state of a payment, refund or balance, and refuse it when the signature or the secret is missing?",
+      "evidencia": "The verification call and its position before the state change",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
       }
     }
   ]

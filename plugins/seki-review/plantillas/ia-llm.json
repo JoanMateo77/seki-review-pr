@@ -1,0 +1,120 @@
+{
+  "id": "ia-llm",
+  "version": 1,
+  "titulo": "AI and LLM",
+  "idioma": "en",
+  "siempre": false,
+  "aplicaA": [
+    "**/*llm*",
+    "**/*Llm*",
+    "**/*LLM*",
+    "**/*prompt*",
+    "**/*Prompt*",
+    "**/*openai*",
+    "**/*Openai*",
+    "**/*OpenAI*",
+    "**/*OpenAi*",
+    "**/*anthropic*",
+    "**/*Anthropic*",
+    "**/*claude*",
+    "**/*Claude*",
+    "**/*gemini*",
+    "**/*Gemini*",
+    "**/agents/**",
+    "**/agent/**",
+    "**/*embedding*",
+    "**/*Embedding*",
+    "**/rag.*",
+    "**/rag-*",
+    "**/*-rag.*",
+    "**/*Rag*",
+    "**/rag/**",
+    "**/*llm*/**",
+    "**/*embedding*/**",
+    "**/prompts/**",
+    "**/mcp/**",
+    "**/*.prompt"
+  ],
+  "excluir": [
+    "**/__tests__/**",
+    "**/*.spec.*",
+    "**/*.test.*",
+    "**/*.svg",
+    "**/*.png",
+    "**/*.css",
+    "**/*.scss",
+    "**/locales/**",
+    "**/i18n/**",
+    "**/docs/**",
+    "**/.agents/**",
+    "**/.claude/**"
+  ],
+  "items": [
+    {
+      "id": "A1-autoridad-herramientas",
+      "pregunta": "Does every tool the model can call check the requesting user's permission on the named resource, instead of acting with a service credential that grants more than that user has?",
+      "evidencia": "The authorization check inside the tool handler and the credential it uses",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "A2-salida-sumidero",
+      "pregunta": "Is model output treated as untrusted before it reaches SQL, a shell, a file path, a URL fetch or HTML rendering (parameters, allowlists, escaping)?",
+      "evidencia": "The line where model output or tool arguments reach the sink and the check before it",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "A3-contexto-tenant",
+      "pregunta": "Are retrieval queries, embeddings, conversation history and prompt caches filtered by the requesting tenant and user, so one tenant's content cannot enter another's context?",
+      "evidencia": "The tenant or user filter in the retrieval query or the cache key",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "A4-secretos-contexto",
+      "pregunta": "Do prompts and model context leave out API keys, credentials and data the requesting user cannot read, so a crafted request cannot make the model reveal them?",
+      "evidencia": "The prompt assembly and the data it fetches",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "issue",
+        "bloqueante": true,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "A5-confirmacion",
+      "pregunta": "Do side-effecting actions (send, pay, delete, write) that untrusted content in the context could trigger require a confirmation bound to the exact tool and arguments the user approved?",
+      "evidencia": "The confirmation step and how the executed call is compared with the approved one",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "suggestion",
+        "bloqueante": false,
+        "tema": "security"
+      }
+    },
+    {
+      "id": "A6-limites",
+      "pregunta": "Are agent loops and model calls bounded per request (iterations, tokens or spend) and stopped when the request ends?",
+      "evidencia": "The iteration, token or budget limit and the cancellation path",
+      "reglas": [],
+      "siFalla": {
+        "etiqueta": "suggestion",
+        "bloqueante": false,
+        "tema": "availability"
+      }
+    }
+  ]
+}

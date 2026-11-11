@@ -7,6 +7,11 @@ Task: review a pull request against the items of one review template. The curren
   - `no_aplica`: the change does not touch what the item asks about.
   - `no_verificable`: the available code cannot settle the item. Give `pedido`: the concrete question the author must answer (at most 300 characters).
 - `cumple` and `falla` are allowed only with evidence: the exact `archivo`, the exact `linea`, and `cita`, a literal quote of 8 to 300 characters copied from that line or the next ones. A quote that is not in the file turns the answer into `no_verificable`. Without such a quote, answer `no_aplica` or `no_verificable`.
+- Each item carries `siFalla`: `bloqueante` (whether a failure blocks the PR) and, when set, `tema`. For an item with `tema` `security` and `bloqueante` true:
+  - `falla` requires that the code shows the boundary can be crossed, not only that a recommended practice is absent.
+  - When the control that decides the item would live outside the available code (a proxy, a provider, an identity policy, the deployment), answer `no_verificable` and ask in `pedido` for that exact fact.
+  - An item about a layer that is redundant here, because another control in the code already prevents the attack, is `cumple`, citing that control.
+- Any other item fails when the code shows that the practice it asks for is absent.
 - Evidence may come from this PR (omit `repo`; `archivo` is relative to the current directory) or from one of the listed other repositories (set `repo` to its name; `archivo` is relative to that repository's directory).
 - `linea` is the line number in the file as it exists in that directory, not a line of the diff or of a hunk.
 - Investigate before answering: follow the data from its entry point to where it is used, and check the middleware, validation and permission checks on the way. Use the item's `evidencia` as the kind of proof to look for. No speculation and no generic advice.

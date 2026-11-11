@@ -16,6 +16,8 @@ const dirTemporal = () => {
   return d;
 };
 const item = (id, extra = {}) => ({ id, pregunta: 'Q?', evidencia: 'E', reglas: [], siFalla: { etiqueta: 'issue', bloqueante: true }, ...extra });
+// The bundled templates, sorted by id; `ligera` is the only one that always applies.
+const BASE = ['aislamiento-datos', 'cadena-suministro', 'cliente-navegador', 'disponibilidad', 'ia-llm', 'ligera', 'mensajeria-webhooks', 'nube-despliegue', 'owasp-web', 'pci-dss', 'sesion-identidad'];
 const valida = (extra = {}) => ({ id: 'mia', version: 1, titulo: 'Mine', idioma: 'en', siempre: false, aplicaA: ['src/**'], excluir: [], items: [item('A1')], ...extra });
 
 test('globARegex matches ** across directories and zero directories', () => {
@@ -36,7 +38,7 @@ test('globARegex matches ** across directories and zero directories', () => {
 
 test('the base templates load and validate', () => {
   const { plantillas, invalidas } = cargarPlantillas({});
-  assert.deepEqual(plantillas.map((t) => t.id).sort(), ['ligera', 'owasp-web', 'pci-dss']);
+  assert.deepEqual(plantillas.map((t) => t.id).sort(), BASE);
   assert.equal(plantillas[0].id, 'ligera');
   assert.equal(plantillas.find((t) => t.id === 'ligera').siempre, true);
   assert.deepEqual(invalidas, []);
@@ -54,7 +56,7 @@ test('a project template with the same id replaces the base one, a new id is add
   writeFileSync(join(dir, 'notas.txt'), 'ignored');
   const { plantillas, invalidas } = cargarPlantillas({ plantillas: dir });
   assert.equal(plantillas.find((t) => t.id === 'owasp-web').version, 9);
-  assert.deepEqual(plantillas.map((t) => t.id), ['ligera', 'extra', 'owasp-web', 'pci-dss']);
+  assert.deepEqual(plantillas.map((t) => t.id), ['ligera', ...['extra', ...BASE.filter((id) => id !== 'ligera')].sort()]);
   assert.deepEqual(invalidas, []);
 });
 
@@ -62,7 +64,7 @@ test('a missing project directory keeps the base templates and is reported as in
   const avisos = t.mock.method(console, 'error', () => {});
   const dir = join(dirTemporal(), 'nope');
   const { plantillas, invalidas } = cargarPlantillas({ plantillas: dir });
-  assert.equal(plantillas.length, 3);
+  assert.equal(plantillas.length, BASE.length);
   assert.deepEqual(invalidas, [{ archivo: dir, motivo: 'the project template folder does not exist' }]);
   assert.equal(avisos.mock.calls.length, 1);
   assert.deepEqual(cargarPlantillas({}).invalidas, []);
@@ -84,7 +86,7 @@ test('an invalid project template is skipped and reported', () => {
   }
   assert.equal(r.invalidas.length, 3);
   for (const i of r.invalidas) assert.ok(i.archivo && i.motivo);
-  assert.deepEqual(r.plantillas.map((t) => t.id), ['ligera', 'owasp-web', 'pci-dss']);
+  assert.deepEqual(r.plantillas.map((t) => t.id), ['ligera', ...BASE.filter((id) => id !== 'ligera')]);
   assert.equal(avisos.length, 3);
 });
 
@@ -147,7 +149,7 @@ test('selection reports the first matching file and the files covered only by th
   assert.equal(owasp.motivo.archivo, 'src/routes/a.ts');
   assert.ok(owasp.motivo.glob);
   assert.equal(s.activas.find((t) => t.id === 'ligera').motivo, 'siempre');
-  assert.deepEqual(s.omitidas.map((t) => t.id), ['pci-dss']);
+  assert.deepEqual(s.omitidas.map((t) => t.id), BASE.filter((id) => !['ligera', 'owasp-web'].includes(id)));
   assert.deepEqual(s.sinPlantilla, ['src/routes/__tests__/a.spec.ts']);
   assert.deepEqual(Object.keys(owasp).sort(), ['id', 'motivo', 'titulo', 'version']);
 });
@@ -185,4 +187,91 @@ test('owasp-web and pci-dss declare that they cover the security lens', () => {
     assert.deepEqual(t.cubre, ['seguridad'], id);
     assert.deepEqual(validarPlantilla(t).plantilla.cubre, ['seguridad'], id);
   }
+});
+
+// Paths an ordinary PR changes that none of the audit-derived templates should claim.
+const ORDINARIAS = ['src/controllers/OrderController.ts', 'README.md', 'src/utils/format.ts'];
+// File names that matched an audit template before the review: docs, translations, images, styles, tool caches,
+// ORM entity subscribers, a browser service worker, HTTP user agents, amount parsing and `Importe` (amount).
+const FALSOS = ['docs/authentication.md', 'src/locales/es/auth.json', 'src/i18n/en/search.json', 'src/assets/icons/delete.svg', 'src/assets/img/upload.png', 'src/styles/search.css', 'src/styles/export.scss', 'graphify-out/cache/a.json', 'src/Subscribers/PersonsSubscriber.ts', 'src/serviceWorker.ts', 'src/utils/UserAgent.ts', 'src/http/httpAgent.ts', 'src/utils/parseAmount.ts', 'src/net/upstream.ts', 'src/Controllers/ImporteController.ts'];
+const AUDITORIA = {
+  'sesion-identidad': { prefijo: 'S', activan: ['src/auth/index.ts', 'src/middleware/authMiddleware.ts', 'lib/SessionStore.js', 'src/sesiones/crear.ts', 'src/utils/jwt.ts', 'src/services/JWTService.ts', 'src/sso/saml.ts', 'src/services/PasswordReset.ts', 'src/mfa/verificar.ts', 'src/routes/apiKeys.ts', 'src/otp.ts', 'src/auth/totp.ts', 'src/services/totp.ts', 'src/TotpVerifier.ts'], excluida: 'src/auth/__tests__/login.spec.ts', noActivan: ['src/processors/order.ts', 'docs/footprint.md'] },
+  'cliente-navegador': { prefijo: 'C', activan: ['src/components/Button.tsx', 'web/src/App.jsx', 'src/views/Home.vue', 'src/routes/+page.svelte', 'public/js/checkout.js', 'static/main.js', 'src/assets/vendor/widget.js', 'views/index.html', 'views/dashboard/list.ejs'], excluida: 'src/components/Button.test.tsx', noActivan: ['src/server/app.js', 'templates/email/receipt.ejs', 'src/styles/app.css'] },
+  'aislamiento-datos': { prefijo: 'D', activan: ['src/services/exportOrders.ts', 'src/reports/monthly.ts', 'src/ReporteVentas.ts', 'src/services/cacheKeys.ts', 'src/search/index.ts', 'db/migrations/20260101-add-tenant.js', 'src/jobs/purgeDeleted.ts', 'src/descargas/factura.ts', 'scripts/backup.sh'], excluida: 'src/reports/monthly.test.ts', noActivan: ['src/components/ExportButton.tsx', 'src/cache/redis.ts'] },
+  'cadena-suministro': { prefijo: 'K', activan: ['package.json', 'packages/api/package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', '.npmrc', 'Dockerfile', 'docker/Dockerfile.prod', '.github/workflows/ci.yml', '.gitlab-ci.yml', 'Jenkinsfile', 'bitbucket-pipelines.yml', 'scripts/publish.sh'], excluida: 'src/__tests__/package.json', noActivan: ['src/services/publisher.ts', 'src/payments/releaseFunds.ts'] },
+  'mensajeria-webhooks': { prefijo: 'M', activan: ['src/webhooks/stripe.ts', 'src/routes/paymentCallback.ts', 'src/queue/consumer.ts', 'src/colas/pagos.ts', 'src/OrderPubSub.ts', 'workers/email.js', 'src/email-worker.ts', 'src/kafka/producer.ts', 'src/sqs.ts', 'lib/amqp.js', 'proto/orders.proto'], excluida: 'src/webhooks/stripe.spec.ts', noActivan: ['src/colaboradores/lista.ts', 'src/chocolate.ts', 'src/workerPool.ts'] },
+  'disponibilidad': { prefijo: 'R', activan: ['src/routes/upload.ts', 'src/cargas/csv.ts', 'src/services/CsvImport.ts', 'src/importers/clientes.ts', 'src/jobs/nightly.ts', 'src/cron/limpieza.ts', 'src/BulkUpdate.ts', 'src/cargaMasiva.ts', 'src/parsers/xml.ts', 'src/XmlParser.ts', 'src/Controllers/ImportController.ts', 'src/services/importarClientes.ts', 'src/ImportacionService.ts', 'src/scheduler.ts', 'src/streamReport.ts'], excluida: 'src/jobs/nightly.test.ts', noActivan: ['src/services/calcularImporte.ts', 'src/recargas/saldo.ts', 'src/importes/lista.ts', 'src/services/ImporteService.ts'] },
+  'nube-despliegue': { prefijo: 'N', activan: ['infra/main.tf', 'infra/prod.tfvars', 'deploy/k8s/deployment.yaml', 'charts/api/values.yaml', 'serverless.yml', 'docker-compose.prod.yaml', 'cloudformation/stack.json', 'infra/main.bicep', 'wrangler.toml', 'nginx/default.conf', 'ops/ingress.yaml'], excluida: 'infra/__tests__/main.tf', noActivan: ['src/infra/database.ts'] },
+  'ia-llm': { prefijo: 'A', activan: ['src/llm/client.ts', 'src/prompts/resumen.md', 'src/services/openaiClient.ts', 'lib/anthropic.ts', 'src/ClaudeService.ts', 'src/gemini.ts', 'src/agents/planner.ts', 'src/embeddings.ts', 'src/rag/retriever.ts', 'tools/mcp/server.mjs', 'src/services/OpenAiService.ts', 'src/agent/loop.ts'], excluida: 'src/llm/client.test.ts', noActivan: ['src/storage/average.ts', 'CLAUDE.md', 'docs/prompts.md', '.claude/skills/x/SKILL.md', 'src/agentes.ts'] },
+};
+
+for (const [id, caso] of Object.entries(AUDITORIA)) {
+  test(`${id}: 4 to 6 items with the ${caso.prefijo} prefix, no cubre, and its paths activate it`, () => {
+    const crudo = JSON.parse(leerArchivo(new URL(`../plantillas/${id}.json`, import.meta.url), 'utf8'));
+    assert.equal(crudo.cubre, undefined, 'a narrow template must not switch off the Ultra security lens');
+    assert.deepEqual([crudo.idioma, crudo.version, crudo.siempre], ['en', 1, false]);
+    assert.deepEqual(crudo.excluir.slice(0, 3), ['**/__tests__/**', '**/*.spec.*', '**/*.test.*']);
+    const r = validarPlantilla(crudo);
+    assert.equal(r.ok, true, r.motivo);
+    const t = r.plantilla;
+    assert.ok(t.items.length >= 4 && t.items.length <= 6, `${t.items.length} items`);
+    for (const it of t.items) assert.match(it.id, new RegExp(`^${caso.prefijo}\\d-[a-z-]+$`));
+    if (id !== 'disponibilidad') assert.ok(t.items.some((it) => it.siFalla.bloqueante), 'at least one blocking item');
+    for (const it of t.items) if (it.siFalla.bloqueante) assert.equal(it.siFalla.etiqueta, 'issue', it.id);
+    const { plantillas } = cargarPlantillas({});
+    const activa = (ruta) => seleccionarPlantillas(plantillas, [ruta]).activas.some((a) => a.id === id);
+    assert.ok(caso.activan.length >= 3);
+    for (const ruta of caso.activan) assert.ok(activa(ruta), `${ruta} should activate ${id}`);
+    for (const ruta of [...ORDINARIAS, ...FALSOS, caso.excluida, ...caso.noActivan]) assert.ok(!activa(ruta), `${ruta} should not activate ${id}`);
+    assert.ok(caso.noActivan.length > 0);
+    assert.ok(t.aplicaA.length <= 40);
+  });
+}
+
+test('a PR that changes only README.md selects only the light baseline', () => {
+  const { plantillas } = cargarPlantillas({});
+  assert.deepEqual(seleccionarPlantillas(plantillas, ['README.md']).activas.map((a) => a.id), ['ligera']);
+});
+
+test('the attribution of the audit-derived templates names the source commit and keeps the MIT copyright line', () => {
+  const aviso = leerArchivo(new URL('../plantillas/NOTICE.md', import.meta.url), 'utf8');
+  assert.match(aviso, /c1c8a8c1471069fb0e188eeaff69b8e8db6564a8/);
+  assert.match(aviso, /github\.com\/cloudflare\/security-audit-skill/);
+  assert.match(aviso, /Copyright \(c\) 2025-2026 Cloudflare, Inc\./);
+  assert.match(aviso, /The above copyright notice and this permission notice shall be included/);
+  assert.match(aviso, /THE SOFTWARE IS PROVIDED "AS IS"/);
+  assert.match(aviso, /`pci-dss` `P7-notificacion-firmada`/);
+  for (const id of Object.keys(AUDITORIA)) assert.ok(aviso.includes(`\`${id}\``), id);
+});
+
+test('the security, verification and template prompts require a crossed boundary and a concrete result', () => {
+  const prompt = (n) => leerArchivo(new URL(`../mcp/prompts/${n}.md`, import.meta.url), 'utf8');
+  const seguridad = prompt('ultra-seguridad');
+  assert.match(seguridad, /lower-trust actor/);
+  assert.match(seguridad, /self-impact/);
+  assert.match(seguridad, /Without all four it is not a finding, except a hardening note, which is only `baja`/);
+  assert.match(seguridad, /whoever can read that place/);
+  assert.match(seguridad, /duplicate charge or refund/);
+  assert.match(seguridad, /assuming the deployment, proxy or provider is misconfigured/);
+  assert.match(seguridad, /name the external fact to confirm/);
+  assert.match(seguridad, /cannot exceed the result/);
+  const verificar = prompt('ultra-verificar');
+  assert.match(verificar, /disprove/);
+  assert.match(verificar, /outside the repository[^\n]*PLAUSIBLE/);
+  assert.match(verificar, /own resources[^\n]*REJECTED|REJECTED[^\n]*own resources/);
+  const plantilla = prompt('plantilla');
+  assert.match(plantilla, /boundary can be crossed/);
+  assert.match(plantilla, /outside the available code[^\n]*`no_verificable`/);
+  assert.match(plantilla, /redundant[^\n]*`cumple`/);
+  const aviso = leerArchivo(new URL('../plantillas/NOTICE.md', import.meta.url), 'utf8');
+  for (const n of ['ultra-seguridad.md', 'ultra-verificar.md', 'plantilla.md']) assert.ok(aviso.includes(n), n);
+});
+
+test('pci-dss v2 asks that inbound processor notifications are verified before they change a payment', () => {
+  const t = validarPlantilla(JSON.parse(leerArchivo(new URL('../plantillas/pci-dss.json', import.meta.url), 'utf8'))).plantilla;
+  assert.equal(t.version, 2);
+  assert.deepEqual(t.items.map((i) => i.id), ['P1-credenciales', 'P2-monto', 'P3-idempotencia', 'P4-logs', 'P5-trazabilidad', 'P6-control-de-cambio', 'P7-notificacion-firmada']);
+  const p7 = t.items.find((i) => i.id === 'P7-notificacion-firmada');
+  assert.deepEqual(p7.siFalla, { etiqueta: 'issue', bloqueante: true, tema: 'security' });
+  assert.match(p7.pregunta, /raw body/);
 });
