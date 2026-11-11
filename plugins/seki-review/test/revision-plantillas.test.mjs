@@ -54,6 +54,24 @@ const veredictosDe = (mapa) => (prompt) => {
 };
 const item = (r, plantilla, id) => r.resultado.plantillas.find((t) => t.id === plantilla).items.find((i) => i.id === id);
 
+test('each item card carries its blocking flag and topic, so the prompt can scope the boundary rule', async () => {
+  const registro = [];
+  const plantillas = [tpl('mixta', [
+    it('S1', { siFalla: { etiqueta: 'issue', bloqueante: true, tema: 'security' } }),
+    it('S2', { siFalla: { etiqueta: 'suggestion', bloqueante: false, tema: 'security' } }),
+    it('G1', { siFalla: { etiqueta: 'suggestion', bloqueante: false } }),
+  ])];
+  const { p, deps } = entorno({ plantillas, registro });
+  await revisarPlantillas(p, pr, deps);
+  const enviados = JSON.parse(/Items:\n(\[[^]*?\n\])/.exec(registro[0].prompt)[1]);
+  assert.deepEqual(enviados.map((x) => [x.id, x.siFalla]), [
+    ['S1', { bloqueante: true, tema: 'security' }],
+    ['S2', { bloqueante: false, tema: 'security' }],
+    ['G1', { bloqueante: false }],
+  ]);
+  assert.match(registro[0].args[registro[0].args.indexOf('--system-prompt') + 1], /`tema` `security` and `bloqueante` true/);
+});
+
 test('only the AI items of each active template are sent and deterministic items never are', async () => {
   const registro = [];
   const plantillas = [
@@ -71,7 +89,7 @@ test('only the AI items of each active template are sent and deterministic items
   const enviados = JSON.parse(/Items:\n(\[[^]*?\n\])/.exec(prompt)[1]);
   assert.deepEqual(enviados.map((x) => x.id), ['L1', 'L2']);
   assert.ok(enviados.every((x) => !('reglas' in x)));
-  assert.deepEqual(Object.keys(enviados[0]).sort(), ['evidencia', 'id', 'pregunta']);
+  assert.deepEqual(Object.keys(enviados[0]).sort(), ['evidencia', 'id', 'pregunta', 'siFalla']);
   assert.match(prompt, /Changed files:\n- src\/a\.ts/);
   assert.match(prompt, /Diff:\ndiff --git a\/src\/a\.ts/);
   assert.deepEqual(r.resultado.plantillas.map((t) => t.id), ['ligera', 'solo-reglas']);

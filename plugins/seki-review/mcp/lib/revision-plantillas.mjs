@@ -271,7 +271,8 @@ export async function revisarPlantillas(p, pr, {
     // One prompt per template, always the shared context first and the template's own items last, so the calls
     // share the cached prefix. The first call is awaited alone: it writes the cache the others then read.
     const consultar = async (t) => {
-      const fichas = itemsIa(t).map(({ id, pregunta, evidencia }) => ({ id, pregunta, evidencia }));
+      // `siFalla` lets the prompt apply the crossable-boundary rule only to blocking security items.
+      const fichas = itemsIa(t).map(({ id, pregunta, evidencia, siFalla }) => ({ id, pregunta, evidencia, siFalla: { bloqueante: siFalla.bloqueante, ...(siFalla.tema ? { tema: siFalla.tema } : {}) } }));
       const prompt = `${contexto}\n\nTemplate: ${t.id} v${t.version}. Language: ${t.idioma}.\n\nItems:\n${JSON.stringify(fichas, null, 1)}`;
       const r = await llamar(t.id, 'plantilla', prompt, SCHEMA_PLANTILLA);
       const motivo = falla(r, Array.isArray(r.salida?.items));
